@@ -1,6 +1,7 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+Remember to update the `pluginVersion` property in `gradle.properties`
+to the latest version.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning 2.0.0](https://semver.org/).

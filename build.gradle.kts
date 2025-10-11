@@ -7,8 +7,18 @@ import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 
-group = providers.gradleProperty("pluginGroup").get()
-version = providers.gradleProperty("pluginVersion").get()
+val pluginGroup: String = providers.gradleProperty("pluginGroup").get()
+val pluginVersion: String = providers.gradleProperty("pluginVersion").get()
+val pluginFullName: String = providers.gradleProperty("pluginFullName").get()
+val pluginName: String = providers.gradleProperty("pluginName").get()
+val pluginSinceBuild: String = providers.gradleProperty("pluginSinceBuild").get()
+val pluginUntilBuild: String = providers.gradleProperty("pluginUntilBuild").get()
+val changeNotesFromHtml: Provider<String> = provider { file("changes.html").readText() }
+val descriptionFromHtml: Provider<String> = provider { file("description.html").readText() }
+val gradleVersion: String = providers.gradleProperty("gradleVersion").get()
+
+group = pluginGroup
+version = pluginVersion
 
 plugins {
     id("java")
@@ -24,7 +34,6 @@ repositories {
 
     intellijPlatform {
         defaultRepositories()
-        localPlatformArtifacts()
     }
 }
 
@@ -44,16 +53,16 @@ dependencies {
 
 // Configure IntelliJ Platform Gradle Plugin: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-extension.html
 intellijPlatform {
-    projectName = providers.gradleProperty("pluginName").get()
+    projectName = pluginName
     buildSearchableOptions = false
     instrumentCode = false
 
     pluginConfiguration {
-        id = providers.gradleProperty("pluginGroup").get()
-        name = providers.gradleProperty("pluginFullName").get()
-        version = providers.gradleProperty("pluginVersion").get()
-        changeNotes = provider { file("changes.html").readText() }
-        description = provider { file("description.html").readText() }
+        id = pluginGroup
+        name = pluginFullName
+        version = pluginVersion
+        changeNotes = changeNotesFromHtml
+        description = descriptionFromHtml
 
         vendor {
             name = "Francisco Boni Neto"
@@ -62,8 +71,8 @@ intellijPlatform {
         }
 
         ideaVersion {
-            sinceBuild = providers.gradleProperty("pluginSinceBuild").get()
-            untilBuild = providers.gradleProperty("pluginUntilBuild").get()
+            sinceBuild = pluginSinceBuild
+            untilBuild = pluginUntilBuild
         }
     }
 
@@ -119,7 +128,7 @@ tasks {
     }
 
     wrapper {
-        gradleVersion = providers.gradleProperty("gradleVersion").get()
+        gradleVersion = gradleVersion
     }
 }
 
