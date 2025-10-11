@@ -246,21 +246,30 @@ public final class ShowUsagesAction {
         Project project = element.getProject();
         FindUsagesManager findUsagesManager = ((FindManagerImpl) FindManager.getInstance(project)).getFindUsagesManager();
         FindUsagesHandlerBase handler;
-        ShowUsagesActionHandler actionHandler;
-        FindUsagesOptions options;
+//        ShowUsagesActionHandler actionHandler;
+//        FindUsagesOptions options;
         handler = findUsagesManager.getFindUsagesHandler(element, USAGES_WITH_DEFAULT_OPTIONS);
         if (handler == null) {
             return;
         }
-        //noinspection deprecation
-        DataContext dataContext = DataManager.getInstance().getDataContext();
-        options = handler.getFindUsagesOptions(dataContext);
-        if (options instanceof PersistentFindUsagesOptions) {
-            ((PersistentFindUsagesOptions) options).setDefaults(project);
-        }
-        options.searchScope = FindUsagesOptions.findScopeByName(project, dataContext, FindUsagesSettings.getInstance().getDefaultScopeName());
-        actionHandler = createActionHandler(handler, options, title);
-        showElementUsagesWithResult(ShowUsagesParameters.initial(project, editor, popupPosition), actionHandler);
+//        //noinspection deprecation
+//        DataContext dataContext = DataManager.getInstance().getDataContext();
+//        options = handler.getFindUsagesOptions(dataContext);
+//        if (options instanceof PersistentFindUsagesOptions) {
+//            ((PersistentFindUsagesOptions) options).setDefaults(project);
+//        }
+//        options.searchScope = FindUsagesOptions.findScopeByName(project, dataContext, FindUsagesSettings.getInstance().getDefaultScopeName());
+//        actionHandler = createActionHandler(handler, options, title);
+//        showElementUsagesWithResult(ShowUsagesParameters.initial(project, editor, popupPosition), actionHandler);
+        DataManager.getInstance().getDataContextFromFocusAsync().onSuccess(dataContext -> {
+            FindUsagesOptions options = handler.getFindUsagesOptions(dataContext);
+            if (options instanceof PersistentFindUsagesOptions) {
+                ((PersistentFindUsagesOptions) options).setDefaults(project);
+            }
+            options.searchScope = FindUsagesOptions.findScopeByName(project, dataContext, FindUsagesSettings.getInstance().getDefaultScopeName());
+            ShowUsagesActionHandler actionHandler = createActionHandler(handler, options, title);
+            showElementUsagesWithResult(ShowUsagesParameters.initial(project, editor, popupPosition), actionHandler);
+        });
     }
 
     public static void startFindUsages(@NotNull PsiElement element, @NotNull RelativePoint popupPosition, @Nullable Editor editor) {
