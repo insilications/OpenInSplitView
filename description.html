@@ -1,0 +1,92 @@
+VS Code lets you open a symbol's declaration in a split view without losing your current context. <strong>IntelliJ IDEs lack this functionality.</strong> This plugin brings that essential feature to all JetBrains IDEs.
+<br />
+<h2>Key Features</h2>
+<ul>
+  <li>
+    Keep your active tab focused while opening declarations, usages, or implementations in an adjacent split view.
+    <ul>
+      <li>
+        Navigation rule:
+        <strong>Always opens in the split view immediately to the right of your active tab's split view.</strong>
+      </li>
+      <li>If there isn't one, a new one is created.</li>
+      <li>
+        Example: Imagine three split views in a row: <code>[Split 1] [Split 2] [Split 3]</code>
+        <ul>
+          <li>
+            Triggering navigation from a tab in <code>Split 1</code> will always open the target in
+            <code>Split 2</code>.
+          </li>
+          <li>
+            Triggering navigation from a tab in <code>Split 2</code> will always open the target in
+            <code>Split 3</code>.
+          </li>
+          <li>
+            Triggering navigation from a tab in <code>Split 3</code> will always wrap around and open the target in
+            <code>Split 1</code>.
+          </li>
+        </ul>
+      </li>
+    </ul>
+  </li>
+  <li>Kotlin Inlay Hint Navigation: Opens inlay hint targets (e.g., parameter names, type hints).</li>
+</ul>
+<br />
+<h2>Configuration</h2>
+<p>Configure shortcuts in <code>Settings / Preferences → Keymap</code>.</p>
+<table align="center">
+  <thead>
+    <tr>
+      <th align="center">Action</th>
+      <th align="center">Default Shortcut</th>
+      <th align="center">Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="center"><strong>Declaration or Usages (Split)</strong></td>
+      <td align="center"><code>Ctrl + Alt + Left Click</code></td>
+      <td align="center">Opens symbol's declaration or usages</td>
+    </tr>
+    <tr>
+      <td align="center"><strong>Implementation(s) (Split)</strong></td>
+      <td align="center"><code>Ctrl + Shift + Left Click</code></td>
+      <td align="center">Opens symbol's implementation(s)</td>
+    </tr>
+    <tr>
+      <td align="center"><strong>Inlay Navigation (Split)</strong></td>
+      <td align="center"><code>Ctrl + Alt + Left Click</code></td>
+      <td align="center">Opens inlay hint's target</td>
+    </tr>
+  </tbody>
+</table>
+<p>
+  <em
+    >Need help with keymap configuration? See
+    <a href="https://www.jetbrains.com/help/idea/configuring-keyboard-and-mouse-shortcuts.html"
+      >JetBrains Documentation</a
+    ></em
+  >
+</p>
+<br />
+<h3>Special Note for Kotlin Inlay Hints</h3>
+<p>
+  Due to IntelliJ platform constraints, the shortcut for <strong>Inlay Navigation (Split)</strong> has two strict
+  requirements:
+</p>
+<ol>
+  <li>It <strong>MUST</strong> be a <code>Mouse Shortcut</code>.</li>
+  <li>It <strong>MUST</strong> include <code>Ctrl</code> (<code>Cmd</code> on macOS) + <code>Left Click</code>.</li>
+</ol>
+<p>
+  You can add other modifiers like <code>Shift</code> or <code>Alt</code> (e.g., <code>Ctrl + Alt + Left Click</code>),
+  but the base combination shown above is required by the IDE’s inlay system. Without it, the
+  <strong>Inlay Navigation (Split)</strong> feature will not work. The default Inlay Navigation behavior, using
+  <code>Ctrl</code> (<code>Cmd</code> on macOS) + <code>Left Click</code>, is not replaced and can still be used.
+</p>
+<br />
+<h2>Compatibility</h2>
+<ul>
+  <li><strong>All JetBrains IDEs</strong> (IntelliJ IDEA, WebStorm, PyCharm, etc.)</li>
+  <li><strong>Minimum Version</strong>: 2025.2.1 (Build 252.x)</li>
+</ul>

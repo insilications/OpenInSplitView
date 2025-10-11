@@ -1,0 +1,25 @@
+<idea-plugin require-restart="true">
+    <!-- See https://plugins.jetbrains.com/docs/intellij/plugin-compatibility.html on how to target different products -->
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.lang</depends>
+    <!-- Kotlin is optional -->
+    <depends config-file="kotlin-bridge.xml" optional="true">org.jetbrains.kotlin</depends>
+
+    <extensions defaultExtensionNs="org.jetbrains.kotlin">
+        <supportsKotlinPluginMode supportsK2="true"/>
+    </extensions>
+
+    <actions>
+        <!-- Add your actions here -->
+        <action class="org.insilications.openinsplit.codeInsight.navigation.actions.GotoDeclarationActionSplit"
+                description="Opens the declaration/usage in the split view immediately to the right of your active tab's split view."
+                id="GotoDeclarationActionSplit" text="Declaration or Usages (Split)">
+            <add-to-group anchor="last" group-id="EditorPopupMenu.GoTo"/>
+        </action>
+        <action class="org.insilications.openinsplit.codeInsight.navigation.actions.GotoImplementationActionSplit"
+                description="Opens the implementation in the split view immediately to the right of your active tab's split view."
+                id="GotoImplementationActionSplit" text="Implementation(s) (Split)">
+            <add-to-group anchor="last" group-id="EditorPopupMenu.GoTo"/>
+        </action>
+    </actions>
+</idea-plugin>

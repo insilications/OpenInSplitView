@@ -1,0 +1,20 @@
+package org.insilications.openinsplit.codeInsight.navigation.actions
+
+import com.intellij.codeInsight.CodeInsightActionHandler
+import com.intellij.codeInsight.navigation.actions.GotoDeclarationAction
+import com.intellij.openapi.actionSystem.DataContext
+
+/**
+ * Opens the declaration/usage in the split view immediately to the right of your active tab's split view. If there isn't one, create a new one.
+ * If there are multiple declarations/usages, a popup will appear, allowing you to select one.
+ */
+class GotoDeclarationActionSplit : GotoDeclarationAction() {
+    // Reuse a single handler instance to avoid per‑invocation allocations.
+    private val gotoDeclarationOrUsageHandler2SplitShared: CodeInsightActionHandler by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        GotoDeclarationOrUsageHandler2Split()
+    }
+
+    protected override fun getHandler(): CodeInsightActionHandler = gotoDeclarationOrUsageHandler2SplitShared
+
+    protected override fun getHandler(dataContext: DataContext): CodeInsightActionHandler = gotoDeclarationOrUsageHandler2SplitShared
+}

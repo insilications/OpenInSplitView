@@ -1,0 +1,37 @@
+<idea-plugin>
+    <!-- Loaded only if org.jetbrains.kotlin is installed and enabled -->
+
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- Add your extensions here -->
+        <codeInsight.inlayActionHandler handlerId="kotlin.fqn.class"
+                                        implementationClass="org.insilications.openinsplit.codeInsight.hints.KotlinFqnDeclarativeInlayActionHandler"
+                                        order="first"/>
+
+        <!-- Preferred modern startup hook -->
+        <postStartupActivity implementation="org.insilications.openinsplit.CheckKotlinFqnInlayBinding"/>
+
+        <!-- Notification group used by the diagnostic -->
+        <notificationGroup displayType="BALLOON" id="Open In Split View" isLogByDefault="true"/>
+    </extensions>
+
+    <extensions defaultExtensionNs="org.jetbrains.kotlin">
+        <supportsKotlinPluginMode supportsK2="true"/>
+    </extensions>
+
+    <actions>
+        <!-- Dummy mouse-shortcut action to customize the shortcut for Inlay Navigation (Split) -->
+        <action class="org.insilications.openinsplit.codeInsight.hints.InlayNavigationActionSplit"
+                description="Opens the inlay hint target in the split view immediately to the right of your active tab's split view. This shortcut MUST be a Mouse Shorcut and MUST include Ctrl (Cmd on macOS) + Left Click to work. See Special Note for Kotlin Inlay Hints in the README."
+                id="InlayNavigationActionSplit" text="Inlay Navigation (Split)">
+
+            <!-- Defaults (users can rebind in Keymap). Must include Ctrl/Cmd so the inlay click still dispatches -->
+            <!-- Windows/Linux -->
+            <mouse-shortcut keymap="$default" keystroke="ctrl alt button1"/>
+
+            <!-- macOS (Command is 'meta') -->
+            <mouse-shortcut keymap="Mac OS X" keystroke="meta alt button1"/>
+
+            <!-- No menu entry; this action is shortcut-only -->
+        </action>
+    </actions>
+</idea-plugin>
