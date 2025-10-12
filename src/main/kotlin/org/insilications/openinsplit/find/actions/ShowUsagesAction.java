@@ -169,6 +169,7 @@ import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -779,8 +780,13 @@ public final class ShowUsagesAction {
         }
         if (dialog.showAndGet()) {
             dialog.calcFindUsagesOptions();
-            //noinspection deprecation
-            return handler.getFindUsagesOptions(DataManager.getInstance().getDataContext());
+//            //noinspection deprecation
+//            return handler.getFindUsagesOptions(DataManager.getInstance().getDataContext());
+            try {
+                return handler.getFindUsagesOptions(DataManager.getInstance().getDataContextFromFocusAsync().blockingGet(100, TimeUnit.MILLISECONDS));
+            } catch (Exception e) {
+                return null;
+            }
         } else {
             return null;
         }
