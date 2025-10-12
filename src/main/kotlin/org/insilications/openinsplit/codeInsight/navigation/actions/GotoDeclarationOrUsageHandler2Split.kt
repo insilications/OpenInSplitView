@@ -73,56 +73,51 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
          * The lazy initializer performs the reflective lookup once and returns a callable
          * function if successful, or null otherwise.
          */
-        private val gotoDeclarationOrUsagesCachedInvoker: ((Project, Editor, PsiFile, Int) -> Any?)?
-                by lazy(LazyThreadSafetyMode.PUBLICATION) {
-                    try {
-                        val handlerClass: Class<GotoDeclarationOrUsageHandler2> = GotoDeclarationOrUsageHandler2::class.java
-                        val companionField: Field = handlerClass.getDeclaredField("Companion").apply { isAccessible = true }
-                        // `com.intellij.codeInsight.navigation.actions.GotoDeclarationOrUsageHandler2.Companion.gotoDeclarationOrUsages` is
-                        // a regular (non `@JvmStatic`) function declared inside a companion object.
-                        // It compiles as an instance companion member method on the generated Companion class.
-                        // Instance methods are not static, they need a receiver, the companion object instance, when invoked via reflection.
-                        // If the companion function were annotated with `@JvmStatic`, the compiler would emit a static method on the outer class.
-                        // That static method could then be invoked without a receiver via reflection.
-                        val companionInstance: Any = companionField.get(null)
-                        val companionClass: Class<*> = companionInstance.javaClass
-                        val intType: Class<Int> = Int::class.javaPrimitiveType ?: Integer.TYPE
-                        val method: Method = companionClass.getDeclaredMethod(
-                            "gotoDeclarationOrUsages",
-                            Project::class.java,
-                            Editor::class.java,
-                            PsiFile::class.java,
-                            intType,
-                        ).apply { isAccessible = true }
+        private val gotoDeclarationOrUsagesCachedInvoker: ((Project, Editor, PsiFile, Int) -> Any?)? by lazy(LazyThreadSafetyMode.PUBLICATION) {
+            try {
+                val handlerClass: Class<GotoDeclarationOrUsageHandler2> = GotoDeclarationOrUsageHandler2::class.java
+                val companionField: Field = handlerClass.getDeclaredField("Companion").apply { isAccessible = true }
+                // `com.intellij.codeInsight.navigation.actions.GotoDeclarationOrUsageHandler2.Companion.gotoDeclarationOrUsages` is
+                // a regular (non `@JvmStatic`) function declared inside a companion object.
+                // It compiles as an instance companion member method on the generated Companion class.
+                // Instance methods are not static, they need a receiver, the companion object instance, when invoked via reflection.
+                // If the companion function were annotated with `@JvmStatic`, the compiler would emit a static method on the outer class.
+                // That static method could then be invoked without a receiver via reflection.
+                val companionInstance: Any = companionField.get(null)
+                val companionClass: Class<*> = companionInstance.javaClass
+                val intType: Class<Int> = Int::class.javaPrimitiveType ?: Integer.TYPE
+                val method: Method = companionClass.getDeclaredMethod(
+                    "gotoDeclarationOrUsages",
+                    Project::class.java,
+                    Editor::class.java,
+                    PsiFile::class.java,
+                    intType,
+                ).apply { isAccessible = true }
 
-                        val handle: MethodHandle = MethodHandles.lookup()
-                            .unreflect(method)
-                            .bindTo(companionInstance)
-                            .asType(
-                                MethodType.methodType(
-                                    Any::class.java,
-                                    Project::class.java,
-                                    Editor::class.java,
-                                    PsiFile::class.java,
-                                    intType,
-                                ),
-                            );
+                val handle: MethodHandle = MethodHandles.lookup().unreflect(method).bindTo(companionInstance).asType(
+                    MethodType.methodType(
+                        Any::class.java,
+                        Project::class.java,
+                        Editor::class.java,
+                        PsiFile::class.java,
+                        intType,
+                    ),
+                );
 
-                        // On success, return a lambda that uses the handle.
-                        // This is the strongly-typed function.
-                        { project: Project, editor: Editor, file: PsiFile, offset: Int ->
-                            handle.invokeWithArguments(project, editor, file, offset)
-                        }
-                    } catch (t: Throwable) {
-                        @Suppress("LongLine")
-                        LOG.warn(
-                            "Failed to resolve com.intellij.codeInsight.navigation.actions.GotoDeclarationOrUsageHandler2.Companion.gotoDeclarationOrUsages via reflection",
-                            t,
-                        )
-                        // On failure, the lazy property will be initialized to null.
-                        null
-                    }
+                // On success, return a lambda that uses the handle.
+                // This is the strongly-typed function.
+                { project: Project, editor: Editor, file: PsiFile, offset: Int ->
+                    handle.invokeWithArguments(project, editor, file, offset)
                 }
+            } catch (t: Throwable) {
+                @Suppress("LongLine") LOG.warn(
+                    "Failed to resolve com.intellij.codeInsight.navigation.actions.GotoDeclarationOrUsageHandler2.Companion.gotoDeclarationOrUsages via reflection",
+                    t,
+                )
+                // On failure, the lazy property will be initialized to null.
+                null
+            }
+        }
 
         // Per-class caches: `Method` must be invoked on an instance of its declaring class.
         private val actionDataResultMethodCache = ConcurrentHashMap<Class<*>, Method>()
@@ -141,7 +136,8 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
             ) {
                 // 1) Resolve the private companion non `@JvmStatic` method (cached):
                 // gotoDeclarationOrUsages(Project, Editor, PsiFile, Int): GTDUActionData?
-                val gotoDeclarationOrUsagesInvoker = gotoDeclarationOrUsagesCachedInvoker ?: return@underModalProgress null
+                val gotoDeclarationOrUsagesInvoker: (Project, Editor, PsiFile, Int) -> Any? =
+                    gotoDeclarationOrUsagesCachedInvoker ?: return@underModalProgress null
                 val actionData: Any = try {
                     gotoDeclarationOrUsagesInvoker(project, editor, file, offset)
                 } catch (t: Throwable) {
@@ -151,10 +147,9 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
 
                 // 2) Resolve the internal GTDUActionData.result(): GTDUActionResult?
                 val actionDataClass: Class<Any> = actionData.javaClass
-                val resultMethod: Method = actionDataResultMethodCache[actionDataClass]
-                    ?: actionDataClass.methods.firstOrNull { it.name == "result" && it.parameterCount == 0 }
-                        ?.also { it.isAccessible = true; actionDataResultMethodCache[actionDataClass] = it }
-                    ?: return@underModalProgress null
+                val resultMethod: Method =
+                    actionDataResultMethodCache[actionDataClass] ?: actionDataClass.methods.firstOrNull { it.name == "result" && it.parameterCount == 0 }
+                        ?.also { it.isAccessible = true; actionDataResultMethodCache[actionDataClass] = it } ?: return@underModalProgress null
                 // Call GTDUActionData.result(): GTDUActionResult?
                 val rawResult = resultMethod.invoke(actionData) ?: return@underModalProgress null
 
@@ -162,11 +157,11 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
                 // `GTDUActionResult.GTD` holds the `navigationActionResult` property of type `NavigationActionResult`
                 // `GTDUActionResult.SU` holds the `targetVariants` property, a `List<TargetVariant>`
                 val resultClass: Class<Any> = rawResult.javaClass
-                val navMethod: Method? = resultNavGetterCache[resultClass]
-                    ?: resultClass.methods.firstOrNull { it.name == "getNavigationActionResult" && it.parameterCount == 0 }
+                val navMethod: Method? =
+                    resultNavGetterCache[resultClass] ?: resultClass.methods.firstOrNull { it.name == "getNavigationActionResult" && it.parameterCount == 0 }
                         ?.also { resultNavGetterCache[resultClass] = it }
-                val tvMethod: Method? = resultTargetVariantsGetterCache[resultClass]
-                    ?: resultClass.methods.firstOrNull { it.name == "getTargetVariants" && it.parameterCount == 0 }
+                val tvMethod: Method? =
+                    resultTargetVariantsGetterCache[resultClass] ?: resultClass.methods.firstOrNull { it.name == "getTargetVariants" && it.parameterCount == 0 }
                         ?.also { resultTargetVariantsGetterCache[resultClass] = it }
 
                 when {
@@ -178,12 +173,10 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
 
                     tvMethod != null -> {
                         // Get the `targetVariants` property value, a `List<TargetVariant>`
-                        @Suppress("UNCHECKED_CAST")
-                        val variants = tvMethod.invoke(rawResult) as? List<Any?> ?: return@underModalProgress null
+                        @Suppress("UNCHECKED_CAST") val variants = tvMethod.invoke(rawResult) as? List<Any?> ?: return@underModalProgress null
                         if (variants.isEmpty() || variants.any { it == null }) return@underModalProgress null
 
-                        @Suppress("UNCHECKED_CAST")
-                        val nonNullVariants = variants as List<Any>
+                        @Suppress("UNCHECKED_CAST") val nonNullVariants = variants as List<Any>
 
                         GTDUActionResultMirror.SU(nonNullVariants) // non-empty
                     }
@@ -217,7 +210,7 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
             return
         }
 
-        val offset = editor.caretModel.offset
+        val offset: Int = editor.caretModel.offset
         try {
             when (val actionResult: GTDUActionResultMirror? = gotoDeclarationOrUsages_HACK(project, editor, file, offset)) {
                 // The result of our action must be of type "Go To Declaration"
@@ -287,11 +280,8 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
         targetVariants: List<Any>,
     ) {
         // Build DataContext for scope resolution
-        val dataContext: DataContext = SimpleDataContext.builder()
-            .add(CommonDataKeys.PSI_FILE, file)
-            .add(CommonDataKeys.EDITOR, editor)
-            .add(PlatformCoreDataKeys.CONTEXT_COMPONENT, editor.contentComponent)
-            .build()
+        val dataContext: DataContext = SimpleDataContext.builder().add(CommonDataKeys.PSI_FILE, file).add(CommonDataKeys.EDITOR, editor)
+            .add(PlatformCoreDataKeys.CONTEXT_COMPONENT, editor.contentComponent).build()
 
         try {
             val popupPosition: RelativePoint = JBPopupFactory.getInstance().guessBestPopupLocation(editor)

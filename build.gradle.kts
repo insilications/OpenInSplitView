@@ -1,11 +1,11 @@
 @file:Suppress("LongLine")
 
 import com.github.benmanes.gradle.versions.updates.DependencyUpdatesTask
+import org.jetbrains.changelog.markdownToHTML
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
-
 
 val pluginGroup: String = providers.gradleProperty("pluginGroup").get()
 val pluginVersion: String = providers.gradleProperty("pluginVersion").get()
@@ -13,7 +13,9 @@ val pluginFullName: String = providers.gradleProperty("pluginFullName").get()
 val pluginName: String = providers.gradleProperty("pluginName").get()
 val pluginSinceBuild: String = providers.gradleProperty("pluginSinceBuild").get()
 val pluginUntilBuild: String = providers.gradleProperty("pluginUntilBuild").get()
-val changeNotesFromHtml: Provider<String> = provider { file("changes.html").readText() }
+val changeNotesFromMd: Provider<String> = provider {
+    file("CHANGELOG.md").readText().lineSequence().filterIndexed { index, _ -> index !in 1..3 }.joinToString(System.lineSeparator()).trim()
+}
 val descriptionFromHtml: Provider<String> = provider { file("description.html").readText() }
 val gradleVersion: String = providers.gradleProperty("gradleVersion").get()
 
@@ -25,6 +27,7 @@ plugins {
     alias(libs.plugins.intellij.platform)
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.ben.manes.versions)
+    alias(libs.plugins.changelog)
 }
 
 repositories {
@@ -47,7 +50,6 @@ dependencies {
         pluginVerifier(libs.versions.pluginVerifier)
     }
 
-//    compileOnly("org.jetbrains:annotations:26.0.2")
     compileOnly(libs.jetbrains.annotations)
 }
 
@@ -61,7 +63,7 @@ intellijPlatform {
         id = pluginGroup
         name = pluginFullName
         version = pluginVersion
-        changeNotes = changeNotesFromHtml
+        changeNotes.set(provider { markdownToHTML(changeNotesFromMd.get()) })
         description = descriptionFromHtml
 
         vendor {
@@ -129,6 +131,10 @@ tasks {
 
     wrapper {
         gradleVersion = gradleVersion
+    }
+
+    runIde {
+        jvmArgs = listOf("-Xmx8096m", "-XX:+UnlockDiagnosticVMOptions")
     }
 }
 

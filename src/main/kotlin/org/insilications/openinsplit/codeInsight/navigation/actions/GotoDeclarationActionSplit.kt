@@ -5,7 +5,7 @@ import com.intellij.codeInsight.navigation.actions.GotoDeclarationAction
 import com.intellij.openapi.actionSystem.DataContext
 
 /**
- * Opens the declaration/usage in the split view immediately to the right of your active tab's split view. If there isn't one, create a new one.
+ * Opens the declaration/usage in the split view immediately to the right of your active tab's split view. If there isn't one, a new one is created.
  * If there are multiple declarations/usages, a popup will appear, allowing you to select one.
  */
 class GotoDeclarationActionSplit : GotoDeclarationAction() {
