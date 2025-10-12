@@ -41,7 +41,7 @@ dependencies {
     // IntelliJ Platform Gradle Plugin Dependencies Extension: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-dependencies-extension.html
     intellijPlatform {
         // Starting with version 2025.3, `use intellijIdea()`
-        intellijIdeaCommunity(libs.versions.ideaVersion)
+        intellijIdeaCommunity(libs.versions.ideaVersion, useInstaller = false)
         bundledPlugin("org.jetbrains.kotlin")
 
         pluginVerifier(libs.versions.pluginVerifier)

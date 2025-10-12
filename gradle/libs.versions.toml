@@ -1,5 +1,5 @@
 [versions]
-ideaVersion = "2025.2.1"
+ideaVersion = "LATEST-EAP-SNAPSHOT"
 pluginVerifier = "1.395"
 
 [libraries]
