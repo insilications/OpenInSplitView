@@ -27,7 +27,6 @@ import com.intellij.ide.DataManager;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.ide.util.gotoByName.ModelDiff;
 import com.intellij.ide.util.scopeChooser.ScopeChooserGroup;
-import com.intellij.internal.statistic.service.fus.collectors.UIEventLogger;
 import com.intellij.lang.Language;
 import com.intellij.lang.injection.InjectedLanguageManager;
 import com.intellij.navigation.ItemPresentation;
@@ -771,7 +770,7 @@ public final class ShowUsagesAction {
     }
 
     private static @Nullable FindUsagesOptions showDialog(@NotNull FindUsagesHandlerBase handler) {
-        UIEventLogger.ShowUsagesPopupShowSettings.log(handler.getProject());
+//        UIEventLogger.ShowUsagesPopupShowSettings.log(handler.getProject());
         AbstractFindUsagesDialog dialog;
         if (handler instanceof FindUsagesHandlerUi) {
             dialog = ((FindUsagesHandlerUi) handler).getFindUsagesDialog(false, false, false);

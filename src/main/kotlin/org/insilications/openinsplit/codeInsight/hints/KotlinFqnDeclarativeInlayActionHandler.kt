@@ -34,8 +34,8 @@ import org.jetbrains.kotlin.idea.codeInsight.hints.resolveClass
 import java.awt.event.InputEvent
 import java.awt.event.MouseEvent
 
-@Suppress("CompanionObjectInExtension")
-internal class KotlinFqnDeclarativeInlayActionHandler : InlayActionHandler {
+@Suppress("CompanionObjectInExtension", "ExtensionClassShouldBeFinalAndNonPublic")
+class KotlinFqnDeclarativeInlayActionHandler : InlayActionHandler {
     companion object {
         @Suppress("unused")
         const val HANDLER_NAME: String = "kotlin.fqn.class"
