@@ -206,6 +206,7 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
 
         if (navigateToLookupItem(project, editor)) {
             LOG.debug { "navigateToLookupItem" }
+            return
         }
 
         if (EditorUtil.isCaretInVirtualSpace(editor)) {
