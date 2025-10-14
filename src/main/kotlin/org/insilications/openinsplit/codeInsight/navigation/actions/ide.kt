@@ -18,6 +18,7 @@ import com.intellij.openapi.actionSystem.DataContext
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.application.readAction
+import com.intellij.openapi.application.runReadAction
 import com.intellij.openapi.components.serviceAsync
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.Editor
@@ -30,7 +31,8 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Computable
 import com.intellij.openapi.util.Key
 import com.intellij.openapi.util.ThrowableComputable
-import com.intellij.openapi.util.registry.Registry
+import com.intellij.openapi.util.registry.RegistryManager
+import com.intellij.openapi.util.registry.RegistryValue
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.platform.backend.navigation.NavigationRequest
 import com.intellij.platform.backend.navigation.impl.RawNavigationRequest
@@ -61,6 +63,21 @@ val LOG: Logger = Logger.getInstance("org.insilications.openinsplit")
 
 @PublishedApi
 internal val LOOKUP_TARGET_POINTER_KEY: Key<SmartPsiElementPointer<PsiElement>> = Key.create("org.insilications.openinsplit.lookupTargetPointer")
+
+@PublishedApi
+internal val SHOW_ERROR_REGISTRY_VALUE: RegistryValue by lazy(LazyThreadSafetyMode.PUBLICATION) {
+    RegistryManager.getInstance().get("ide.gtd.show.error")
+}
+
+data class KeywordCheck(
+    val psiFile: PsiFile,
+    val documentModStamp: Long,
+    val offset: Int,
+    val isKeyword: Boolean,
+)
+
+@PublishedApi
+internal val KEYWORD_CHECK_KEY: Key<KeywordCheck> = Key.create("org.insilications.openinsplit.keywordUnderCaretCache")
 
 /**
  * This function is used to preemptively set the current split view (window) to the adjacent split view or a new split view.
@@ -308,11 +325,13 @@ suspend inline fun getVirtualFileFromNavigatable(navigatable: Navigatable): Virt
     return null
 }
 
+@RequiresEdt
 inline fun notifyNowhereToGo(project: Project, editor: Editor, file: PsiFile, offset: Int) {
-    // Disable the 'no declaration found' notification for keywords
-    if (Registry.`is`("ide.gtd.show.error") && !isUnderDoubleClick() && !isKeywordUnderCaret(project, file, offset)) {
-        HintManager.getInstance().showInformationHint(editor, CodeInsightBundle.message("declaration.navigation.nowhere.to.go"))
-    }
+    if (!SHOW_ERROR_REGISTRY_VALUE.asBoolean()) return
+    if (isUnderDoubleClick()) return
+    if (isKeywordUnderCaret(project, editor, file, offset)) return
+
+    HintManager.getInstance().showInformationHint(editor, CodeInsightBundle.message("declaration.navigation.nowhere.to.go"))
 }
 
 inline fun isUnderDoubleClick(): Boolean {
@@ -320,8 +339,27 @@ inline fun isUnderDoubleClick(): Boolean {
     return event is MouseEvent && event.clickCount == 2
 }
 
-inline fun isKeywordUnderCaret(project: Project, file: PsiFile, offset: Int): Boolean {
-    val elementAtCaret: PsiElement = file.findElementAt(offset) ?: return false
-    val namesValidator = LanguageNamesValidation.INSTANCE.forLanguage(elementAtCaret.language)
-    return namesValidator.isKeyword(elementAtCaret.text, project)
+inline fun KeywordCheck.matches(file: PsiFile, editor: Editor, offset: Int): Boolean {
+    return psiFile == file && this.offset == offset && documentModStamp == editor.document.modificationStamp
+}
+
+inline fun isKeywordUnderCaret(project: Project, editor: Editor, file: PsiFile, offset: Int): Boolean {
+    val cached = editor.getUserData(KEYWORD_CHECK_KEY)
+    if (cached != null && cached.matches(file, editor, offset)) {
+        return cached.isKeyword
+    }
+
+    val documentModStamp = editor.document.modificationStamp
+    val computed = runReadAction {
+        val elementAtCaret: PsiElement? = file.findElementAt(offset)
+        val isKeyword = if (elementAtCaret != null) {
+            val namesValidator = LanguageNamesValidation.INSTANCE.forLanguage(elementAtCaret.language)
+            namesValidator.isKeyword(elementAtCaret.text, project)
+        } else {
+            false
+        }
+        KeywordCheck(file, documentModStamp, offset, isKeyword)
+    }
+    editor.putUserData(KEYWORD_CHECK_KEY, computed)
+    return computed.isKeyword
 }
