@@ -97,7 +97,8 @@ class KotlinFqnDeclarativeInlayActionHandler : InlayActionHandler {
                         // History update on EDT
                         IdeDocumentHistory.getInstance(project).includeCurrentCommandAsNavigation()
                         // We preemptively set the current split view (window) to the adjacent split view or a new split view
-                        // This forces the calls to `navigate` methods to use that adjacent split view. This workaround might be fragile, but it works perfectly
+                        // This forces subsequent calls to Intellij Platform API's `navigate` methods to use the adjacent split view.
+                        // This workaround might be fragile, but it works perfectly
                         getAdjacentSplitView(project) {
                             getVirtualFileFromNavigatable(navigatable)
                         }

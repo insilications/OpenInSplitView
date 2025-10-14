@@ -300,17 +300,19 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
     ) {
         when (actionResult) {
             is SingleTarget -> {
-                // Just navigate to the single target
+                // Just trigger our custom navigation function for the single navigatable target
                 navigateToRequestor(project, actionResult.requestor, editor)
                 LOG.debug { "gotoDeclarationOnly - SingleTarget" }
             }
 
             is MultipleTargets -> {
+                // Create popup for the user to select a navigatable target
                 val popup: JBPopup = createTargetPopup(
                     CodeInsightBundle.message("declaration.navigation.title"),
                     actionResult.targets, LazyTargetWithPresentation::presentation,
                 ) { (requestor, _, _) ->
-                    // This is our processor. It is called when the user selects an item from the popup.
+                    // We are inside the processor of the created popup. It is called when the user selects a navigatable target from the popup
+                    // Trigger our custom navigation function for the selected navigatable target
                     navigateToRequestor(project, requestor, editor)
                 }
                 popup.showInBestPositionFor(editor)
