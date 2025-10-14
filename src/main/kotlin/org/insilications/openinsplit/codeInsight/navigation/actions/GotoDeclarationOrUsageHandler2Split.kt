@@ -36,6 +36,7 @@ import org.insilications.openinsplit.find.actions.ShowUsagesActionSplit.Companio
 import org.insilications.openinsplit.find.actions.findShowUsages
 import org.jetbrains.annotations.ApiStatus
 import java.lang.invoke.MethodHandle
+import java.lang.invoke.MethodHandleProxies
 import java.lang.invoke.MethodHandles
 import java.lang.invoke.MethodType
 import java.lang.reflect.Field
@@ -70,53 +71,69 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
 
         /**
          * Cache reflective lookups to avoid repeated scanning on every invocation.
-         * A strongly-typed invoker for the reflective `gotoDeclarationOrUsages` call.
-         * The lazy initializer performs the reflective lookup once and returns a callable
-         * function if successful, or null otherwise.
+         * Produces a strongly typed invoker for the reflective `gotoDeclarationOrUsages` call.
+         * Failures trigger a short backoff so that transient class-loading races can recover.
          */
-        private val gotoDeclarationOrUsagesCachedInvoker: ((Project, Editor, PsiFile, Int) -> Any?)? by lazy(LazyThreadSafetyMode.PUBLICATION) {
-            try {
-                val handlerClass: Class<GotoDeclarationOrUsageHandler2> = GotoDeclarationOrUsageHandler2::class.java
-                val companionField: Field = handlerClass.getDeclaredField("Companion").apply { isAccessible = true }
-                // `com.intellij.codeInsight.navigation.actions.GotoDeclarationOrUsageHandler2.Companion.gotoDeclarationOrUsages` is
-                // a regular (non `@JvmStatic`) function declared inside a companion object.
-                // It compiles as an instance companion member method on the generated Companion class.
-                // Instance methods are not static, they need a receiver, the companion object instance, when invoked via reflection.
-                // If the companion function were annotated with `@JvmStatic`, the compiler would emit a static method on the outer class.
-                // That static method could then be invoked without a receiver via reflection.
-                val companionInstance: Any = companionField.get(null)
-                val companionClass: Class<*> = companionInstance.javaClass
-                val intType: Class<Int> = Int::class.javaPrimitiveType ?: Integer.TYPE
-                val method: Method = companionClass.getDeclaredMethod(
-                    "gotoDeclarationOrUsages",
-                    Project::class.java,
-                    Editor::class.java,
-                    PsiFile::class.java,
-                    intType,
-                ).apply { isAccessible = true }
+        @Volatile
+        private var gotoDeclarationOrUsagesInvoker: GotoDeclarationOrUsagesInvoker? = null
 
-                val handle: MethodHandle = MethodHandles.lookup().unreflect(method).bindTo(companionInstance).asType(
-                    MethodType.methodType(
-                        Any::class.java,
+        @Volatile
+        private var nextLookupRetryAtMillis: Long = 0
+
+        private const val LOOKUP_RETRY_BACKOFF_MS: Long = 5_000
+
+        private fun resolveGotoDeclarationOrUsagesInvoker(): GotoDeclarationOrUsagesInvoker? {
+            gotoDeclarationOrUsagesInvoker?.let { return it }
+
+            val now: Long = System.currentTimeMillis()
+            if (now < nextLookupRetryAtMillis) return null
+
+            return synchronized(this) {
+                gotoDeclarationOrUsagesInvoker?.let { return it }
+                if (System.currentTimeMillis() < nextLookupRetryAtMillis) return@synchronized null
+
+                try {
+                    val handlerClass: Class<GotoDeclarationOrUsageHandler2> = GotoDeclarationOrUsageHandler2::class.java
+                    val companionField: Field = handlerClass.getDeclaredField("Companion").apply { isAccessible = true }
+                    // `com.intellij.codeInsight.navigation.actions.GotoDeclarationOrUsageHandler2.Companion.gotoDeclarationOrUsages` is
+                    // a regular (non `@JvmStatic`) function declared inside a companion object.
+                    // It compiles as an instance companion member method on the generated Companion class.
+                    // Instance methods are not static, they need a receiver, the companion object instance, when invoked via reflection.
+                    // If the companion function were annotated with `@JvmStatic`, the compiler would emit a static method on the outer class.
+                    // That static method could then be invoked without a receiver via reflection.
+                    val companionInstance: Any = companionField.get(null)
+                    val companionClass: Class<*> = companionInstance.javaClass
+                    val intType: Class<Int> = Int::class.javaPrimitiveType ?: Integer.TYPE
+                    val method: Method = companionClass.getDeclaredMethod(
+                        "gotoDeclarationOrUsages",
                         Project::class.java,
                         Editor::class.java,
                         PsiFile::class.java,
                         intType,
-                    ),
-                );
+                    ).apply { isAccessible = true }
 
-                // On success, return a lambda that uses the handle.
-                // This is the strongly-typed function.
-                { project: Project, editor: Editor, file: PsiFile, offset: Int ->
-                    handle.invokeWithArguments(project, editor, file, offset)
+                    val handle: MethodHandle = MethodHandles.lookup().unreflect(method).bindTo(companionInstance).asType(
+                        MethodType.methodType(
+                            Any::class.java,
+                            Project::class.java,
+                            Editor::class.java,
+                            PsiFile::class.java,
+                            intType,
+                        ),
+                    )
+
+                    val invoker: GotoDeclarationOrUsagesInvoker = MethodHandleProxies.asInterfaceInstance(GotoDeclarationOrUsagesInvoker::class.java, handle)
+                    gotoDeclarationOrUsagesInvoker = invoker
+                    nextLookupRetryAtMillis = 0
+                    invoker
+                } catch (t: Throwable) {
+                    @Suppress("LongLine") LOG.warn(
+                        "Failed to resolve com.intellij.codeInsight.navigation.actions.GotoDeclarationOrUsageHandler2.Companion.gotoDeclarationOrUsages via reflection",
+                        t,
+                    )
+                    nextLookupRetryAtMillis = System.currentTimeMillis() + LOOKUP_RETRY_BACKOFF_MS
+                    null
                 }
-            } catch (t: Throwable) {
-                @Suppress("LongLine") LOG.warn(
-                    "Failed to resolve com.intellij.codeInsight.navigation.actions.GotoDeclarationOrUsageHandler2.Companion.gotoDeclarationOrUsages via reflection",
-                    t,
-                )
-                // On failure, the lazy property will be initialized to null.
-                null
             }
         }
 
@@ -137,10 +154,9 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
             ) {
                 // 1) Resolve the private companion non `@JvmStatic` method (cached):
                 // gotoDeclarationOrUsages(Project, Editor, PsiFile, Int): GTDUActionData?
-                val gotoDeclarationOrUsagesInvoker: (Project, Editor, PsiFile, Int) -> Any? =
-                    gotoDeclarationOrUsagesCachedInvoker ?: return@underModalProgress null
+                val gotoDeclarationOrUsagesInvoker: GotoDeclarationOrUsagesInvoker = resolveGotoDeclarationOrUsagesInvoker() ?: return@underModalProgress null
                 val actionData: Any = try {
-                    gotoDeclarationOrUsagesInvoker(project, editor, file, offset)
+                    gotoDeclarationOrUsagesInvoker.invoke(project, editor, file, offset)
                 } catch (t: Throwable) {
                     LOG.warn("Failed to invoke gotoDeclarationOrUsages", t)
                     return@underModalProgress null
@@ -187,6 +203,10 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
             }
 
             return actionResult
+        }
+
+        fun interface GotoDeclarationOrUsagesInvoker {
+            fun invoke(project: Project, editor: Editor, file: PsiFile, offset: Int): Any?
         }
     }
 
