@@ -36,7 +36,6 @@ import org.insilications.openinsplit.find.actions.ShowUsagesActionSplit.Companio
 import org.insilications.openinsplit.find.actions.findShowUsages
 import org.jetbrains.annotations.ApiStatus
 import java.lang.invoke.MethodHandle
-import java.lang.invoke.MethodHandleProxies
 import java.lang.invoke.MethodHandles
 import java.lang.invoke.MethodType
 import java.lang.reflect.Field
@@ -122,7 +121,9 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
                         ),
                     )
 
-                    val invoker: GotoDeclarationOrUsagesInvoker = MethodHandleProxies.asInterfaceInstance(GotoDeclarationOrUsagesInvoker::class.java, handle)
+                    val invoker: GotoDeclarationOrUsagesInvoker = GotoDeclarationOrUsagesInvoker { projectArg, editorArg, fileArg, offsetArg ->
+                        handle.invoke(projectArg, editorArg, fileArg, offsetArg)
+                    }
                     gotoDeclarationOrUsagesInvoker = invoker
                     nextLookupRetryAtMillis = 0
                     invoker
@@ -137,10 +138,10 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
             }
         }
 
-        // Per-class caches: `Method` must be invoked on an instance of its declaring class.
-        private val actionDataResultMethodCache = ConcurrentHashMap<Class<*>, Method>()
-        private val resultNavGetterCache = ConcurrentHashMap<Class<*>, Method>()
-        private val resultTargetVariantsGetterCache = ConcurrentHashMap<Class<*>, Method>()
+        // Per-class caches: `MethodHandle` must be invoked on an instance of its declaring class.
+        private val actionDataResultMethodCache = ConcurrentHashMap<Class<*>, MethodHandle>()
+        private val resultNavGetterCache = ConcurrentHashMap<Class<*>, MethodHandle>()
+        private val resultTargetVariantsGetterCache = ConcurrentHashMap<Class<*>, MethodHandle>()
 
         /**
          * Reflectively call `com.intellij.codeInsight.navigation.actions.GotoDeclarationOrUsageHandler2.Companion.gotoDeclarationOrUsages`
@@ -148,13 +149,15 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
          * on a web of internal/private functions and types, so reimplementing it is expensive. We are forced to use reflection.
          */
         private fun gotoDeclarationOrUsages_HACK(project: Project, editor: Editor, file: PsiFile, offset: Int): GTDUActionResultMirror? {
+            // 1) Pre-resolve the reflective invoker for the private companion non `@JvmStatic` method outside the modal read section
+            // so the initial lookup no longer runs under the PSI read lock:
+            // gotoDeclarationOrUsages(Project, Editor, PsiFile, Int): GTDUActionData?
+            val gotoDeclarationOrUsagesInvoker: GotoDeclarationOrUsagesInvoker = resolveGotoDeclarationOrUsagesInvoker() ?: return null
+
             val actionResult: GTDUActionResultMirror? = underModalProgress(
                 project,
                 CodeInsightBundle.message("progress.title.resolving.reference"),
             ) {
-                // 1) Resolve the private companion non `@JvmStatic` method (cached):
-                // gotoDeclarationOrUsages(Project, Editor, PsiFile, Int): GTDUActionData?
-                val gotoDeclarationOrUsagesInvoker: GotoDeclarationOrUsagesInvoker = resolveGotoDeclarationOrUsagesInvoker() ?: return@underModalProgress null
                 val actionData: Any = try {
                     gotoDeclarationOrUsagesInvoker.invoke(project, editor, file, offset)
                 } catch (t: Throwable) {
@@ -164,34 +167,54 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
 
                 // 2) Resolve the internal GTDUActionData.result(): GTDUActionResult?
                 val actionDataClass: Class<Any> = actionData.javaClass
-                val resultMethod: Method =
+                val resultMethod: MethodHandle =
                     actionDataResultMethodCache[actionDataClass] ?: actionDataClass.methods.firstOrNull { it.name == "result" && it.parameterCount == 0 }
-                        ?.also { it.isAccessible = true; actionDataResultMethodCache[actionDataClass] = it } ?: return@underModalProgress null
+                        ?.also { it.isAccessible = true }?.let { MethodHandles.lookup().unreflect(it) }
+                        ?.also { actionDataResultMethodCache[actionDataClass] = it } ?: return@underModalProgress null
                 // Call GTDUActionData.result(): GTDUActionResult?
-                val rawResult = resultMethod.invoke(actionData) ?: return@underModalProgress null
+                val rawResult = try {
+                    resultMethod.invoke(actionData)
+                } catch (t: Throwable) {
+                    LOG.warn("Failed to invoke GTDUActionData.result()", t)
+                    return@underModalProgress null
+                } ?: return@underModalProgress null
 
                 // 3) Distinguish the `GTDUActionResult.GTD` vs `GTDUActionResult.SU` classes via Java-style getters
                 // `GTDUActionResult.GTD` holds the `navigationActionResult` property of type `NavigationActionResult`
                 // `GTDUActionResult.SU` holds the `targetVariants` property, a `List<TargetVariant>`
                 val resultClass: Class<Any> = rawResult.javaClass
-                val navMethod: Method? =
+                val navMethod: MethodHandle? =
                     resultNavGetterCache[resultClass] ?: resultClass.methods.firstOrNull { it.name == "getNavigationActionResult" && it.parameterCount == 0 }
-                        ?.also { resultNavGetterCache[resultClass] = it }
-                val tvMethod: Method? =
+                        ?.also { it.isAccessible = true }?.let { MethodHandles.lookup().unreflect(it) }?.also { resultNavGetterCache[resultClass] = it }
+                val tvMethod: MethodHandle? =
                     resultTargetVariantsGetterCache[resultClass] ?: resultClass.methods.firstOrNull { it.name == "getTargetVariants" && it.parameterCount == 0 }
+                        ?.also { it.isAccessible = true }?.let { MethodHandles.lookup().unreflect(it) }
                         ?.also { resultTargetVariantsGetterCache[resultClass] = it }
 
                 when {
                     navMethod != null -> {
                         // Get the `navigationActionResult` property value of type `NavigationActionResult`
-                        val navigationActionResult: NavigationActionResult = navMethod.invoke(rawResult)!! as NavigationActionResult
+                        val navigationActionResult = try {
+                            navMethod.invoke(rawResult)
+                        } catch (t: Throwable) {
+                            LOG.warn("Failed to obtain navigationActionResult", t)
+                            return@underModalProgress null
+                        } as? NavigationActionResult ?: return@underModalProgress null
                         GTDUActionResultMirror.GTD(navigationActionResult)
                     }
 
                     tvMethod != null -> {
                         // Get the `targetVariants` property value, a `List<TargetVariant>`
-                        @Suppress("UNCHECKED_CAST") val variants = tvMethod.invoke(rawResult) as? List<Any?> ?: return@underModalProgress null
-                        if (variants.isEmpty() || variants.any { it == null }) return@underModalProgress null
+                        @Suppress("UNCHECKED_CAST") val variants = try {
+                            tvMethod.invoke(rawResult) as? List<Any?>
+                        } catch (t: Throwable) {
+                            LOG.warn("Failed to obtain targetVariants", t)
+                            return@underModalProgress null
+                        } ?: return@underModalProgress null
+                        if (variants.isEmpty()) return@underModalProgress null
+                        for (item in variants) {
+                            if (item == null) return@underModalProgress null
+                        }
 
                         @Suppress("UNCHECKED_CAST") val nonNullVariants = variants as List<Any>
 
