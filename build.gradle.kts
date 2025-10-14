@@ -116,9 +116,8 @@ kotlin {
 
 sourceSets {
     main {
-        // The Kotlin plugin already does this implicitly, but being explicit
-        // can make the build script easier for others to understand.
-        java.srcDirs("src/main/kotlin")
+        java.srcDirs("src/main")
+        kotlin.srcDirs("src/main")
     }
 }
 

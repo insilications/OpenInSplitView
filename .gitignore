@@ -1,7 +1,6 @@
 # Gradle files
 .gradle/
 build/
-gradle/wrapper/gradle-wrapper.jar
 
 # IntelliJ IDEA
 .idea/
@@ -44,9 +43,6 @@ Thumbs.db
 
 # Virtual machine crash logs
 hs_err_pid*
-
-# Built plugin
-build/distributions/
 
 self-update.lock
 
