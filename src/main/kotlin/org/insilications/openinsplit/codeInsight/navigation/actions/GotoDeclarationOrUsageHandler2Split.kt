@@ -67,6 +67,7 @@ sealed class GTDUActionResultMirror {
 class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
     companion object {
         private val LOG: Logger = Logger.getInstance("org.insilications.openinsplit")
+        private const val DUMB_MODE_NOTIFICATION_KEY: String = "GotoDeclarationOrUsageSplit"
 
         /**
          * Cache reflective lookups to avoid repeated scanning on every invocation.
@@ -279,9 +280,10 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
                 }
             }
         } catch (_: IndexNotReadyException) {
-            DumbService.getInstance(project).showDumbModeNotificationForFunctionality(
+            DumbService.getInstance(project).showDumbModeNotificationForFunctionalityWithCoalescing(
                 CodeInsightBundle.message("message.navigation.is.not.available.here.during.index.update"),
                 DumbModeBlockedFunctionality.GotoDeclarationOrUsage,
+                DUMB_MODE_NOTIFICATION_KEY,
             )
         }
     }
@@ -342,9 +344,10 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
                 createVariantHandler(project, editor, popupPosition, searchScope),
             )
         } catch (_: IndexNotReadyException) {
-            DumbService.getInstance(project).showDumbModeNotificationForFunctionality(
+            DumbService.getInstance(project).showDumbModeNotificationForFunctionalityWithCoalescing(
                 CodeInsightBundle.message("message.navigation.is.not.available.here.during.index.update"),
                 DumbModeBlockedFunctionality.GotoDeclarationOrUsage,
+                DUMB_MODE_NOTIFICATION_KEY,
             )
         }
     }
