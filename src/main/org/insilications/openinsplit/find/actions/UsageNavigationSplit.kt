@@ -54,7 +54,8 @@ class UsageNavigationSplit(private val project: Project, private val cs: Corouti
             IdeDocumentHistory.getInstance(project).includeCurrentCommandAsNavigation()
             if (usage is UsageInfo2UsageAdapter) {
                 // We preemptively set the current split view (window) to the adjacent split view or a new split view
-                // This forces the calls to `navigate` methods to use that adjacent split view. This workaround might be fragile, but it works perfectly
+                // This forces subsequent calls to Intellij Platform API's `navigate` methods to use the adjacent split view.
+                // This workaround might be fragile, but it works perfectly
                 getAdjacentSplitView(project, usage.file)
                 LOG.debug { "0 navigateAndHint - usage is ${usage::class.simpleName}" }
             } else {
@@ -62,6 +63,7 @@ class UsageNavigationSplit(private val project: Project, private val cs: Corouti
                 LOG.debug { "1 navigateAndHint - usage is ${usage::class.simpleName}" }
             }
 
+            // Delegate the actual navigation to the Intellij Platform API's `navigate` overload at `platform/ide/navigation/impl/IdeNavigationService.kt`
             NavigationService.getInstance(project).navigate(usage, navigationOptionsRequestFocus, dataContext)
             writeIntentReadAction {
                 onReady.run()
@@ -74,8 +76,7 @@ class UsageNavigationSplit(private val project: Project, private val cs: Corouti
             // The coroutine context is `Dispatchers.Default`
             val (request: NavigationRequest?, file: VirtualFile?) = readAction {
                 val file: VirtualFile = info.virtualFile ?: return@readAction null to null
-                NavigationRequest
-                    .sourceNavigationRequest(info.project, file, info.navigationOffset) to file
+                NavigationRequest.sourceNavigationRequest(info.project, file, info.navigationOffset) to file
 
             }
 
@@ -92,10 +93,12 @@ class UsageNavigationSplit(private val project: Project, private val cs: Corouti
                 // History update on EDT
                 IdeDocumentHistory.getInstance(project).includeCurrentCommandAsNavigation()
                 // We preemptively set the current split view (window) to the adjacent split view or a new split view
-                // This forces the calls to `navigate` methods to use that adjacent split view. This workaround might be fragile, but it works perfectly
+                // This forces subsequent calls to Intellij Platform API's `navigate` methods to use the adjacent split view.
+                // This workaround might be fragile, but it works perfectly
                 getAdjacentSplitView(project, file)
             }
 
+            // Delegate the actual navigation to the Intellij Platform API's `navigate` overload at `platform/ide/navigation/impl/IdeNavigationService.kt`
             NavigationService.getInstance(project).navigate(
                 request,
                 navigationOptionsRequestFocus,

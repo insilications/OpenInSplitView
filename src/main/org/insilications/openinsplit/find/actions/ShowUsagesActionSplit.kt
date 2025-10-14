@@ -72,8 +72,8 @@ class ShowUsagesActionSplit {
             editor: Editor,
             popupPosition: RelativePoint,
             searchScope: SearchScope,
-        ): UsageVariantHandler {
-            return object : UsageVariantHandler {
+        ): UsageVariantHandlerSplit {
+            return object : UsageVariantHandlerSplit {
                 override fun handleTarget(target: SearchTarget) {
                     LOG.debug { "createVariantHandler - handleTarget" }
                     showUsages(
@@ -96,7 +96,7 @@ class ShowUsagesActionSplit {
             val showTargetUsagesActionHandler: ShowUsagesActionHandler = try {
                 createShowTargetUsagesActionHandlerInvoker(project, searchScope, target)
             } catch (t: Throwable) {
-                LOG.warn("Failed to invoke gotoDeclarationOrUsages", t)
+                LOG.warn("Failed to invoke createShowTargetUsagesActionHandlerInvoker", t)
                 return
             }
             showElementUsages(parameters, showTargetUsagesActionHandler)

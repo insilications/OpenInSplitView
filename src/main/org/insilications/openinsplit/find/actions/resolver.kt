@@ -54,19 +54,19 @@ val platformFindShowUsagesInvokerCached: MethodHandle? by lazy(LazyThreadSafetyM
     }
 }
 
-interface UsageVariantHandler {
+interface UsageVariantHandlerSplit {
     @ApiStatus.Internal
     fun handleTarget(target: SearchTarget)
     fun handlePsi(element: PsiElement)
 }
 
-inline fun findShowUsages(
+inline fun findShowUsagesSplit(
     project: Project,
     editor: Editor?,
     popupPosition: RelativePoint,
     allTargets: List<Any>,
     @PopupTitle popupTitle: String,
-    handler: UsageVariantHandler,
+    handler: UsageVariantHandlerSplit,
 ) {
     val platformFindShowUsagesInvoker: MethodHandle? = platformFindShowUsagesInvokerCached
     if (platformFindShowUsagesInvoker == null) {
@@ -87,7 +87,7 @@ inline fun findShowUsages(
     }
 }
 
-fun createPlatformUsageVariantHandlerProxy(handler: UsageVariantHandler): Any? {
+fun createPlatformUsageVariantHandlerProxy(handler: UsageVariantHandlerSplit): Any? {
     val platformUsageVariantHandlerClass: Class<*> = platformUsageVariantHandlerClassCached ?: return null
     return Proxy.newProxyInstance(platformUsageVariantHandlerClass.classLoader, arrayOf(platformUsageVariantHandlerClass)) { proxy, method, args ->
         when (method.name) {

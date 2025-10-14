@@ -25,7 +25,6 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopup
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.psi.PsiFile
-import com.intellij.psi.search.SearchScope
 import com.intellij.ui.awt.RelativePoint
 import com.intellij.ui.list.createTargetPopup
 import com.intellij.util.concurrency.ThreadingAssertions
@@ -33,7 +32,7 @@ import com.intellij.util.concurrency.annotations.RequiresBlockingContext
 import com.intellij.util.concurrency.annotations.RequiresEdt
 import org.insilications.openinsplit.debug
 import org.insilications.openinsplit.find.actions.ShowUsagesActionSplit.Companion.createVariantHandler
-import org.insilications.openinsplit.find.actions.findShowUsages
+import org.insilications.openinsplit.find.actions.findShowUsagesSplit
 import org.jetbrains.annotations.ApiStatus
 import java.lang.invoke.MethodHandle
 import java.lang.invoke.MethodHandles
@@ -300,17 +299,19 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
     ) {
         when (actionResult) {
             is SingleTarget -> {
-                // Just navigate to the single target
+                // Just trigger our custom navigation function for the single navigatable target
                 navigateToRequestor(project, actionResult.requestor, editor)
                 LOG.debug { "gotoDeclarationOnly - SingleTarget" }
             }
 
             is MultipleTargets -> {
+                // Create popup for the user to select a navigatable target
                 val popup: JBPopup = createTargetPopup(
                     CodeInsightBundle.message("declaration.navigation.title"),
                     actionResult.targets, LazyTargetWithPresentation::presentation,
                 ) { (requestor, _, _) ->
-                    // This is our processor. It is called when the user selects an item from the popup.
+                    // We are inside the processor of the created popup. It is called when the user selects a navigatable target from the popup
+                    // Trigger our custom navigation function for the selected navigatable target
                     navigateToRequestor(project, requestor, editor)
                 }
                 popup.showInBestPositionFor(editor)
@@ -334,14 +335,16 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
 
         try {
             val popupPosition: RelativePoint = JBPopupFactory.getInstance().guessBestPopupLocation(editor)
-            val searchScope: SearchScope = FindUsagesOptions.findScopeByName(
-                project,
-                dataContext,
-                FindUsagesSettings.getInstance().defaultScopeName,
-            )
-            findShowUsages(
+            findShowUsagesSplit(
                 project, editor, popupPosition, targetVariants, FindBundle.message("show.usages.ambiguous.title"),
-                createVariantHandler(project, editor, popupPosition, searchScope),
+                createVariantHandler(
+                    project, editor, popupPosition,
+                    FindUsagesOptions.findScopeByName(
+                        project,
+                        dataContext,
+                        FindUsagesSettings.getInstance().defaultScopeName,
+                    ),
+                ),
             )
         } catch (_: IndexNotReadyException) {
             DumbService.getInstance(project).showDumbModeNotificationForFunctionalityWithCoalescing(

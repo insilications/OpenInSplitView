@@ -81,7 +81,8 @@ internal val KEYWORD_CHECK_KEY: Key<KeywordCheck> = Key.create("org.insilication
 
 /**
  * This function is used to preemptively set the current split view (window) to the adjacent split view or a new split view.
- * This forces the calls to `navigate` methods to use that adjacent split view. This workaround might be fragile, but it works perfectly.
+ * This forces subsequent calls to Intellij Platform API's `navigate` methods to use the adjacent split view.
+ * This workaround might be fragile, but it works perfectly.
  *
  * If `nextEditorWindow` equals `activeEditorWindow`, then there is no split view immediately to the right of the active tab's split view.
  * In this case, we create a new split view immediately to the right of the active tab's split view, with `focusNew` parameter set to `true`.
@@ -116,7 +117,8 @@ suspend inline fun getAdjacentSplitView(
 
 /**
  * This function is used to preemptively set the current split view (window) to the adjacent split view or a new split view.
- * This forces the calls to `navigate` methods to use that adjacent split view. This workaround might be fragile, but it works perfectly.
+ * This forces subsequent calls to Intellij Platform API's `navigate` methods to use the adjacent split view.
+ * This workaround might be fragile, but it works perfectly.
  *
  * If `nextEditorWindow` equals `activeEditorWindow`, then there is no split view immediately to the right of the active tab's split view.
  * In this case, we create a new split view immediately to the right of the active tab's split view, with `focusNew` parameter set to `true`.
@@ -204,6 +206,11 @@ inline fun navigateToRequestor(project: Project, requestor: NavigationRequestor,
     runWithModalProgressBlocking(project, progressTitlePreparingNavigation) {
         LOG.debug { "navigateToRequestor - requestor is ${requestor::class.simpleName}" }
 
+        // The call to the `navigationRequest` method is made within a blocking modal progress (background thread), under a prioritized read action,
+        // because it is a moderately CPU-intensive operation that involves reading PSI-related structures.
+        // A blocking modal temporarily prevents user interaction with the rest of the application until it is closed or its progress is complete.
+        // The blocking modal progress prevents UI interactions that may trigger write-intent tasks (e.g., typing, caret moves) that would
+        // otherwise block the read action or freeze the UI.
         val request: NavigationRequest = ProgressManager.getInstance().computePrioritized(
             ThrowableComputable<NavigationRequest?, RuntimeException> {
                 ApplicationManager.getApplication().runReadAction(Computable<NavigationRequest?> { requestor.navigationRequest() })
@@ -222,13 +229,14 @@ inline fun navigateToRequestor(project: Project, requestor: NavigationRequestor,
             // History update on EDT
             IdeDocumentHistory.getInstance(project).includeCurrentCommandAsNavigation()
             // We preemptively set the current split view (window) to the adjacent split view or a new split view
-            // This forces the calls to `navigate` methods to use that adjacent split view. This workaround might be fragile, but it works perfectly
+            // This forces subsequent calls to Intellij Platform API's `navigate` methods to use the adjacent split view.
+            // This workaround might be fragile, but it works perfectly
             getAdjacentSplitView(project) {
                 getVirtualFileFromNavigationRequest(request)
             }
         }
 
-        // Delegate to the platform's `IdeNavigationService.kt` to perform actual navigation
+        // Delegate the actual navigation to the Intellij Platform API's `navigate` overload at `platform/ide/navigation/impl/IdeNavigationService.kt`
         project.serviceAsync<NavigationService>().navigate(request, navigationOptionsRequestFocus, dataContext)
     }
 }
@@ -254,13 +262,14 @@ inline fun navigateToNavigatable(project: Project, navigatable: Navigatable, dat
             // History update on EDT
             IdeDocumentHistory.getInstance(project).includeCurrentCommandAsNavigation()
             // We preemptively set the current split view (window) to the adjacent split view or a new split view
-            // This forces the calls to `navigate` methods to use that adjacent split view. This workaround might be fragile, but it works perfectly
+            // This forces subsequent calls to Intellij Platform API's `navigate` methods to use the adjacent split view.
+            // This workaround might be fragile, but it works perfectly
             getAdjacentSplitView(project) {
                 getVirtualFileFromNavigatable(navigatable)
             }
         }
 
-        // Delegate to the platform's `IdeNavigationService.kt` to perform actual navigation
+        // Delegate the actual navigation to the Intellij Platform API's `navigate` overload at `platform/ide/navigation/impl/IdeNavigationService.kt`
         project.serviceAsync<NavigationService>().navigate(navigatable, navigationOptionsRequestFocus, dataContextCheck)
     }
 }
