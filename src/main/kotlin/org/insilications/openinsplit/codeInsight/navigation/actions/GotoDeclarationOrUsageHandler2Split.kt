@@ -28,6 +28,7 @@ import com.intellij.psi.PsiFile
 import com.intellij.psi.search.SearchScope
 import com.intellij.ui.awt.RelativePoint
 import com.intellij.ui.list.createTargetPopup
+import com.intellij.util.concurrency.ThreadingAssertions
 import com.intellij.util.concurrency.annotations.RequiresBlockingContext
 import com.intellij.util.concurrency.annotations.RequiresEdt
 import org.insilications.openinsplit.debug
@@ -201,6 +202,8 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
     @RequiresBlockingContext
     @RequiresEdt
     override fun invoke(project: Project, editor: Editor, file: PsiFile) {
+        ThreadingAssertions.assertEventDispatchThread()
+
         if (navigateToLookupItem(project, editor)) {
             LOG.debug { "navigateToLookupItem" }
         }
