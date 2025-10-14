@@ -28,6 +28,7 @@ import com.intellij.openapi.fileEditor.impl.EditorWindow
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Computable
+import com.intellij.openapi.util.Key
 import com.intellij.openapi.util.ThrowableComputable
 import com.intellij.openapi.util.registry.Registry
 import com.intellij.openapi.vfs.VirtualFile
@@ -39,6 +40,8 @@ import com.intellij.platform.ide.progress.runWithModalProgressBlocking
 import com.intellij.pom.Navigatable
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
+import com.intellij.psi.SmartPointerManager
+import com.intellij.psi.SmartPsiElementPointer
 import com.intellij.psi.util.PsiUtilCore
 import com.intellij.util.concurrency.annotations.RequiresBlockingContext
 import com.intellij.util.concurrency.annotations.RequiresEdt
@@ -55,6 +58,9 @@ import java.awt.event.MouseEvent
 import javax.swing.SwingConstants
 
 val LOG: Logger = Logger.getInstance("org.insilications.openinsplit")
+
+@PublishedApi
+internal val LOOKUP_TARGET_POINTER_KEY: Key<SmartPsiElementPointer<PsiElement>> = Key.create("org.insilications.openinsplit.lookupTargetPointer")
 
 /**
  * This function is used to preemptively set the current split view (window) to the adjacent split view or a new split view.
@@ -131,11 +137,40 @@ suspend inline fun getAdjacentSplitView(
 @RequiresEdt
 inline fun navigateToLookupItem(project: Project, editor: Editor): Boolean {
     val activeLookup: LookupEx = LookupManager.getInstance(project).activeLookup ?: return false
-    val currentItem: LookupElement? = activeLookup.currentItem
+    val currentItem: LookupElement = activeLookup.currentItem ?: return false
+    if (!currentItem.isValid()) {
+        currentItem.putUserData(LOOKUP_TARGET_POINTER_KEY, null)
+        return false
+    }
+
+    val pointerResult: Pair<SmartPsiElementPointer<PsiElement>, Boolean>? = ApplicationManager.getApplication().runReadAction(
+        Computable<Pair<SmartPsiElementPointer<PsiElement>, Boolean>?> {
+            val cachedPointer: SmartPsiElementPointer<PsiElement>? = currentItem.getUserData(LOOKUP_TARGET_POINTER_KEY)
+            val cachedElement: PsiElement? = cachedPointer?.element
+            if (cachedElement != null && cachedElement.isValid) {
+                cachedPointer to false
+            } else {
+                val target: PsiElement = targetElementFromLookupElement(currentItem) ?: return@Computable null
+                if (!target.isValid) return@Computable null
+                SmartPointerManager.getInstance(project).createSmartPsiElementPointer(target) to true
+            }
+        },
+    )
+
+    val pointer: SmartPsiElementPointer<PsiElement>? = pointerResult?.first
+    if (pointer == null) {
+        currentItem.putUserData(LOOKUP_TARGET_POINTER_KEY, null)
+        return false
+    }
+    if (pointerResult.second) {
+        currentItem.putUserData(LOOKUP_TARGET_POINTER_KEY, pointer)
+    }
+
     navigateToRequestor(
         project,
         {
-            targetElementFromLookupElement(currentItem)?.gtdTargetNavigatable()?.navigationRequest()
+            val element: PsiElement = pointer.element ?: return@navigateToRequestor null
+            element.gtdTargetNavigatable()?.navigationRequest()
         },
         editor,
     )
