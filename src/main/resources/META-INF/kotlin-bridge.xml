@@ -19,7 +19,7 @@
     </extensions>
 
     <extensions defaultExtensionNs="org.insilications.openinsplit">
-        <gotoSuperActionSplit implementation="org.insilications.openinsplit.bridge.impl.KotlinGoToSuperDeclarationsHandlerSplit"/>
+        <gotoSuperActionSplit implementation="org.insilications.openinsplit.bridge.KotlinGoToSuperDeclarationsHandlerSplit"/>
     </extensions>
 
     <actions>

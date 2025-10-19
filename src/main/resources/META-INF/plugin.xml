@@ -5,8 +5,11 @@
     <!-- See https://plugins.jetbrains.com/docs/intellij/plugin-compatibility.html on how to target different products -->
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.lang</depends>
-    <!-- Kotlin is optional -->
+
+    <!--  Optional dependency on the Kotlin plugin -->
     <depends config-file="kotlin-bridge.xml" optional="true">org.jetbrains.kotlin</depends>
+    <!-- Optional dependency on the Java plugin -->
+    <depends optional="true" config-file="java-bridge.xml">com.intellij.java</depends>
 
     <extensions defaultExtensionNs="org.jetbrains.kotlin">
         <supportsKotlinPluginMode supportsK2="true"/>

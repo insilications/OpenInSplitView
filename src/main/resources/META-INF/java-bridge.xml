@@ -1,0 +1,7 @@
+<idea-plugin>
+    <!-- Loaded only if com.intellij.java is installed and enabled -->
+
+    <extensions defaultExtensionNs="org.insilications.openinsplit">
+        <gotoSuperActionSplit implementation="org.insilications.openinsplit.bridge.JavaGotoSuperHandlerSplit"/>
+    </extensions>
+</idea-plugin>

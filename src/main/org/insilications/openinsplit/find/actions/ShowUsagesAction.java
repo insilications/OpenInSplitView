@@ -239,10 +239,7 @@ public final class ShowUsagesAction {
     }
 
     @ApiStatus.Internal
-    private static void startFindUsagesWithResult(@NotNull PsiElement element,
-                                                  @NotNull RelativePoint popupPosition,
-                                                  @Nullable Editor editor,
-                                                  @Nls @NotNull String title) {
+    private static void startFindUsagesWithResult(@NotNull PsiElement element, @NotNull RelativePoint popupPosition, @Nullable Editor editor, @Nls @NotNull String title) {
         Project project = element.getProject();
         FindUsagesManager findUsagesManager = ((FindManagerImpl) FindManager.getInstance(project)).getFindUsagesManager();
         FindUsagesHandlerBase handler;
@@ -273,10 +270,7 @@ public final class ShowUsagesAction {
     }
 
     public static void startFindUsages(@NotNull PsiElement element, @NotNull RelativePoint popupPosition, @Nullable Editor editor) {
-        ReadAction.nonBlocking(() -> getUsagesTitle(element))
-                .expireWhen(() -> editor != null && editor.isDisposed())
-                .finishOnUiThread(ModalityState.nonModal(), title -> startFindUsagesWithResult(element, popupPosition, editor, title))
-                .submit(AppExecutorUtil.getAppExecutorService());
+        ReadAction.nonBlocking(() -> getUsagesTitle(element)).expireWhen(() -> editor != null && editor.isDisposed()).finishOnUiThread(ModalityState.nonModal(), title -> startFindUsagesWithResult(element, popupPosition, editor, title)).submit(AppExecutorUtil.getAppExecutorService());
     }
 
     private static void rulesChanged(@NotNull UsageViewImpl usageView, @NotNull PingEDT pingEDT, JBPopup popup) {
@@ -299,8 +293,7 @@ public final class ShowUsagesAction {
             type = type.bold();
         }
 
-        builder.append(type).nbsp().
-                append(HtmlChunk.text(UsageViewUtil.getLongName(element)).bold());
+        builder.append(type).nbsp().append(HtmlChunk.text(UsageViewUtil.getLongName(element)).bold());
 
         if (element instanceof NavigationItem) {
             ItemPresentation itemPresentation = ((NavigationItem) element).getPresentation();
@@ -314,13 +307,10 @@ public final class ShowUsagesAction {
 
     private static @NotNull HtmlChunk getLocationString(@Nls @NotNull String locationString) {
         Color color = ExperimentalUI.isNewUI() ? JBUI.CurrentTheme.ContextHelp.FOREGROUND : SimpleTextAttributes.GRAY_ATTRIBUTES.getFgColor();
-        return HtmlChunk.text(locationString).
-                wrapWith("font").attr("color", "#" + ColorUtil.toHex(color));
+        return HtmlChunk.text(locationString).wrapWith("font").attr("color", "#" + ColorUtil.toHex(color));
     }
 
-    private static @NotNull ShowUsagesActionHandler createActionHandler(@NotNull FindUsagesHandlerBase handler,
-                                                                        @NotNull FindUsagesOptions options,
-                                                                        @Nls @NotNull String title) {
+    private static @NotNull ShowUsagesActionHandler createActionHandler(@NotNull FindUsagesHandlerBase handler, @NotNull FindUsagesOptions options, @Nls @NotNull String title) {
         // show super method warning dialogs before starting finding usages
         PsiElement[] primaryElements = handler.getPrimaryElements();
         PsiElement[] secondaryElements = handler.getSecondaryElements();
@@ -377,11 +367,7 @@ public final class ShowUsagesAction {
             public void findUsages() {
                 Project project = handler.getProject();
                 FindUsagesManager findUsagesManager = ((FindManagerImpl) FindManager.getInstance(project)).getFindUsagesManager();
-                findUsagesManager.findUsages(
-                        handler.getPrimaryElements(), handler.getSecondaryElements(),
-                        handler, options,
-                        FindUsagesSettings.getInstance().isSkipResultsWithOneUsage()
-                );
+                findUsagesManager.findUsages(handler.getPrimaryElements(), handler.getSecondaryElements(), handler, options, FindUsagesSettings.getInstance().isSkipResultsWithOneUsage());
             }
 
             @Override
@@ -422,8 +408,7 @@ public final class ShowUsagesAction {
         showElementUsagesWithResult(parameters, actionHandler);
     }
 
-    private static void showElementUsagesWithResult(@NotNull ShowUsagesParameters parameters,
-                                                    @NotNull ShowUsagesActionHandler actionHandler) {
+    private static void showElementUsagesWithResult(@NotNull ShowUsagesParameters parameters, @NotNull ShowUsagesActionHandler actionHandler) {
 //        ThreadingAssertions.assertEventDispatchThread();
         Project project = parameters.project;
         UsageViewImpl usageView = actionHandler.createUsageView(project);
@@ -443,9 +428,7 @@ public final class ShowUsagesAction {
         return null;
     }
 
-    public static void showElementUsagesWithResult(@NotNull ShowUsagesParameters parameters,
-                                                   @NotNull ShowUsagesActionHandler actionHandler,
-                                                   @NotNull UsageViewImpl usageView) {
+    public static void showElementUsagesWithResult(@NotNull ShowUsagesParameters parameters, @NotNull ShowUsagesActionHandler actionHandler, @NotNull UsageViewImpl usageView) {
         Project project = parameters.project;
         final SearchScope searchScope = actionHandler.getSelectedScope();
         final AtomicInteger outOfScopeUsages = new AtomicInteger();
@@ -467,11 +450,7 @@ public final class ShowUsagesAction {
 
         ShowUsagesPopupData showUsagesPopupData = new ShowUsagesPopupData(parameters, table, actionHandler);
 
-        Runnable itemChosenCallback = table.prepareTable(
-                showMoreUsagesRunnable(parameters, actionHandler),
-                showUsagesInMaximalScopeRunnable(parameters, actionHandler, showUsagesPopupData),
-                parameters
-        );
+        Runnable itemChosenCallback = table.prepareTable(showMoreUsagesRunnable(parameters, actionHandler), showUsagesInMaximalScopeRunnable(parameters, actionHandler, showUsagesPopupData), parameters);
 
         Consumer<AbstractPopup> tableResizer = popup -> {
             if (popup != null && popup.isVisible() && !manuallyResized.get()) {
@@ -528,15 +507,9 @@ public final class ShowUsagesAction {
                 DefaultActionGroup filteringActions = popup.getUserData(DefaultActionGroup.class);
                 if (filteringActions == null) return;
 
-                List<ToggleAction> unselectedActions = Arrays.stream(filteringActions.getChildren(ActionManager.getInstance()))
-                        .filter(action -> action instanceof ToggleAction)
-                        .map(action -> (ToggleAction) action)
-                        .filter(ta -> !ta.isSelected(fakeEvent(ta)))
-                        .filter(ta -> !StringUtil.isEmpty(ta.getTemplatePresentation().getText()))
-                        .collect(Collectors.toList());
-                data.add(new FilteredOutUsagesNode(table.USAGES_FILTERED_OUT_SEPARATOR,
-                        UsageViewBundle.message("usages.were.filtered.out", filteredOutCount),
-                        UsageViewBundle.message("usages.were.filtered.out.tooltip")) {
+                List<ToggleAction> unselectedActions =
+                        Arrays.stream(filteringActions.getChildren(ActionManager.getInstance())).filter(action -> action instanceof ToggleAction).map(action -> (ToggleAction) action).filter(ta -> !ta.isSelected(fakeEvent(ta))).filter(ta -> !StringUtil.isEmpty(ta.getTemplatePresentation().getText())).collect(Collectors.toList());
+                data.add(new FilteredOutUsagesNode(table.USAGES_FILTERED_OUT_SEPARATOR, UsageViewBundle.message("usages.were.filtered.out", filteredOutCount), UsageViewBundle.message("usages.were.filtered.out.tooltip")) {
                     @Override
                     public void onSelected() {
                         actionHandler.beforeClose(CLOSE_REASON_RESET_FILTERS);
@@ -601,54 +574,49 @@ public final class ShowUsagesAction {
         };
 
         UsageSearcher usageSearcher = actionHandler.createUsageSearcher();
-        FindUsagesManager.startProcessUsages(indicator, project, usageSearcher, collect, () -> ApplicationManager.getApplication().invokeLater(
-                () -> {
-                    showUsagesPopupData.header.disposeProcessIcon();
-                    pingEDT.ping(); // repaint status
-                    synchronized (usages) {
-                        if (visibleUsages.isEmpty()) {
-                            if (usages.isEmpty()) {
-                                String hint = UsageViewBundle.message("no.usages.found.in", searchScope.getDisplayName());
-                                cancelAndShowHint(popup, false, hint, parameters, actionHandler);
-                            }
-                            // else all usages filtered out
-                        } else if (visibleUsages.size() == 1 && actionHandler.navigateToSingleUsageImmediately()) {
-                            final BiConsumer<Usage, String> onReady = (Usage usage, @Nls String hint) -> {
-                                var newEditor = getEditorFor(usage);
-                                if (newEditor != null && parameters.editor != null) {
-                                    cancelAndShowHint(popup, false, hint, parameters, actionHandler);
-                                } else {
-                                    cancel(popup);
-                                }
-                            };
+        FindUsagesManager.startProcessUsages(indicator, project, usageSearcher, collect, () -> ApplicationManager.getApplication().invokeLater(() -> {
+            showUsagesPopupData.header.disposeProcessIcon();
+            pingEDT.ping(); // repaint status
+            synchronized (usages) {
+                if (visibleUsages.isEmpty()) {
+                    if (usages.isEmpty()) {
+                        String hint = UsageViewBundle.message("no.usages.found.in", searchScope.getDisplayName());
+                        cancelAndShowHint(popup, false, hint, parameters, actionHandler);
+                    }
+                    // else all usages filtered out
+                } else if (visibleUsages.size() == 1 && actionHandler.navigateToSingleUsageImmediately()) {
+                    final BiConsumer<Usage, String> onReady = (Usage usage, @Nls String hint) -> {
+                        var newEditor = getEditorFor(usage);
+                        if (newEditor != null && parameters.editor != null) {
+                            cancelAndShowHint(popup, false, hint, parameters, actionHandler);
+                        } else {
+                            cancel(popup);
+                        }
+                    };
 
-                            if (usages.size() == 1) {
-                                // The only usage
-                                Usage usage = visibleUsages.iterator().next();
-                                if (usage == table.USAGES_OUTSIDE_SCOPE_SEPARATOR) {
-                                    String hint = UsageViewManagerImpl.outOfScopeMessage(outOfScopeUsages.get(), searchScope);
-                                    cancelAndShowHint(popup, true, hint, parameters, actionHandler);
-                                } else {
-                                    String hint = UsageViewBundle.message("show.usages.only.usage", searchScope.getDisplayName());
-                                    UsageNavigationSplit.getInstance(project).navigateToUsageAndHint(
-                                            usage, () -> onReady.accept(usage, hint), parameters.editor);
-                                    utils.debug(LOG, () -> "showElementUsagesWithResult - usages.size() == 1");
-                                }
-                            } else {
-                                // usage view can filter usages down to one
-                                Usage visibleUsage = visibleUsages.iterator().next();
-                                if (areAllUsagesInOneLine(visibleUsage, usages)) {
-                                    String hint = UsageViewBundle.message("all.usages.are.in.this.line", usages.size(), searchScope.getDisplayName());
-                                    UsageNavigationSplit.getInstance(project).navigateToUsageAndHint(
-                                            visibleUsage, () -> onReady.accept(visibleUsage, hint), parameters.editor);
-                                    utils.debug(LOG, () -> "showElementUsagesWithResult - usages.size() != 1");
-                                }
-                            }
+                    if (usages.size() == 1) {
+                        // The only usage
+                        Usage usage = visibleUsages.iterator().next();
+                        if (usage == table.USAGES_OUTSIDE_SCOPE_SEPARATOR) {
+                            String hint = UsageViewManagerImpl.outOfScopeMessage(outOfScopeUsages.get(), searchScope);
+                            cancelAndShowHint(popup, true, hint, parameters, actionHandler);
+                        } else {
+                            String hint = UsageViewBundle.message("show.usages.only.usage", searchScope.getDisplayName());
+                            UsageNavigationSplit.getInstance(project).navigateToUsageAndHint(usage, () -> onReady.accept(usage, hint), parameters.editor);
+                            utils.debug(LOG, () -> "showElementUsagesWithResult - usages.size() == 1");
+                        }
+                    } else {
+                        // usage view can filter usages down to one
+                        Usage visibleUsage = visibleUsages.iterator().next();
+                        if (areAllUsagesInOneLine(visibleUsage, usages)) {
+                            String hint = UsageViewBundle.message("all.usages.are.in.this.line", usages.size(), searchScope.getDisplayName());
+                            UsageNavigationSplit.getInstance(project).navigateToUsageAndHint(visibleUsage, () -> onReady.accept(visibleUsage, hint), parameters.editor);
+                            utils.debug(LOG, () -> "showElementUsagesWithResult - usages.size() != 1");
                         }
                     }
-                },
-                project.getDisposed()
-        ));
+                }
+            }
+        }, project.getDisposed()));
         actionHandler.afterOpen(popup);
     }
 
@@ -659,9 +627,7 @@ public final class ShowUsagesAction {
     }
 
     private static @NotNull AnActionEvent fakeEvent(@NotNull ToggleAction action) {
-        return AnActionEvent.createEvent(
-                DataContext.EMPTY_CONTEXT,
-                action.getTemplatePresentation().clone(), ActionPlaces.UNKNOWN, ActionUiKind.NONE, null);
+        return AnActionEvent.createEvent(DataContext.EMPTY_CONTEXT, action.getTemplatePresentation().clone(), ActionPlaces.UNKNOWN, ActionUiKind.NONE, null);
     }
 
     private static @NotNull Predicate<? super Usage> originUsageCheck(@Nullable Editor editor) {
@@ -669,8 +635,7 @@ public final class ShowUsagesAction {
             PsiReference reference = TargetElementUtil.findReference(editor);
             if (reference != null) {
                 UsageInfo originUsageInfo = new UsageInfo(reference);
-                return usage -> usage instanceof UsageInfo2UsageAdapter &&
-                        ((UsageInfo2UsageAdapter) usage).getUsageInfo().equals(originUsageInfo);
+                return usage -> usage instanceof UsageInfo2UsageAdapter && ((UsageInfo2UsageAdapter) usage).getUsageInfo().equals(originUsageInfo);
             }
 
             VirtualFile file = editor.getVirtualFile();
@@ -709,15 +674,12 @@ public final class ShowUsagesAction {
         return false;
     }
 
-    private static @NotNull JComponent createHintComponent(@NotNull @NlsContexts.HintText String secondInvocationTitle,
-                                                           boolean isWarning,
-                                                           @NotNull JComponent button) {
+    private static @NotNull JComponent createHintComponent(@NotNull @NlsContexts.HintText String secondInvocationTitle, boolean isWarning, @NotNull JComponent button) {
         if (ExperimentalUI.isNewUI()) {
             JPanel panel = new JPanel(new BorderLayout(6, 0));
             panel.putClientProperty(HintHint.OVERRIDE_BORDER_KEY, JBUI.insets(10, 12, 12, 12));
 
-            JComponent label =
-                    isWarning ? HintUtil.createWarningLabel(secondInvocationTitle) : HintUtil.createInformationLabel(secondInvocationTitle);
+            JComponent label = isWarning ? HintUtil.createWarningLabel(secondInvocationTitle) : HintUtil.createInformationLabel(secondInvocationTitle);
             label.setBorder(JBUI.Borders.emptyTop(2));
             panel.add(label, BorderLayout.CENTER);
 
@@ -749,13 +711,9 @@ public final class ShowUsagesAction {
         return panel;
     }
 
-    private static @NotNull InplaceButton createSettingsButton(@NotNull Project project,
-                                                               @NotNull Runnable cancelAction,
-                                                               @NotNull Runnable showDialogAndFindUsagesRunnable) {
+    private static @NotNull InplaceButton createSettingsButton(@NotNull Project project, @NotNull Runnable cancelAction, @NotNull Runnable showDialogAndFindUsagesRunnable) {
         KeyboardShortcut shortcut = UsageViewUtil.getShowUsagesWithSettingsShortcut();
-        String tooltip = shortcut == null
-                ? FindBundle.message("show.usages.settings.tooltip")
-                : FindBundle.message("show.usages.settings.tooltip.shortcut", KeymapUtil.getShortcutText(shortcut));
+        String tooltip = shortcut == null ? FindBundle.message("show.usages.settings.tooltip") : FindBundle.message("show.usages.settings.tooltip.shortcut", KeymapUtil.getShortcutText(shortcut));
         return new InplaceButton(tooltip, AllIcons.General.Settings, __ -> {
             ApplicationManager.getApplication().invokeLater(showDialogAndFindUsagesRunnable, project.getDisposed());
             cancelAction.run();
@@ -791,10 +749,7 @@ public final class ShowUsagesAction {
         }
     }
 
-    private static @NotNull AbstractPopup createUsagePopup(@NotNull UsageViewImpl usageView,
-                                                           @NotNull ShowUsagesPopupData showUsagesPopupData,
-                                                           @NotNull Runnable itemChoseCallback,
-                                                           @NotNull Consumer<? super AbstractPopup> tableResizer) {
+    private static @NotNull AbstractPopup createUsagePopup(@NotNull UsageViewImpl usageView, @NotNull ShowUsagesPopupData showUsagesPopupData, @NotNull Runnable itemChoseCallback, @NotNull Consumer<? super AbstractPopup> tableResizer) {
 //        ThreadingAssertions.assertEventDispatchThread();
 
         @NotNull JTable table = showUsagesPopupData.table;
@@ -814,13 +769,8 @@ public final class ShowUsagesAction {
             advertiserComponent = advertiser.getComponent();
         }
 
-        PopupChooserBuilder<?> builder = JBPopupFactory.getInstance().createPopupChooserBuilder(table).
-                setTitle(showUsagesPopupData.header.getTitle()).
-                setAdvertiser(advertiserComponent).
-                setMovable(true).
-                setResizable(true).
-                setCancelKeyEnabled(true).
-                setDimensionServiceKey(DIMENSION_SERVICE_KEY);
+        PopupChooserBuilder<?> builder =
+                JBPopupFactory.getInstance().createPopupChooserBuilder(table).setTitle(showUsagesPopupData.header.getTitle()).setAdvertiser(advertiserComponent).setMovable(true).setResizable(true).setCancelKeyEnabled(true).setDimensionServiceKey(DIMENSION_SERVICE_KEY);
 
         PropertiesComponent properties = PropertiesComponent.getInstance(project);
         boolean addCodePreview = properties.isValueSet(PREVIEW_PROPERTY_KEY);
@@ -896,8 +846,7 @@ public final class ShowUsagesAction {
         }
         if (!(maximalScope instanceof LocalSearchScope)) {
             DefaultActionGroup scopeChooserGroup = new DefaultActionGroup(createScopeChooser(project, contentDisposable, showUsagesPopupData));
-            ActionToolbar scopeChooserToolbar =
-                    actionManager.createActionToolbar(ActionPlaces.SHOW_USAGES_POPUP_TOOLBAR, scopeChooserGroup, true);
+            ActionToolbar scopeChooserToolbar = actionManager.createActionToolbar(ActionPlaces.SHOW_USAGES_POPUP_TOOLBAR, scopeChooserGroup, true);
             scopeChooserToolbar.setTargetComponent(table);
             scopeChooserToolbar.setLayoutStrategy(ToolbarLayoutStrategy.NOWRAP_STRATEGY);
             ((ActionToolbarImpl) scopeChooserToolbar).setForceMinimumSize(true);
@@ -910,8 +859,7 @@ public final class ShowUsagesAction {
         Dimension fillerSize = JBUI.size(8, 0);
         northPanel.add(new Box.Filler(fillerSize, fillerSize, fillerSize), gc.next().weightx(1.0));
 
-        DefaultActionGroup settingsGroup = new DefaultActionGroup(
-                new SettingsAction(project, () -> cancel(popupRef.get()), showDialogAndRestartRunnable(parameters, actionHandler)));
+        DefaultActionGroup settingsGroup = new DefaultActionGroup(new SettingsAction(project, () -> cancel(popupRef.get()), showDialogAndRestartRunnable(parameters, actionHandler)));
         actionToolbar = createActionToolbar(table, settingsGroup);
         ((ActionToolbarImpl) actionToolbar).setForceMinimumSize(true);
         JComponent settingsToolbarComponent = actionToolbar.getComponent();
@@ -981,8 +929,7 @@ public final class ShowUsagesAction {
                 }
             }.installOn(table);
 
-            builder.setAutoselectOnMouseMove(false).setCloseOnEnter(false).
-                    registerKeyboardAction(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), __ -> itemChoseCallback.run());
+            builder.setAutoselectOnMouseMove(false).setCloseOnEnter(false).registerKeyboardAction(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), __ -> itemChoseCallback.run());
 
             Runnable updatePreviewRunnable = () -> {
                 if (popupRef.get().isDisposed()) return;
@@ -1004,17 +951,14 @@ public final class ShowUsagesAction {
                 String selectedFile = file;
 
                 UsageAdaptersKt.getUsageInfoAsFuture(adapters, project).thenAccept(selectedUsages -> {
-                    ReadAction.nonBlocking(() -> UsagePreviewPanel.isOneAndOnlyOnePsiFileInUsages(selectedUsages))
-                            .finishOnUiThread(ModalityState.nonModal(), isOneAndOnlyOnePsiFileInUsages -> {
-                                usagePreviewPanel.updateLayout(project, selectedUsages);
-                                previewTitle.clear();
+                    ReadAction.nonBlocking(() -> UsagePreviewPanel.isOneAndOnlyOnePsiFileInUsages(selectedUsages)).finishOnUiThread(ModalityState.nonModal(), isOneAndOnlyOnePsiFileInUsages -> {
+                        usagePreviewPanel.updateLayout(project, selectedUsages);
+                        previewTitle.clear();
 
-                                if (isOneAndOnlyOnePsiFileInUsages && selectedFile != null) {
-                                    previewTitle.append(PathUtil.getFileName(selectedFile), SimpleTextAttributes.REGULAR_ATTRIBUTES);
-                                }
-                            })
-                            .expireWith(contentDisposable)
-                            .submit(AppExecutorUtil.getAppExecutorService());
+                        if (isOneAndOnlyOnePsiFileInUsages && selectedFile != null) {
+                            previewTitle.append(PathUtil.getFileName(selectedFile), SimpleTextAttributes.REGULAR_ATTRIBUTES);
+                        }
+                    }).expireWith(contentDisposable).submit(AppExecutorUtil.getAppExecutorService());
                 }).exceptionally(throwable -> {
                     Logger.getInstance(ShowUsagesAction.class).error(throwable);
                     return null;
@@ -1047,9 +991,7 @@ public final class ShowUsagesAction {
         }
 
         if (ExperimentalUI.isNewUI()) {
-            headerPanel.setBorder(
-                    JBUI.Borders.compound(JBUI.Borders.customLineBottom(JBUI.CurrentTheme.CustomFrameDecorations.separatorForeground()),
-                            PopupUtil.getComplexPopupHorizontalHeaderBorder()));
+            headerPanel.setBorder(JBUI.Borders.compound(JBUI.Borders.customLineBottom(JBUI.CurrentTheme.CustomFrameDecorations.separatorForeground()), PopupUtil.getComplexPopupHorizontalHeaderBorder()));
             headerPanel.setBackground(JBUI.CurrentTheme.ComplexPopup.HEADER_BACKGROUND);
 
             Color background = JBUI.CurrentTheme.Popup.BACKGROUND;
@@ -1092,9 +1034,7 @@ public final class ShowUsagesAction {
     private static Border createComplexPopupToolbarBorder() {
         Insets lineInsets = JBUI.CurrentTheme.ComplexPopup.textFieldBorderInsets();
         //noinspection UseDPIAwareBorders
-        return JBUI.Borders.compound(new EmptyBorder(0, lineInsets.left, 4, lineInsets.right),
-                JBUI.Borders.customLineBottom(JBUI.CurrentTheme.CustomFrameDecorations.separatorForeground()),
-                JBUI.Borders.empty(JBUI.CurrentTheme.ComplexPopup.innerBorderInsets()));
+        return JBUI.Borders.compound(new EmptyBorder(0, lineInsets.left, 4, lineInsets.right), JBUI.Borders.customLineBottom(JBUI.CurrentTheme.CustomFrameDecorations.separatorForeground()), JBUI.Borders.empty(JBUI.CurrentTheme.ComplexPopup.innerBorderInsets()));
     }
 
     static @NotNull ActionToolbar createActionToolbar(@NotNull JTable table, @NotNull DefaultActionGroup group) {
@@ -1119,11 +1059,7 @@ public final class ShowUsagesAction {
         }
     }
 
-    private static @NotNull ScopeChooserGroup createScopeChooser(
-            @NotNull Project project,
-            @NotNull Disposable parentDisposable,
-            @NotNull ShowUsagesPopupData showUsagesPopupData
-    ) {
+    private static @NotNull ScopeChooserGroup createScopeChooser(@NotNull Project project, @NotNull Disposable parentDisposable, @NotNull ShowUsagesPopupData showUsagesPopupData) {
         ShowUsagesActionHandler actionHandler = showUsagesPopupData.actionHandler;
         ScopeChooserGroup result = new ScopeChooserGroup(project, parentDisposable, actionHandler.getSelectedScope());
         result.addChangeListener(scope -> {
@@ -1141,8 +1077,7 @@ public final class ShowUsagesAction {
         return result;
     }
 
-    private static @Nls @NotNull String suggestSecondInvocation(@Nls(capitalization = Sentence) @NotNull String text,
-                                                                @Nls(capitalization = Sentence) @Nullable String hint) {
+    private static @Nls @NotNull String suggestSecondInvocation(@Nls(capitalization = Sentence) @NotNull String text, @Nls(capitalization = Sentence) @Nullable String hint) {
         HtmlBuilder builder = new HtmlBuilder().append(text);
         if (hint != null) {
             HtmlChunk chunk = HtmlChunk.text(hint);
@@ -1230,13 +1165,7 @@ public final class ShowUsagesAction {
         return Math.min(ShowUsagesTable.MAX_COLUMN_WIDTH, width);
     }
 
-    private static void rebuildTable(@NotNull Project project,
-                                     @NotNull Predicate<? super Usage> originUsageCheck,
-                                     @NotNull List<UsageNode> data,
-                                     @NotNull ShowUsagesTable table,
-                                     @Nullable AbstractPopup popup,
-                                     @NotNull RelativePoint popupPosition,
-                                     @NotNull IntRef minWidth,
+    private static void rebuildTable(@NotNull Project project, @NotNull Predicate<? super Usage> originUsageCheck, @NotNull List<UsageNode> data, @NotNull ShowUsagesTable table, @Nullable AbstractPopup popup, @NotNull RelativePoint popupPosition, @NotNull IntRef minWidth,
                                      @NotNull AtomicBoolean manuallyResized) {
 //        ThreadingAssertions.assertEventDispatchThread();
 
@@ -1272,10 +1201,7 @@ public final class ShowUsagesAction {
     }
 
     // returns new selection
-    private static int updateModel(@NotNull ShowUsagesTable.MyModel tableModel,
-                                   @NotNull List<? extends UsageNode> listOld,
-                                   @NotNull List<? extends UsageNode> listNew,
-                                   int oldSelection) {
+    private static int updateModel(@NotNull ShowUsagesTable.MyModel tableModel, @NotNull List<? extends UsageNode> listOld, @NotNull List<? extends UsageNode> listNew, int oldSelection) {
         UsageNode[] oa = listOld.toArray(new UsageNode[0]);
         UsageNode[] na = listNew.toArray(new UsageNode[0]);
         List<ModelDiff.Cmd> cmds = ModelDiff.createDiffCmds(tableModel, oa, na);
@@ -1289,12 +1215,7 @@ public final class ShowUsagesAction {
         return selection;
     }
 
-    private static void setPopupSize(@NotNull JTable table,
-                                     @NotNull AbstractPopup popup,
-                                     @NotNull RelativePoint popupPosition,
-                                     @NotNull IntRef minWidth,
-                                     boolean showCodePreview,
-                                     int dataSize) {
+    private static void setPopupSize(@NotNull JTable table, @NotNull AbstractPopup popup, @NotNull RelativePoint popupPosition, @NotNull IntRef minWidth, boolean showCodePreview, int dataSize) {
 
         if (Registry.is("find.usages.disable.smart.size", false)) {
             calcMaxWidth(table);
@@ -1346,8 +1267,7 @@ public final class ShowUsagesAction {
         return content.getClientProperty("THIN_CLIENT") != null;
     }
 
-    private static @NotNull Rectangle getPreferredBounds(@NotNull JTable table, @NotNull Point point, int width, int minHeight, int modelRows,
-                                                         boolean showCodePreview) {
+    private static @NotNull Rectangle getPreferredBounds(@NotNull JTable table, @NotNull Point point, int width, int minHeight, int modelRows, boolean showCodePreview) {
         boolean addExtraSpace = Registry.is("ide.preferred.scrollable.viewport.extra.space");
         int visibleRows = Math.min(showCodePreview ? 20 : 30, modelRows);
         int rowHeight = table.getRowHeight();
@@ -1376,11 +1296,7 @@ public final class ShowUsagesAction {
         }
     }
 
-    private static void cancelAndShowHint(@NotNull AbstractPopup popupToCancel,
-                                          boolean isWarning,
-                                          @Nls(capitalization = Sentence) @NotNull String hint,
-                                          @NotNull ShowUsagesParameters parameters,
-                                          @NotNull ShowUsagesActionHandler actionHandler) {
+    private static void cancelAndShowHint(@NotNull AbstractPopup popupToCancel, boolean isWarning, @Nls(capitalization = Sentence) @NotNull String hint, @NotNull ShowUsagesParameters parameters, @NotNull ShowUsagesActionHandler actionHandler) {
         Project project = parameters.project;
         Editor editor = parameters.editor;
 
@@ -1390,23 +1306,13 @@ public final class ShowUsagesAction {
                 return;
             }
 
-            ReadAction.nonBlocking(
-                    () -> suggestSecondInvocation(hint, getSecondInvocationHint(actionHandler))
-            ).finishOnUiThread(ModalityState.nonModal(), (@NlsContexts.HintText String secondInvocationHintHtml) -> {
+            ReadAction.nonBlocking(() -> suggestSecondInvocation(hint, getSecondInvocationHint(actionHandler))).finishOnUiThread(ModalityState.nonModal(), (@NlsContexts.HintText String secondInvocationHintHtml) -> {
                 if (!actionHandler.isValid()) {
                     cancel(popupToCancel);
                     return;
                 }
 
-                JComponent label = createHintComponent(
-                        secondInvocationHintHtml,
-                        isWarning,
-                        createSettingsButton(
-                                project,
-                                ShowUsagesAction::hideHints,
-                                showDialogAndRestartRunnable(parameters, actionHandler)
-                        )
-                );
+                JComponent label = createHintComponent(secondInvocationHintHtml, isWarning, createSettingsButton(project, ShowUsagesAction::hideHints, showDialogAndRestartRunnable(parameters, actionHandler)));
 
                 Runnable clearContinuation = actionHandler.enableMaximalScopeSearch(parameters);
                 // canceling here, as the action handler becomes not fully valid after the cancellation
@@ -1431,15 +1337,10 @@ public final class ShowUsagesAction {
             });
         } else {
             //opening editor is performing in invokeLater
-            IdeFocusManager.getInstance(project).doWhenFocusSettlesDown(
-                    () -> editor.getScrollingModel().runActionOnScrollingFinished(
-                            () -> {
-                                // after new editor created, some editor resizing events are still bubbling. To prevent hiding hint, invokeLater this
-                                IdeFocusManager.getInstance(project).doWhenFocusSettlesDown(
-                                        () -> AsyncEditorLoader.Companion.performWhenLoaded(editor, runnable)
-                                );
-                            })
-            );
+            IdeFocusManager.getInstance(project).doWhenFocusSettlesDown(() -> editor.getScrollingModel().runActionOnScrollingFinished(() -> {
+                // after new editor created, some editor resizing events are still bubbling. To prevent hiding hint, invokeLater this
+                IdeFocusManager.getInstance(project).doWhenFocusSettlesDown(() -> AsyncEditorLoader.Companion.performWhenLoaded(editor, runnable));
+            }));
         }
     }
 
@@ -1525,8 +1426,7 @@ public final class ShowUsagesAction {
         public abstract void onSelected();
     }
 
-    private static @NotNull Runnable showMoreUsagesRunnable(@NotNull ShowUsagesParameters parameters,
-                                                            @NotNull ShowUsagesActionHandler actionHandler) {
+    private static @NotNull Runnable showMoreUsagesRunnable(@NotNull ShowUsagesParameters parameters, @NotNull ShowUsagesActionHandler actionHandler) {
         return () -> {
             ShowUsagesParameters moreUsagesParameters = actionHandler.moreUsages(parameters);
             if (moreUsagesParameters != null) {
@@ -1535,15 +1435,11 @@ public final class ShowUsagesAction {
         };
     }
 
-    private static @NotNull Runnable showUsagesInMaximalScopeRunnable(@NotNull ShowUsagesParameters parameters,
-                                                                      @NotNull ShowUsagesActionHandler actionHandler,
-                                                                      @Nullable ShowUsagesPopupData showUsagesPopupData) {
+    private static @NotNull Runnable showUsagesInMaximalScopeRunnable(@NotNull ShowUsagesParameters parameters, @NotNull ShowUsagesActionHandler actionHandler, @Nullable ShowUsagesPopupData showUsagesPopupData) {
         return () -> showUsagesInMaximalScope(parameters, actionHandler, showUsagesPopupData);
     }
 
-    private static void showUsagesInMaximalScope(@NotNull ShowUsagesParameters parameters,
-                                                 @NotNull ShowUsagesActionHandler actionHandler,
-                                                 @Nullable ShowUsagesPopupData showUsagesPopupData) {
+    private static void showUsagesInMaximalScope(@NotNull ShowUsagesParameters parameters, @NotNull ShowUsagesActionHandler actionHandler, @Nullable ShowUsagesPopupData showUsagesPopupData) {
         if (showUsagesPopupData != null) {
             cancel(showUsagesPopupData.popupRef.get(), actionHandler, CLOSE_REASON_CHANGE_SCOPE);
         }
@@ -1553,13 +1449,11 @@ public final class ShowUsagesAction {
         }
     }
 
-    private static @NotNull Runnable showDialogAndRestartRunnable(@NotNull ShowUsagesParameters parameters,
-                                                                  @NotNull ShowUsagesActionHandler actionHandler) {
+    private static @NotNull Runnable showDialogAndRestartRunnable(@NotNull ShowUsagesParameters parameters, @NotNull ShowUsagesActionHandler actionHandler) {
         return () -> showDialogAndRestart(parameters, actionHandler);
     }
 
-    private static void showDialogAndRestart(@NotNull ShowUsagesParameters parameters,
-                                             @NotNull ShowUsagesActionHandler actionHandler) {
+    private static void showDialogAndRestart(@NotNull ShowUsagesParameters parameters, @NotNull ShowUsagesActionHandler actionHandler) {
         ShowUsagesActionHandler newActionHandler = actionHandler.showDialog();
         if (newActionHandler != null) {
             showElementUsages(parameters, newActionHandler);

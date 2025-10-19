@@ -12,4 +12,6 @@ interface GotoSuperActionSplitBridge : PresentableCodeInsightActionHandler {
         @JvmField
         val EP_NAME: ExtensionPointName<GotoSuperActionSplitBridge> = ExtensionPointName("org.insilications.openinsplit.gotoSuperActionSplit")
     }
+
+    val goToSuperActionSplitLanguage: String
 }
