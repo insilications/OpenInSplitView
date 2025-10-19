@@ -21,49 +21,52 @@ class ShowUsagesActionSplit {
     companion object {
         private val LOG: Logger = Logger.getInstance("org.insilications.openinsplit")
 
-        private val createShowTargetUsagesActionHandlerCachedInvoker: ((Project, SearchScope, SearchTarget) -> ShowUsagesActionHandler)? by lazy(
-            LazyThreadSafetyMode.PUBLICATION,
-        ) {
-            try {
-                // 1. Get the private method from the ShowUsagesAction class.
-                // We use `getDeclaredMethod` because the method is not public.
-                val method: Method = ShowUsagesAction::class.java.getDeclaredMethod(
-                    "createActionHandler",
-                    Project::class.java,
-                    SearchScope::class.java,
-                    SearchTarget::class.java,
-                ).apply {
-                    // 2. Make it accessible. This is crucial for private members.
-                    isAccessible = true
-                }
+        @Volatile
+        private var createShowTargetUsagesActionHandlerInvoker: CreateShowTargetUsagesActionHandlerInvoker? = null
 
-                // 2. Create a `MethodHandle` with a specific type using `.asType(...)`.
-                // This provides a runtime guarantee and acts as an assertion during initialization.
-                // Additionally, the method is static, we do not need to bind it to an instance.
-                // By creating an adapted handle with a specific type, you provide more information
-                // to the JVM's JIT compiler, which can lead to better performance optimizations
-                // compared to a completely generic handle.
-                val handle: MethodHandle = MethodHandles.lookup().unreflect(method).asType(
-                    MethodType.methodType(
-                        ShowUsagesActionHandler::class.java,
+        @Volatile
+        private var nextLookupRetryAtMillis: Long = 0
+
+        private const val LOOKUP_RETRY_BACKOFF_MS: Long = 5_000
+
+        private fun resolveCreateShowTargetUsagesActionHandlerInvoker(): CreateShowTargetUsagesActionHandlerInvoker? {
+            createShowTargetUsagesActionHandlerInvoker?.let { return it }
+
+            val now: Long = System.currentTimeMillis()
+            if (now < nextLookupRetryAtMillis) return null
+
+            return synchronized(this) {
+                createShowTargetUsagesActionHandlerInvoker?.let { return it }
+                if (System.currentTimeMillis() < nextLookupRetryAtMillis) return@synchronized null
+
+                try {
+                    val method: Method = ShowUsagesAction::class.java.getDeclaredMethod(
+                        "createActionHandler",
                         Project::class.java,
                         SearchScope::class.java,
                         SearchTarget::class.java,
-                    ),
-                );
+                    ).apply { isAccessible = true }
 
-                // 3. Return a strongly-typed lambda that wraps the handle.
-                // The result is cast to the known return type for type safety.
-                { project: Project, searchScope: SearchScope, target: SearchTarget ->
-                    // Call the handle. Because `invokeWithArguments` is statically typed to
-                    // return `Object`, we still need a cast to satisfy the Kotlin compiler.
-                    // This cast is safe because of the `.asType(...)` guarantee above.
-                    handle.invokeWithArguments(project, searchScope, target) as ShowUsagesActionHandler
+                    val handle: MethodHandle = MethodHandles.lookup().unreflect(method).asType(
+                        MethodType.methodType(
+                            ShowUsagesActionHandler::class.java,
+                            Project::class.java,
+                            SearchScope::class.java,
+                            SearchTarget::class.java,
+                        ),
+                    )
+
+                    val invoker = CreateShowTargetUsagesActionHandlerInvoker { projectArg, searchScopeArg, targetArg ->
+                        @Suppress("UNCHECKED_CAST") handle.invoke(projectArg, searchScopeArg, targetArg) as ShowUsagesActionHandler
+                    }
+                    createShowTargetUsagesActionHandlerInvoker = invoker
+                    nextLookupRetryAtMillis = 0
+                    invoker
+                } catch (t: Throwable) {
+                    LOG.warn("Failed to resolve ShowUsagesAction.createActionHandler via reflection.", t)
+                    nextLookupRetryAtMillis = System.currentTimeMillis() + LOOKUP_RETRY_BACKOFF_MS
+                    null
                 }
-            } catch (t: Throwable) {
-                LOG.warn("Failed to resolve ShowUsagesAction.createActionHandler via reflection.", t)
-                // If reflection fails for any reason, the invoker will be null.
-                null
             }
         }
 
@@ -91,15 +94,19 @@ class ShowUsagesActionSplit {
 
         @ApiStatus.Experimental
         fun showUsages(project: Project, searchScope: SearchScope, target: SearchTarget, parameters: ShowUsagesParameters) {
-            val createShowTargetUsagesActionHandlerInvoker: (Project, SearchScope, SearchTarget) -> ShowUsagesActionHandler =
-                createShowTargetUsagesActionHandlerCachedInvoker ?: return
+            val invoker: CreateShowTargetUsagesActionHandlerInvoker = resolveCreateShowTargetUsagesActionHandlerInvoker() ?: return
             val showTargetUsagesActionHandler: ShowUsagesActionHandler = try {
-                createShowTargetUsagesActionHandlerInvoker(project, searchScope, target)
+                invoker.invoke(project, searchScope, target)
             } catch (t: Throwable) {
-                LOG.warn("Failed to invoke createShowTargetUsagesActionHandlerInvoker", t)
+                LOG.warn("Failed to invoke ShowUsagesAction.createActionHandler", t)
                 return
             }
             showElementUsages(parameters, showTargetUsagesActionHandler)
+        }
+
+        @ApiStatus.Experimental
+        fun interface CreateShowTargetUsagesActionHandlerInvoker {
+            fun invoke(project: Project, searchScope: SearchScope, target: SearchTarget): ShowUsagesActionHandler
         }
     }
 }
