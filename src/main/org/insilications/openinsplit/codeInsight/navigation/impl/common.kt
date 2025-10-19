@@ -16,24 +16,22 @@ import com.intellij.pom.Navigatable
 import com.intellij.psi.PsiElement
 import com.intellij.util.concurrency.annotations.RequiresEdt
 import org.jetbrains.annotations.ApiStatus
+import java.awt.Component
 
 @ApiStatus.Experimental
 val navigationOptionsRequestFocus: NavigationOptions = NavigationOptions.requestFocus()
 val progressTitlePreparingNavigation: String = IdeBundle.message("progress.title.preparing.navigation")
 
 inline fun PsiElement.gtdTargetNavigatable(): Navigatable? {
-    return TargetElementUtil.getInstance()
-        .getGotoDeclarationTarget(this, navigationElement)
-        ?.psiNavigatable()
+    return TargetElementUtil.getInstance().getGotoDeclarationTarget(this, navigationElement)?.psiNavigatable()
 }
 
 inline fun PsiElement.psiNavigatable(): Navigatable? {
-    return this as? Navigatable
-        ?: EditSourceUtil.getDescriptor(this)
+    return this as? Navigatable ?: EditSourceUtil.getDescriptor(this)
 }
 
 @RequiresEdt
 inline fun fetchDataContext(project: Project): DataContext? {
-    val component = IdeFocusManager.getInstance(project).focusOwner
+    val component: Component? = IdeFocusManager.getInstance(project).focusOwner
     return component?.let { DataManager.getInstance().getDataContext(it) }
 }

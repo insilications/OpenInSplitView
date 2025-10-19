@@ -88,9 +88,7 @@ public final class ShowUsagesTable extends JBTable implements UiDataProvider {
     public void uiDataSnapshot(@NotNull DataSink sink) {
         sink.set(LangDataKeys.POSITION_ADJUSTER_POPUP, PopupUtil.getPopupContainerFor(this));
         sink.set(UsageView.USAGE_VIEW_KEY, myUsageView);
-        List<Object> selection = Arrays.stream(getSelectedRows())
-                .mapToObj(o -> getValueAt(o, 0))
-                .toList();
+        List<Object> selection = Arrays.stream(getSelectedRows()).mapToObj(o -> getValueAt(o, 0)).toList();
         sink.lazy(CommonDataKeys.PSI_ELEMENT, () -> {
             Object single = ContainerUtil.getOnlyItem(selection);
             return single == null ? null : getPsiElementForHint(single);
@@ -108,9 +106,7 @@ public final class ShowUsagesTable extends JBTable implements UiDataProvider {
 //        return super.getRowHeight() + 2 * ShowUsagesTableCellRenderer.MARGIN;
     }
 
-    @NotNull
-    Runnable prepareTable(@NotNull Runnable appendMoreUsageRunnable, @NotNull Runnable showInMaximalScopeRunnable,
-                          @NotNull ShowUsagesParameters parameters) {
+    @NotNull Runnable prepareTable(@NotNull Runnable appendMoreUsageRunnable, @NotNull Runnable showInMaximalScopeRunnable, @NotNull ShowUsagesParameters parameters) {
         SpeedSearchBase<JTable> speedSearch = MySpeedSearch.installOn(this);
         speedSearch.setComparator(new SpeedSearchComparator(false));
 
@@ -191,8 +187,7 @@ public final class ShowUsagesTable extends JBTable implements UiDataProvider {
             List<Object> usages = selectedUsages.get();
             if (usages != null) {
                 for (Object usage : usages) {
-                    DataContext dataContext = parameters.editor != null ?
-                            DataManager.getInstance().getDataContext(parameters.editor.getContentComponent()) : null;
+                    DataContext dataContext = parameters.editor != null ? DataManager.getInstance().getDataContext(parameters.editor.getContentComponent()) : null;
                     if (usage instanceof UsageInfo usageInfo) {
                         utils.debug(LOG, () -> "prepareTable - usage instanceof UsageInfo");
                         UsageNavigationSplit.getInstance(parameters.project).navigateToUsageInfo(usageInfo, dataContext);
@@ -223,8 +218,7 @@ public final class ShowUsagesTable extends JBTable implements UiDataProvider {
         return data.isEmpty() || data.get(0) instanceof ShowUsagesAction.StringNode ? 1 : 4;
     }
 
-    @NotNull
-    MyModel setTableModel(final @NotNull List<UsageNode> data) {
+    @NotNull MyModel setTableModel(final @NotNull List<UsageNode> data) {
 //        ThreadingAssertions.assertEventDispatchThread();
         final int columnCount = calcColumnCount(data);
         MyModel model = getModel() instanceof MyModel ? (MyModel) getModel() : null;

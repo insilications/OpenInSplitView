@@ -1,4 +1,7 @@
 <idea-plugin require-restart="true">
+    <id>org.insilications.openinsplit</id>
+    <name>Open In Split View</name>
+    <vendor email="boboniboni@gmail.com" url="https://github.com/insilications/OpenInSplitView">Francisco Boni Neto</vendor>
     <!-- See https://plugins.jetbrains.com/docs/intellij/plugin-compatibility.html on how to target different products -->
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.lang</depends>
@@ -9,17 +12,43 @@
         <supportsKotlinPluginMode supportsK2="true"/>
     </extensions>
 
+    <extensionPoints>
+        <extensionPoint name="gotoSuperActionSplit" interface="org.insilications.openinsplit.bridge.GotoSuperActionSplitBridge"/>
+    </extensionPoints>
+
     <actions>
         <!-- Add your actions here -->
         <action class="org.insilications.openinsplit.codeInsight.navigation.actions.GotoDeclarationActionSplit"
-                description="Opens the declaration/usage in the split view immediately to the right of your active tab's split view."
+                description="Opens the declaration/usage in the split view immediately to the right of your active tab's split view"
                 id="GotoDeclarationActionSplit" text="Declaration or Usages (Split)">
             <add-to-group anchor="last" group-id="EditorPopupMenu.GoTo"/>
+
+            <!-- Windows/Linux -->
+            <mouse-shortcut keymap="$default" keystroke="ctrl alt button1"/>
+            <!-- macOS (Command is 'meta') -->
+            <mouse-shortcut keymap="Mac OS X" keystroke="meta alt button1"/>
         </action>
+        <!--suppress PluginXmlCapitalization -->
         <action class="org.insilications.openinsplit.codeInsight.navigation.actions.GotoImplementationActionSplit"
-                description="Opens the implementation in the split view immediately to the right of your active tab's split view."
+                description="Opens the implementation in the split view immediately to the right of your active tab's split view"
                 id="GotoImplementationActionSplit" text="Implementation(s) (Split)">
             <add-to-group anchor="last" group-id="EditorPopupMenu.GoTo"/>
+
+            <!-- Windows/Linux -->
+            <mouse-shortcut keymap="$default" keystroke="ctrl shift button1"/>
+            <!-- macOS -->
+            <mouse-shortcut keymap="Mac OS X" keystroke="meta shift button1"/>
+        </action>
+        <!--suppress LongLine -->
+        <action class="org.insilications.openinsplit.codeInsight.navigation.actions.GotoSuperActionSplit"
+                description="Opens the declaration of a method that the current method overrides or implements in the split view immediately to the right of your active tab's split view"
+                id="GotoSuperActionSplit" text="Super Method (Split)">
+            <add-to-group anchor="last" group-id="EditorPopupMenu.GoTo"/>
+
+            <!-- Windows/Linux -->
+            <mouse-shortcut keymap="$default" keystroke="ctrl alt shift button1"/>
+            <!-- macOS -->
+            <mouse-shortcut keymap="Mac OS X" keystroke="meta alt shift button1"/>
         </action>
     </actions>
 </idea-plugin>
