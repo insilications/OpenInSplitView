@@ -7,9 +7,9 @@
                                         order="first"/>
 
         <!-- Preferred modern startup hook -->
-        <postStartupActivity implementation="org.insilications.openinsplit.CheckKotlinFqnInlayBinding"/>
+        <backgroundPostStartupActivity implementation="org.insilications.openinsplit.CheckKotlinFqnInlayBinding"/>
 
-        <!-- Notification group used by the diagnostic -->
+        <!-- Notification group -->
         <notificationGroup displayType="BALLOON" id="Open In Split View" isLogByDefault="true"/>
     </extensions>
 

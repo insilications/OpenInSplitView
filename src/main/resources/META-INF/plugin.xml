@@ -6,7 +6,7 @@
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.lang</depends>
 
-    <!--  Optional dependency on the Kotlin plugin -->
+    <!-- Optional dependency on the Kotlin plugin -->
     <depends config-file="kotlin-bridge.xml" optional="true">org.jetbrains.kotlin</depends>
     <!-- Optional dependency on the Java plugin -->
     <depends optional="true" config-file="java-bridge.xml">com.intellij.java</depends>
@@ -19,8 +19,11 @@
         <extensionPoint name="gotoSuperActionSplit" interface="org.insilications.openinsplit.bridge.GotoSuperActionSplitBridge"/>
     </extensionPoints>
 
+    <extensions defaultExtensionNs="com.intellij">
+        <postStartupActivity implementation="org.insilications.openinsplit.OverrideIdeOptions"/>
+    </extensions>
+
     <actions>
-        <!-- Add your actions here -->
         <action class="org.insilications.openinsplit.codeInsight.navigation.actions.GotoDeclarationActionSplit"
                 description="Opens the declaration/usage in the split view immediately to the right of your active tab's split view"
                 id="GotoDeclarationActionSplit" text="Declaration or Usages (Split)">
