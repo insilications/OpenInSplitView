@@ -27,7 +27,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.insilications.openinsplit.codeInsight.navigation.actions.getAdjacentSplitView
 import org.insilications.openinsplit.codeInsight.navigation.actions.getVirtualFileFromNavigatable
-import org.insilications.openinsplit.codeInsight.navigation.impl.progressTitlePreparingNavigation
+import org.insilications.openinsplit.codeInsight.navigation.impl.PROGRESS_TITLE_PREPARING_NAVIGATION
 import org.insilications.openinsplit.debug
 import org.jetbrains.kotlin.idea.base.util.module
 import org.jetbrains.kotlin.idea.codeInsight.hints.resolveClass
@@ -77,7 +77,7 @@ class KotlinFqnDeclarativeInlayActionHandlerSplit : InlayActionHandler {
         LOG.debug { "0 KotlinFqnDeclarativeInlayActionHandler - handleClick" }
         val editor: Editor = e.editor
         val project: Project = editor.project ?: return
-        return runWithModalProgressBlocking(project, progressTitlePreparingNavigation) {
+        return runWithModalProgressBlocking(project, PROGRESS_TITLE_PREPARING_NAVIGATION) {
             val fqName: String = (payload as? StringInlayActionPayload)?.text ?: return@runWithModalProgressBlocking
             val index: ProjectFileIndex = ProjectFileIndex.getInstance(project)
             val psiFile: PsiFile = PsiDocumentManager.getInstance(project).getPsiFile(editor.document) ?: return@runWithModalProgressBlocking

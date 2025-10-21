@@ -19,8 +19,8 @@ import org.jetbrains.annotations.ApiStatus
 import java.awt.Component
 
 @ApiStatus.Experimental
-val navigationOptionsRequestFocus: NavigationOptions = NavigationOptions.requestFocus()
-val progressTitlePreparingNavigation: String = IdeBundle.message("progress.title.preparing.navigation")
+val NAVIGATION_OPTIONS_REQUEST_FOCUS: NavigationOptions = NavigationOptions.requestFocus()
+val PROGRESS_TITLE_PREPARING_NAVIGATION: String = IdeBundle.message("progress.title.preparing.navigation")
 
 inline fun PsiElement.gtdTargetNavigatable(): Navigatable? {
     return TargetElementUtil.getInstance().getGotoDeclarationTarget(this, navigationElement)?.psiNavigatable()

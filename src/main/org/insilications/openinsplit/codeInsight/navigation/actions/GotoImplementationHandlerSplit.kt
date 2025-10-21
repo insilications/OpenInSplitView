@@ -13,9 +13,9 @@ import com.intellij.pom.Navigatable
 import com.intellij.util.concurrency.annotations.RequiresEdt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.insilications.openinsplit.codeInsight.navigation.impl.NAVIGATION_OPTIONS_REQUEST_FOCUS
+import org.insilications.openinsplit.codeInsight.navigation.impl.PROGRESS_TITLE_PREPARING_NAVIGATION
 import org.insilications.openinsplit.codeInsight.navigation.impl.fetchDataContext
-import org.insilications.openinsplit.codeInsight.navigation.impl.navigationOptionsRequestFocus
-import org.insilications.openinsplit.codeInsight.navigation.impl.progressTitlePreparingNavigation
 import org.insilications.openinsplit.debug
 
 class GotoImplementationHandlerSplit : GotoImplementationHandler() {
@@ -27,7 +27,7 @@ class GotoImplementationHandlerSplit : GotoImplementationHandler() {
     override fun navigateToElement(project: Project?, descriptor: Navigatable) {
         if (project == null) return
 
-        runWithModalProgressBlocking(project, progressTitlePreparingNavigation) {
+        runWithModalProgressBlocking(project, PROGRESS_TITLE_PREPARING_NAVIGATION) {
             LOG.debug { "GotoImplementationHandlerSplit - navigateToElement - descriptor is ${descriptor::class.simpleName}" }
 
             val dataContext: DataContext?
@@ -50,7 +50,7 @@ class GotoImplementationHandlerSplit : GotoImplementationHandler() {
             }
 
             // Delegate the actual navigation to the Intellij Platform API's `navigate` overload at `platform/ide/navigation/impl/IdeNavigationService.kt`
-            project.serviceAsync<NavigationService>().navigate(descriptor, navigationOptionsRequestFocus, dataContext)
+            project.serviceAsync<NavigationService>().navigate(descriptor, NAVIGATION_OPTIONS_REQUEST_FOCUS, dataContext)
         }
     }
 }

@@ -49,10 +49,10 @@ import com.intellij.util.concurrency.annotations.RequiresBlockingContext
 import com.intellij.util.concurrency.annotations.RequiresEdt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.insilications.openinsplit.codeInsight.navigation.impl.NAVIGATION_OPTIONS_REQUEST_FOCUS
+import org.insilications.openinsplit.codeInsight.navigation.impl.PROGRESS_TITLE_PREPARING_NAVIGATION
 import org.insilications.openinsplit.codeInsight.navigation.impl.fetchDataContext
 import org.insilications.openinsplit.codeInsight.navigation.impl.gtdTargetNavigatable
-import org.insilications.openinsplit.codeInsight.navigation.impl.navigationOptionsRequestFocus
-import org.insilications.openinsplit.codeInsight.navigation.impl.progressTitlePreparingNavigation
 import org.insilications.openinsplit.debug
 import org.jetbrains.annotations.ApiStatus
 import java.awt.AWTEvent
@@ -60,6 +60,7 @@ import java.awt.event.MouseEvent
 import javax.swing.SwingConstants
 
 val LOG: Logger = Logger.getInstance("org.insilications.openinsplit")
+val DECLARATION_NAVIGATION_NOWHERE_TO_GO: String = CodeInsightBundle.message("declaration.navigation.nowhere.to.go")
 
 @PublishedApi
 internal val LOOKUP_TARGET_POINTER_KEY: Key<SmartPsiElementPointer<PsiElement>> = Key.create("org.insilications.openinsplit.lookupTargetPointer")
@@ -203,7 +204,7 @@ inline fun navigateToLookupItem(project: Project, editor: Editor): Boolean {
 @RequiresBlockingContext
 @RequiresEdt
 inline fun navigateToRequestor(project: Project, requestor: NavigationRequestor, editor: Editor) {
-    runWithModalProgressBlocking(project, progressTitlePreparingNavigation) {
+    runWithModalProgressBlocking(project, PROGRESS_TITLE_PREPARING_NAVIGATION) {
         LOG.debug { "navigateToRequestor - requestor is ${requestor::class.simpleName}" }
 
         // The call to the `navigationRequest` method is made within a blocking modal progress (background thread), under a prioritized read action,
@@ -237,7 +238,7 @@ inline fun navigateToRequestor(project: Project, requestor: NavigationRequestor,
         }
 
         // Delegate the actual navigation to the Intellij Platform API's `navigate` overload at `platform/ide/navigation/impl/IdeNavigationService.kt`
-        project.serviceAsync<NavigationService>().navigate(request, navigationOptionsRequestFocus, dataContext)
+        project.serviceAsync<NavigationService>().navigate(request, NAVIGATION_OPTIONS_REQUEST_FOCUS, dataContext)
     }
 }
 
@@ -247,7 +248,7 @@ inline fun navigateToRequestor(project: Project, requestor: NavigationRequestor,
 @ApiStatus.Internal
 @RequiresEdt
 inline fun navigateToNavigatable(project: Project, navigatable: Navigatable, dataContext: DataContext?) {
-    runWithModalProgressBlocking(project, progressTitlePreparingNavigation) {
+    runWithModalProgressBlocking(project, PROGRESS_TITLE_PREPARING_NAVIGATION) {
         LOG.debug { "navigateToNavigatable - navigatable is: ${navigatable::class.simpleName}" }
 
         val dataContextCheck: DataContext?
@@ -270,7 +271,7 @@ inline fun navigateToNavigatable(project: Project, navigatable: Navigatable, dat
         }
 
         // Delegate the actual navigation to the Intellij Platform API's `navigate` overload at `platform/ide/navigation/impl/IdeNavigationService.kt`
-        project.serviceAsync<NavigationService>().navigate(navigatable, navigationOptionsRequestFocus, dataContextCheck)
+        project.serviceAsync<NavigationService>().navigate(navigatable, NAVIGATION_OPTIONS_REQUEST_FOCUS, dataContextCheck)
     }
 }
 
@@ -340,7 +341,7 @@ inline fun notifyNowhereToGo(project: Project, editor: Editor, file: PsiFile, of
     if (isUnderDoubleClick()) return
     if (isKeywordUnderCaret(project, editor, file, offset)) return
 
-    HintManager.getInstance().showInformationHint(editor, CodeInsightBundle.message("declaration.navigation.nowhere.to.go"))
+    HintManager.getInstance().showInformationHint(editor, DECLARATION_NAVIGATION_NOWHERE_TO_GO)
 }
 
 inline fun isUnderDoubleClick(): Boolean {

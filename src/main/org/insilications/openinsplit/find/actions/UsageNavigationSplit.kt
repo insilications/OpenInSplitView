@@ -22,7 +22,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.insilications.openinsplit.codeInsight.navigation.actions.getAdjacentSplitView
-import org.insilications.openinsplit.codeInsight.navigation.impl.navigationOptionsRequestFocus
+import org.insilications.openinsplit.codeInsight.navigation.impl.NAVIGATION_OPTIONS_REQUEST_FOCUS
 import org.insilications.openinsplit.debug
 import org.jetbrains.annotations.ApiStatus
 
@@ -64,7 +64,7 @@ class UsageNavigationSplit(private val project: Project, private val cs: Corouti
             }
 
             // Delegate the actual navigation to the Intellij Platform API's `navigate` overload at `platform/ide/navigation/impl/IdeNavigationService.kt`
-            NavigationService.getInstance(project).navigate(usage, navigationOptionsRequestFocus, dataContext)
+            NavigationService.getInstance(project).navigate(usage, NAVIGATION_OPTIONS_REQUEST_FOCUS, dataContext)
             writeIntentReadAction {
                 onReady.run()
             }
@@ -101,7 +101,7 @@ class UsageNavigationSplit(private val project: Project, private val cs: Corouti
             // Delegate the actual navigation to the Intellij Platform API's `navigate` overload at `platform/ide/navigation/impl/IdeNavigationService.kt`
             NavigationService.getInstance(project).navigate(
                 request,
-                navigationOptionsRequestFocus,
+                NAVIGATION_OPTIONS_REQUEST_FOCUS,
                 dataContext,
             )
         }

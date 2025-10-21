@@ -67,6 +67,11 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
     companion object {
         private val LOG: Logger = Logger.getInstance("org.insilications.openinsplit")
         private const val DUMB_MODE_NOTIFICATION_KEY: String = "GotoDeclarationOrUsageSplit"
+        private val RESOLVING_REFERENCES: String = CodeInsightBundle.message("progress.title.resolving.reference")
+        private val DECLARATION_NAVIGATION_TITLE: String = CodeInsightBundle.message("declaration.navigation.title")
+        private val SHOW_USAGES_AMBIGUOUS_TITLE: String = FindBundle.message("show.usages.ambiguous.title")
+        private val NAVIGATION_NOT_AVAILABLE_DURING_DUMB_MODE: String =
+            CodeInsightBundle.message("message.navigation.is.not.available.here.during.index.update")
 
         /**
          * Cache reflective lookups to avoid repeated scanning on every invocation.
@@ -156,7 +161,7 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
 
             val actionResult: GTDUActionResultMirror? = underModalProgress(
                 project,
-                CodeInsightBundle.message("progress.title.resolving.reference"),
+                RESOLVING_REFERENCES,
             ) {
                 val actionData: Any = try {
                     gotoDeclarationOrUsagesInvoker.invoke(project, editor, file, offset)
@@ -280,7 +285,7 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
             }
         } catch (_: IndexNotReadyException) {
             DumbService.getInstance(project).showDumbModeNotificationForFunctionalityWithCoalescing(
-                CodeInsightBundle.message("message.navigation.is.not.available.here.during.index.update"),
+                NAVIGATION_NOT_AVAILABLE_DURING_DUMB_MODE,
                 DumbModeBlockedFunctionality.GotoDeclarationOrUsage,
                 DUMB_MODE_NOTIFICATION_KEY,
             )
@@ -307,7 +312,7 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
             is MultipleTargets -> {
                 // Create popup for the user to select a navigatable target
                 val popup: JBPopup = createTargetPopup(
-                    CodeInsightBundle.message("declaration.navigation.title"),
+                    DECLARATION_NAVIGATION_TITLE,
                     actionResult.targets, LazyTargetWithPresentation::presentation,
                 ) { (requestor, _, _) ->
                     // We are inside the processor of the created popup. It is called when the user selects a navigatable target from the popup
@@ -336,7 +341,7 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
         try {
             val popupPosition: RelativePoint = JBPopupFactory.getInstance().guessBestPopupLocation(editor)
             findShowUsagesSplit(
-                project, editor, popupPosition, targetVariants, FindBundle.message("show.usages.ambiguous.title"),
+                project, editor, popupPosition, targetVariants, SHOW_USAGES_AMBIGUOUS_TITLE,
                 createVariantHandler(
                     project, editor, popupPosition,
                     FindUsagesOptions.findScopeByName(
@@ -348,7 +353,7 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
             )
         } catch (_: IndexNotReadyException) {
             DumbService.getInstance(project).showDumbModeNotificationForFunctionalityWithCoalescing(
-                CodeInsightBundle.message("message.navigation.is.not.available.here.during.index.update"),
+                NAVIGATION_NOT_AVAILABLE_DURING_DUMB_MODE,
                 DumbModeBlockedFunctionality.GotoDeclarationOrUsage,
                 DUMB_MODE_NOTIFICATION_KEY,
             )

@@ -36,7 +36,7 @@ private val platformUsageVariantHandlerClassCached: Class<*>? by lazy(LazyThread
     }
 }
 
-// Guard for the slow-path reflective lookup. Reads rely on @Volatile so the hot path stays lock-free.
+// Guard for the slow-path reflective lookup. Reads rely on `@Volatile` so the hot path stays lock-free.
 private val findShowUsagesInvokerLock = Any()
 
 @Volatile
@@ -91,7 +91,7 @@ inline fun findShowUsagesSplit(
     try {
         platformFindShowUsagesInvoker.invoke(project, editor, popupPosition, allTargets, popupTitle, platformUsageVariantHandlerProxy)
     } catch (t: Throwable) {
-        LOG.warn("Failed to delegate to platform com.intellij.find.actions.ResolverKt.findShowUsages.", t)
+        LOG.warn("Failed to delegate to the platform's 'com.intellij.find.actions.ResolverKt.findShowUsages'", t)
     }
 }
 
@@ -140,8 +140,8 @@ fun createPlatformUsageVariantHandlerProxy(handler: UsageVariantHandlerSplit): A
     }
 }
 
-// Mirrors the retry/backoff strategy used by the GTDU resolver so we avoid repeated reflective
-// scans under PSI locks. The happy path returns immediately thanks to the @Volatile cache.
+// Mirrors the retry/backoff strategy used by the GTDU resolver in `resolveGotoDeclarationOrUsagesInvoker` from `GotoDeclarationOrUsageHandler2Split.kt`
+// This strategy avoids repeated reflective scans under PSI locks. The happy path returns immediately thanks to the `@Volatile` cache.
 fun resolveFindShowUsagesInvoker(): FindShowUsagesInvoker? {
     findShowUsagesInvoker?.let { return it }
 

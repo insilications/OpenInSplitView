@@ -38,6 +38,8 @@ final class JavaGotoSuperHandlerSplit implements GotoSuperActionSplitBridge {
     private static final String SUPER_METHOD_SPLIT = "Go to Super Method (Split)";
     private static final String SUPER_METHOD_SPLIT_SHORT = "Super Method (Split)";
     private static final String SUPER_METHOD_SPLIT_DESCRIPTION = "Navigate to the declaration of a method that the current method overrides or implements (Split)";
+    private static final String SUPER_METHOD_CHOOSER_TITLE = CodeInsightBundle.message("goto.super.method.chooser.title");
+    private static final String GOTO_SUPER_CLASS_CHOOSER_TITLE = JavaBundle.message("goto.super.class.chooser.title");
 
     @Override
     public @NotNull String getGoToSuperActionSplitLanguage() {
@@ -51,9 +53,9 @@ final class JavaGotoSuperHandlerSplit implements GotoSuperActionSplitBridge {
             if (!elements.isEmpty() && elements.iterator().next() instanceof PsiMethod) {
                 boolean showMethodNames = !PsiUtil.allMethodsHaveSameSignature(elements.toArray(PsiMethod.EMPTY_ARRAY));
                 navigator.presentationProvider(element -> GotoTargetHandler.computePresentation(element, showMethodNames));
-                navigator.title(CodeInsightBundle.message("goto.super.method.chooser.title"));
+                navigator.title(SUPER_METHOD_CHOOSER_TITLE);
             } else {
-                navigator.title(JavaBundle.message("goto.super.class.chooser.title"));
+                navigator.title(GOTO_SUPER_CLASS_CHOOSER_TITLE);
             }
         }).navigate(editor, null, element -> {
             navigateToNavigatable(project, (Navigatable) element, null);

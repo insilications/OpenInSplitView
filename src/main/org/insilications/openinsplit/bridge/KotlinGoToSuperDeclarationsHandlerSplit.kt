@@ -33,6 +33,9 @@ internal class KotlinGoToSuperDeclarationsHandlerSplit : GotoSuperActionSplitBri
         private const val SUPER_CLASS_SPLIT = "Super Class (Split)"
         private const val SUPER_METHOD_SPLIT = "Super Method (Split)"
         private const val SUPER_PROPERTY_SPLIT = "Super Property (Split)"
+        private val GOTO_SUPER_CHOOSER_CLASS_TITLE: String = KotlinBundle.message("goto.super.chooser.class.title")
+        private val GOTO_SUPER_CHOOSER_FUNCTION_TITLE: String = KotlinBundle.message("goto.super.chooser.function.title")
+        private val GOTO_SUPER_CHOOSER_PROPERTY_TITLE: String = KotlinBundle.message("goto.super.chooser.property.title")
 
         fun findTargetDeclaration(
             file: PsiFile,
@@ -50,9 +53,9 @@ internal class KotlinGoToSuperDeclarationsHandlerSplit : GotoSuperActionSplitBri
                 return HandlerResult.Single(superDeclarations.single())
             } else {
                 val title: String = when (targetDeclaration) {
-                    is KtClassOrObject, is PsiClass -> KotlinBundle.message("goto.super.chooser.class.title")
-                    is KtFunction, is PsiMethod -> KotlinBundle.message("goto.super.chooser.function.title")
-                    is KtProperty, is KtParameter -> KotlinBundle.message("goto.super.chooser.property.title")
+                    is KtClassOrObject, is PsiClass -> GOTO_SUPER_CHOOSER_CLASS_TITLE
+                    is KtFunction, is PsiMethod -> GOTO_SUPER_CHOOSER_FUNCTION_TITLE
+                    is KtProperty, is KtParameter -> GOTO_SUPER_CHOOSER_PROPERTY_TITLE
                     else -> error("Unexpected declaration $targetDeclaration")
                 }
                 return HandlerResult.Multiple(title, superDeclarations)
