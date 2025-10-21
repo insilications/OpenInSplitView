@@ -1,9 +1,12 @@
 package org.insilications.openinsplit.bridge
 
-import com.intellij.codeInsight.generation.actions.PresentableCodeInsightActionHandler
+import com.intellij.codeInsight.CodeInsightActionHandler
+import com.intellij.openapi.actionSystem.Presentation
+import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.extensions.ExtensionPointName
+import com.intellij.psi.PsiFile
 
-interface GotoSuperActionSplitBridge : PresentableCodeInsightActionHandler {
+interface GotoSuperActionSplitBridge : CodeInsightActionHandler {
     companion object {
         /**
          * The ExtensionPointName that allows the platform to find implementations
@@ -14,4 +17,6 @@ interface GotoSuperActionSplitBridge : PresentableCodeInsightActionHandler {
     }
 
     val goToSuperActionSplitLanguage: String
+
+    fun update(editor: Editor, file: PsiFile, presentation: Presentation, isFromMainMenu: Boolean, isFromContextMenu: Boolean)
 }

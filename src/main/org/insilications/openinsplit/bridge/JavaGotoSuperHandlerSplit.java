@@ -6,7 +6,6 @@ import com.intellij.codeInsight.CodeInsightBundle;
 import com.intellij.codeInsight.navigation.GotoTargetHandler;
 import com.intellij.codeInsight.navigation.PsiTargetNavigator;
 import com.intellij.java.JavaBundle;
-import com.intellij.openapi.actionSystem.ActionPlaces;
 import com.intellij.openapi.actionSystem.Presentation;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Editor;
@@ -28,7 +27,6 @@ import com.intellij.util.ArrayUtil;
 
 import org.insilications.openinsplit.utils;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.Arrays;
 
@@ -61,7 +59,6 @@ final class JavaGotoSuperHandlerSplit implements GotoSuperActionSplitBridge {
             navigateToNavigatable(project, (Navigatable) element, null);
             return true;
         });
-//        }).navigate(editor, null, element -> EditSourceUtil.navigateToPsiElement(element));
     }
 
     private static PsiElement @NotNull [] findSuperElements(@NotNull PsiFile file, int offset) {
@@ -95,18 +92,12 @@ final class JavaGotoSuperHandlerSplit implements GotoSuperActionSplitBridge {
     }
 
     @Override
-    public void update(@NotNull Editor editor, @NotNull PsiFile file, Presentation presentation) {
-        utils.debug(LOG, () -> "JavaGotoSuperHandlerSplit - update 0");
-        update(editor, file, presentation, null);
-    }
-
-    @Override
-    public void update(@NotNull Editor editor, @NotNull PsiFile file, Presentation presentation, @Nullable String actionPlace) {
-        utils.debug(LOG, () -> "JavaGotoSuperHandlerSplit - update 1");
+    public void update(@NotNull Editor editor, @NotNull PsiFile file, @NotNull Presentation presentation, boolean isFromMainMenu, boolean isFromContextMenu) {
+        utils.debug(LOG, () -> "JavaGotoSuperHandlerSplit - update");
         final PsiElement element = getElement(file, editor.getCaretModel().getOffset());
         final PsiElement containingElement = PsiTreeUtil.getParentOfType(element, PsiFunctionalExpression.class, PsiMember.class);
-        //noinspection CallToSuspiciousStringMethod
-        boolean useShortName = actionPlace != null && (ActionPlaces.MAIN_MENU.equals(actionPlace) || ActionPlaces.isPopupPlace(actionPlace));
+
+        boolean useShortName = isFromMainMenu || isFromContextMenu;
         if (containingElement instanceof PsiClass) {
             presentation.setText(useShortName ? SUPER_CLASS_SPLIT_SHORT : SUPER_CLASS_SPLIT);
             presentation.setDescription(SUPER_CLASS_SPLIT_DESCRIPTION);

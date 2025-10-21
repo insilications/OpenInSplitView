@@ -13,14 +13,14 @@ import org.insilications.openinsplit.codeInsight.hints.KotlinFqnDeclarativeInlay
 internal class CheckKotlinFqnInlayBinding : ProjectActivity {
     companion object {
         private val LOG: Logger = Logger.getInstance("org.insilications.openinsplit")
+        private const val NOTIFICATION_GROUP_ID = "Open In Split View"
     }
 
     override suspend fun execute(project: Project) {
         val id = "kotlin.fqn.class"
         val expectedFqn: String = KotlinFqnDeclarativeInlayActionHandler::class.java.name
 
-        @Suppress("UnresolvedPluginConfigReference")
-        val ep: ExtensionPointName<InlayActionHandlerBean> =
+        @Suppress("UnresolvedPluginConfigReference") val ep: ExtensionPointName<InlayActionHandlerBean> =
             ExtensionPointName.create("com.intellij.codeInsight.inlayActionHandler")
         val bean: InlayActionHandlerBean? = ep.extensionList.firstOrNull { it.handlerId == id }
         val declaredFqn: String = bean?.implementationClass ?: "<none>"
@@ -28,8 +28,7 @@ internal class CheckKotlinFqnInlayBinding : ProjectActivity {
         LOG.info("Inlay handler binding (declared) for '$id' -> $declaredFqn")
 
         if (declaredFqn != expectedFqn) {
-            @Suppress("LongLine")
-            NotificationGroupManager.getInstance().getNotificationGroup("Open In Split View").createNotification(
+            @Suppress("LongLine") NotificationGroupManager.getInstance().getNotificationGroup(NOTIFICATION_GROUP_ID).createNotification(
                 "Kotlin FQN handler override not active",
                 "Expected: $expectedFqn, but EP declares: $declaredFqn. Verify order=\"first\" and <depends>org.jetbrains.kotlin</depends> in plugin.xml, and check for competing plugins.",
                 NotificationType.WARNING,

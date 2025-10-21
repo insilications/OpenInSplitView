@@ -93,11 +93,10 @@ internal class KotlinGoToSuperDeclarationsHandlerSplit : GotoSuperActionSplitBri
 
 
     override fun invoke(project: Project, editor: Editor, file: PsiFile) {
+        LOG.debug { "KotlinGoToSuperDeclarationsHandlerSplit - invoke" }
         if (file !is KtFile) {
             return
         }
-
-        LOG.debug { "KotlinGoToSuperDeclarationsHandlerSplit - invoke" }
 
         val targetDeclaration: KtDeclaration = findTargetDeclaration(file, editor) ?: return
         gotoSuperDeclarations(project, targetDeclaration)?.showInBestPositionFor(editor)
@@ -117,18 +116,8 @@ internal class KotlinGoToSuperDeclarationsHandlerSplit : GotoSuperActionSplitBri
         abstract val items: List<SuperDeclaration>
     }
 
-
-    override fun update(
-        editor: Editor,
-        file: PsiFile,
-        presentation: Presentation?,
-    ) {
-        LOG.debug { "KotlinGoToSuperDeclarationsHandlerSplit - update 0" }
-        update(editor, file, presentation ?: return, actionPlace = null)
-    }
-
-    override fun update(editor: Editor, file: PsiFile, presentation: Presentation, actionPlace: String?) {
-        LOG.debug { "KotlinGoToSuperDeclarationsHandlerSplit - update 1" }
+    override fun update(editor: Editor, file: PsiFile, presentation: Presentation, isFromMainMenu: Boolean, isFromContextMenu: Boolean) {
+        LOG.debug { "KotlinGoToSuperDeclarationsHandlerSplit - update" }
         if (file !is KtFile) return
         val targetDeclaration: KtDeclaration = findTargetDeclaration(file, editor) ?: return
         presentation.text = when (targetDeclaration) {
