@@ -35,7 +35,7 @@ import java.awt.event.InputEvent
 import java.awt.event.MouseEvent
 
 @Suppress("CompanionObjectInExtension", "ExtensionClassShouldBeFinalAndNonPublic")
-class KotlinFqnDeclarativeInlayActionHandler : InlayActionHandler {
+class KotlinFqnDeclarativeInlayActionHandlerSplit : InlayActionHandler {
     companion object {
         @Suppress("unused")
         const val HANDLER_NAME: String = "kotlin.fqn.class"

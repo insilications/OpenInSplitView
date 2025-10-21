@@ -2,9 +2,8 @@
     <!-- Loaded only if org.jetbrains.kotlin is installed and enabled -->
 
     <extensions defaultExtensionNs="com.intellij">
-        <!-- Add your extensions here -->
         <codeInsight.inlayActionHandler handlerId="kotlin.fqn.class"
-                                        implementationClass="org.insilications.openinsplit.codeInsight.hints.KotlinFqnDeclarativeInlayActionHandler"
+                                        implementationClass="org.insilications.openinsplit.codeInsight.hints.KotlinFqnDeclarativeInlayActionHandlerSplit"
                                         order="first"/>
 
         <!-- Preferred modern startup hook -->
