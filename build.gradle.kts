@@ -47,7 +47,7 @@ dependencies {
         intellijIdeaCommunity(libs.versions.ideaVersion)
         bundledPlugin("org.jetbrains.kotlin")
 
-        pluginVerifier(libs.versions.pluginVerifier)
+        pluginVerifier()
     }
 
     compileOnly(libs.jetbrains.annotations)

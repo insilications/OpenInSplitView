@@ -132,7 +132,7 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
                         ),
                     )
 
-                    val invoker: GotoDeclarationOrUsagesInvoker = GotoDeclarationOrUsagesInvoker { projectArg, editorArg, fileArg, offsetArg ->
+                    val invoker = GotoDeclarationOrUsagesInvoker { projectArg: Project, editorArg: Editor, fileArg: PsiFile, offsetArg: Int ->
                         handle.invoke(projectArg, editorArg, fileArg, offsetArg)
                     }
                     gotoDeclarationOrUsagesInvoker = invoker
@@ -162,7 +162,7 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
         private fun gotoDeclarationOrUsages_HACK(project: Project, editor: Editor, file: PsiFile, offset: Int): GTDUActionResultMirror? {
             // 1) Pre-resolve the reflective invoker for the private companion non `@JvmStatic` method outside the modal read section
             // so the initial lookup no longer runs under the PSI read lock:
-            // gotoDeclarationOrUsages(Project, Editor, PsiFile, Int): GTDUActionData?
+            // GotoDeclarationOrUsageHandler2.Companion.gotoDeclarationOrUsages(Project, Editor, PsiFile, Int): GTDUActionData?
             val gotoDeclarationOrUsagesInvoker: GotoDeclarationOrUsagesInvoker = resolveGotoDeclarationOrUsagesInvoker() ?: return null
 
             val actionResult: GTDUActionResultMirror? = underModalProgress(
@@ -299,7 +299,8 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
     }
 
     /**
-     * Handle the "Go To Declaration" action result by navigating to the single target or showing a popup for multiple targets.
+     * Handle the "Go To Declaration" action result by either navigating to a single target
+     * or displaying a popup with multiple target variants available for navigation.
      */
     @RequiresBlockingContext
     @RequiresEdt
@@ -332,7 +333,8 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
     }
 
     /**
-     * Handle the "Show Usages" action result by navigating to the single target or showing a popup with the target variants.
+     * Handle the "Show Usages" action result by either navigating to a single target
+     * or displaying a popup with multiple target variants available for navigation.
      */
     private fun showUsages(
         project: Project,

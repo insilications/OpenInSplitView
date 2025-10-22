@@ -61,7 +61,7 @@ class ShowUsagesActionSplit {
                         ),
                     )
 
-                    val invoker = CreateShowTargetUsagesActionHandlerInvoker { projectArg, searchScopeArg, targetArg ->
+                    val invoker = CreateShowTargetUsagesActionHandlerInvoker { projectArg: Project, searchScopeArg: SearchScope, targetArg: SearchTarget ->
                         @Suppress("UNCHECKED_CAST") handle.invoke(projectArg, searchScopeArg, targetArg) as ShowUsagesActionHandler
                     }
                     createShowTargetUsagesActionHandlerInvoker = invoker

@@ -3,7 +3,7 @@
 build/
 
 # IntelliJ IDEA
-.idea/
+.idea/*
 *.iws
 *.iml
 *.ipr
@@ -41,13 +41,30 @@ Thumbs.db
 *.tar.gz
 *.rar
 
-# Virtual machine crash logs
-hs_err_pid*
-
 self-update.lock
-
 output.xml
-
 .kotlin/
-
 local.properties
+!.idea/kotlinc.xml
+!.idea/runConfigurations.xml
+# Project structure and modules
+!*.iml
+!.idea/modules.xml
+
+# Project-wide settings
+!.idea/misc.xml
+!.idea/vcs.xml
+!.idea/encodings.xml
+!.idea/compiler.xml
+
+# Shared run configurations
+!.idea/runConfigurations/
+
+# Shared code style
+!.idea/codeStyles/
+
+# Shared inspection profiles
+!.idea/inspectionProfiles/
+
+# Shared project dictionaries
+!.idea/dictionaries/

@@ -187,11 +187,12 @@ fun resolveFindShowUsagesInvoker(): FindShowUsagesInvoker? {
                 ),
             )
 
-            val invoker = FindShowUsagesInvoker { project, editor, popupPosition, allTargets, popupTitle, handler ->
-                // MethodHandle#invoke keeps call-site polymorphism intact and avoids the array
-                // allocation that InvokeWithArguments would pay on every invocation.
-                typedMethodHandle.invoke(project, editor, popupPosition, allTargets, popupTitle, handler)
-            }
+            val invoker =
+                FindShowUsagesInvoker { project: Project, editor: Editor?, popupPosition: RelativePoint, allTargets: List<Any>, popupTitle: String, handler ->
+                    // MethodHandle#invoke keeps call-site polymorphism intact and avoids the array
+                    // allocation that InvokeWithArguments would pay on every invocation.
+                    typedMethodHandle.invoke(project, editor, popupPosition, allTargets, popupTitle, handler)
+                }
             findShowUsagesInvoker = invoker
             nextFindShowUsagesLookupRetryAtMillis = 0
             invoker

@@ -1,7 +1,7 @@
 <repository_guidelines>
 # Project Structure & Module Organization
 - Project Source Code: `src/main/`
-- Intellij Platform API Source Code: `intellij-community/`. This symbolic link folder contains the IntelliJ Platform API source code that is currently in use. Use it to augment your knowledge of the API
+- The `intellij-community/` symbolic link folder contains the IntelliJ Platform API Java/Kotlin source code that is currently in use. Use it to augment your knowledge of the API
 - Documentation: `README.md`
 - Changelog: `CHANGELOG.md`
 
@@ -10,9 +10,6 @@
 - Specify dependencies in `gradle/libs.versions.toml` (Gradle Version Catalog)
 - Main Plugin Config: `src/main/resources/META-INF/plugin.xml` (actions, dependencies, etc)
   - Optional Plugin Dependencies: ﻿`src/main/resources/META-INF/kotlin-bridge.xml`, `src/main/resources/META-INF/java-bridge.xml`
-
-## Configuration Tips
-- Keep `pluginSinceBuild` and `pluginUntilBuild` in `gradle.properties` updated when upgrading platform versions
 
 # Build and Development Commands
 - Run `./gradlew buildPlugin` to build the plugin and execute checks.
