@@ -140,8 +140,13 @@ fun createPlatformUsageVariantHandlerProxy(handler: UsageVariantHandlerSplit): A
     }
 }
 
-// Mirrors the retry/backoff strategy used by the GTDU resolver in `resolveGotoDeclarationOrUsagesInvoker` from `GotoDeclarationOrUsageHandler2Split.kt`
-// This strategy avoids repeated reflective scans under PSI locks. The happy path returns immediately thanks to the `@Volatile` cache.
+/**
+ * Resolve `ResolverKt.findShowUsages` once and reuse its `MethodHandle` through a volatile cache. The explicit `findShowUsagesInvokerLock` guards
+ * the slow path because this file is top-level, while the fast path short-circuits as soon as the invoker is set. When resolution throws,
+ * we push `nextFindShowUsagesLookupRetryAtMillis` forward so subsequent calls back off before trying the expensive reflective lookup again.
+ *
+ * Mirrors the retry/backoff strategy used by the GTDU resolver in `resolveGotoDeclarationOrUsagesInvoker` from `GotoDeclarationOrUsageHandler2Split.kt`
+ */
 fun resolveFindShowUsagesInvoker(): FindShowUsagesInvoker? {
     findShowUsagesInvoker?.let { return it }
 

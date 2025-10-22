@@ -86,6 +86,12 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
 
         private const val LOOKUP_RETRY_BACKOFF_MS: Long = 5_000
 
+        /**
+         * Resolve the platform's `gotoDeclarationOrUsages` MethodHandle exactly once and reuse it.
+         * The `@Volatile` `gotoDeclarationOrUsagesInvoker` keeps the fast path lock-free, while the double-checked `synchronized(this)` slow path
+         * protects the reflective scan. When resolution fails we advance `nextLookupRetryAtMillis`, providing a short backoff window so repeated
+         * invocations do not hammer class loading during startup races.
+         */
         private fun resolveGotoDeclarationOrUsagesInvoker(): GotoDeclarationOrUsagesInvoker? {
             gotoDeclarationOrUsagesInvoker?.let { return it }
 

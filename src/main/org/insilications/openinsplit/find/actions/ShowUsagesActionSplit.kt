@@ -29,6 +29,11 @@ class ShowUsagesActionSplit {
 
         private const val LOOKUP_RETRY_BACKOFF_MS: Long = 5_000
 
+        /**
+         * Lazily binds `ShowUsagesAction.createActionHandler` via reflection and memoizes the typed invoker. The volatile cache allows uncontended reuse,
+         * and the synchronized block ensures only one thread performs the slow reflective lookup. A timestamp-based backoff throttles
+         * repeated failures so we avoid scanning the classpath on every invocation during startup.
+         */
         private fun resolveCreateShowTargetUsagesActionHandlerInvoker(): CreateShowTargetUsagesActionHandlerInvoker? {
             createShowTargetUsagesActionHandlerInvoker?.let { return it }
 
