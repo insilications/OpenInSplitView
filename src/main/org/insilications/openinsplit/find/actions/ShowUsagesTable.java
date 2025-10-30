@@ -133,7 +133,7 @@ public final class ShowUsagesTable extends JBTable implements UiDataProvider {
             outsideScopeUsagesSelected.set(false);
             moreUsagesSelected.set(false);
             filteredOutUsagesSelected.set(null);
-            java.util.List<Object> usages = null;
+            @Nullable List<Object> usages = null;
             var nonDisposableUsageInfos = new SmartHashSet<UsageInfo>();
             //todo List<Usage>
             for (int i : getSelectedRows()) {
