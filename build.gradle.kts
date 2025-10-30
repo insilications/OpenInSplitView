@@ -46,6 +46,7 @@ dependencies {
         // Starting with version 2025.3, `use intellijIdea()`
         intellijIdeaCommunity(libs.versions.ideaVersion)
         bundledPlugin("org.jetbrains.kotlin")
+        bundledPlugin("com.intellij.java")
 
         pluginVerifier()
     }
@@ -58,6 +59,8 @@ intellijPlatform {
     projectName = pluginName
     buildSearchableOptions = false
     instrumentCode = false
+    autoReload = false
+    sandboxContainer = file("/king/.config/JetBrains/")
 
     pluginConfiguration {
         id = pluginGroup
@@ -133,7 +136,34 @@ tasks {
     }
 
     runIde {
-        jvmArgs = listOf("-Xmx8096m", "-XX:+UnlockDiagnosticVMOptions")
+        jvmArgs = listOf(
+            "-Xms256m",
+            "-Xmx8096m",
+            "-Dawt.useSystemAAFontSettings=lcd_hbgr",
+            "-Dswing.aatext=true",
+            "-XX:+UnlockDiagnosticVMOptions",
+            "-XX:+DebugNonSafepoints",
+            "-Dignore.ide.script.launcher.used=true",
+            "-Dide.slow.operations.assertion=true",
+            "-Didea.is.internal=false",
+            "-Didea.logger.exception.expiration.minutes=0"
+        )
+        jvmArgumentProviders += CommandLineArgumentProvider {
+            listOf(
+                "-Xms256m",
+                "-Xmx8096m",
+                "-Dawt.useSystemAAFontSettings=lcd_hbgr",
+                "-Dswing.aatext=true",
+                "-XX:+UnlockDiagnosticVMOptions",
+                "-XX:+DebugNonSafepoints",
+                "-Dignore.ide.script.launcher.used=true",
+                "-Dide.slow.operations.assertion=true",
+                "-Didea.is.internal=false",
+                "-Didea.logger.exception.expiration.minutes=0"
+            )
+        }
+
+        args(listOf("nosplash"))
     }
 }
 
