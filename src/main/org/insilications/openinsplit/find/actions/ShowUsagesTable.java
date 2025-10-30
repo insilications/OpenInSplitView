@@ -89,10 +89,12 @@ public final class ShowUsagesTable extends JBTable implements UiDataProvider {
         sink.set(LangDataKeys.POSITION_ADJUSTER_POPUP, PopupUtil.getPopupContainerFor(this));
         sink.set(UsageView.USAGE_VIEW_KEY, myUsageView);
         List<Object> selection = Arrays.stream(getSelectedRows()).mapToObj(o -> getValueAt(o, 0)).toList();
-        sink.lazy(CommonDataKeys.PSI_ELEMENT, () -> {
-            Object single = ContainerUtil.getOnlyItem(selection);
-            return single == null ? null : getPsiElementForHint(single);
-        });
+        sink.lazy(
+                CommonDataKeys.PSI_ELEMENT, () -> {
+                    Object single = ContainerUtil.getOnlyItem(selection);
+                    return single == null ? null : getPsiElementForHint(single);
+                }
+        );
     }
 
     @Override
@@ -106,7 +108,11 @@ public final class ShowUsagesTable extends JBTable implements UiDataProvider {
 //        return super.getRowHeight() + 2 * ShowUsagesTableCellRenderer.MARGIN;
     }
 
-    @NotNull Runnable prepareTable(@NotNull Runnable appendMoreUsageRunnable, @NotNull Runnable showInMaximalScopeRunnable, @NotNull ShowUsagesParameters parameters) {
+    @NotNull Runnable prepareTable(
+            @NotNull Runnable appendMoreUsageRunnable,
+            @NotNull Runnable showInMaximalScopeRunnable,
+            @NotNull ShowUsagesParameters parameters
+    ) {
         SpeedSearchBase<JTable> speedSearch = MySpeedSearch.installOn(this);
         speedSearch.setComparator(new SpeedSearchComparator(false));
 
@@ -187,7 +193,8 @@ public final class ShowUsagesTable extends JBTable implements UiDataProvider {
             List<Object> usages = selectedUsages.get();
             if (usages != null) {
                 for (Object usage : usages) {
-                    DataContext dataContext = parameters.editor != null ? DataManager.getInstance().getDataContext(parameters.editor.getContentComponent()) : null;
+                    DataContext dataContext =
+                            parameters.editor != null ? DataManager.getInstance().getDataContext(parameters.editor.getContentComponent()) : null;
                     if (usage instanceof UsageInfo usageInfo) {
                         utils.debug(LOG, () -> "prepareTable - usage instanceof UsageInfo");
                         UsageNavigationSplit.getInstance(parameters.project).navigateToUsageInfo(usageInfo, dataContext);
@@ -267,7 +274,8 @@ public final class ShowUsagesTable extends JBTable implements UiDataProvider {
             if (!(element instanceof UsageNode node)) return element.toString();
             if (node instanceof ShowUsagesAction.StringNode) return "";
             Usage usage = node.getUsage();
-            if (usage == getTable().MORE_USAGES_SEPARATOR || usage == getTable().USAGES_OUTSIDE_SCOPE_SEPARATOR || usage == getTable().USAGES_FILTERED_OUT_SEPARATOR) return "";
+            if (usage == getTable().MORE_USAGES_SEPARATOR || usage == getTable().USAGES_OUTSIDE_SCOPE_SEPARATOR || usage == getTable().USAGES_FILTERED_OUT_SEPARATOR)
+                return "";
             GroupNode group = (GroupNode) node.getParent();
             String groupText = group == null ? "" : group.getGroup().getPresentableGroupText();
             return groupText + usage.getPresentation().getPlainText();

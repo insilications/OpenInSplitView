@@ -19,11 +19,13 @@ public final class ShowUsagesParameters {
     final @NotNull IntRef minWidth;
     final int maxUsages;
 
-    public ShowUsagesParameters(@NotNull Project project,
-                                @Nullable Editor editor,
-                                @NotNull RelativePoint popupPosition,
-                                @NotNull IntRef minWidth,
-                                int maxUsages) {
+    public ShowUsagesParameters(
+            @NotNull Project project,
+            @Nullable Editor editor,
+            @NotNull RelativePoint popupPosition,
+            @NotNull IntRef minWidth,
+            int maxUsages
+    ) {
         this.project = project;
         this.editor = editor;
         this.popupPosition = popupPosition;

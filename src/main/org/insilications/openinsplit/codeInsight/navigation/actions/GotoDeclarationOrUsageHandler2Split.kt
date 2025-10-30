@@ -139,7 +139,8 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
                     nextLookupRetryAtMillis = 0
                     invoker
                 } catch (t: Throwable) {
-                    @Suppress("LongLine") LOG.warn(
+                    @Suppress("LongLine")
+                    LOG.warn(
                         "Failed to resolve com.intellij.codeInsight.navigation.actions.GotoDeclarationOrUsageHandler2.Companion.gotoDeclarationOrUsages via reflection",
                         t,
                     )
@@ -216,7 +217,8 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
 
                     tvMethod != null -> {
                         // Get the `targetVariants` property value, a `List<TargetVariant>`
-                        @Suppress("UNCHECKED_CAST") val variants = try {
+                        @Suppress("UNCHECKED_CAST")
+                        val variants = try {
                             tvMethod.invoke(rawResult) as? List<Any?>
                         } catch (t: Throwable) {
                             LOG.warn("Failed to obtain targetVariants", t)
@@ -227,7 +229,8 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
                             if (item == null) return@underModalProgress null
                         }
 
-                        @Suppress("UNCHECKED_CAST") val nonNullVariants = variants as List<Any>
+                        @Suppress("UNCHECKED_CAST")
+                        val nonNullVariants = variants as List<Any>
 
                         GTDUActionResultMirror.SU(nonNullVariants) // non-empty
                     }
