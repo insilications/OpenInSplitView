@@ -7,6 +7,6 @@ jetbrains-annotations = { group = "org.jetbrains", name = "annotations", version
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version = "2.2.21" }
-intellij-platform = { id = "org.jetbrains.intellij.platform", version = "2.10.3" }
+intellij-platform = { id = "org.jetbrains.intellij.platform", version = "2.10.4" }
 ben-manes-versions = { id = "com.github.ben-manes.versions", version = "0.53.0" }
 changelog = { id = "org.jetbrains.changelog", version.ref = "changelog" }

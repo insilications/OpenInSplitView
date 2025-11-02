@@ -3,6 +3,7 @@
 import com.github.benmanes.gradle.versions.updates.DependencyUpdatesTask
 import org.jetbrains.changelog.markdownToHTML
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
+import org.jetbrains.intellij.platform.gradle.tasks.PrepareSandboxTask
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
@@ -60,7 +61,7 @@ intellijPlatform {
     buildSearchableOptions = false
     instrumentCode = false
     autoReload = false
-    sandboxContainer = file("/king/.config/JetBrains/")
+//    sandboxContainer = file("/king/.config/JetBrains/")
 
     pluginConfiguration {
         id = pluginGroup
@@ -133,6 +134,28 @@ tasks {
 
     wrapper {
         gradleVersion = gradleVersion
+    }
+
+    withType<PrepareSandboxTask> {
+        sandboxDirectory.set(file("/king/.config/JetBrains/IC/"))
+        sandboxSuffix.set("")
+
+        // Resolve the source directory during the configuration phase.
+        val sourceConfigDir = project.file("sandbox-config")
+
+        doLast {
+            // Resolve the DirectoryProperty to a concrete File at execution time.
+            val destinationDir = sandboxDirectory.get().asFile
+
+            if (sourceConfigDir.exists() && sourceConfigDir.isDirectory) {
+                println("Copying custom IDE configuration from '${sourceConfigDir.path}' to sandbox.")
+
+                // Use standard Kotlin I/O, which is configuration-cache-safe.
+                sourceConfigDir.copyRecursively(destinationDir, overwrite = true)
+            } else {
+                println("Skipping custom IDE configuration copy: '${sourceConfigDir.path}' does not exist.")
+            }
+        }
     }
 
     runIde {

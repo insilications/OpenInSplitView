@@ -25,6 +25,9 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopup
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.psi.PsiFile
+import com.intellij.psi.search.GlobalSearchScope
+import com.intellij.psi.search.ProjectScope
+import com.intellij.psi.search.SearchScope
 import com.intellij.ui.awt.RelativePoint
 import com.intellij.ui.list.createTargetPopup
 import com.intellij.util.concurrency.ThreadingAssertions
@@ -39,6 +42,7 @@ import java.lang.invoke.MethodHandles
 import java.lang.invoke.MethodType
 import java.lang.reflect.Field
 import java.lang.reflect.Method
+import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -85,6 +89,39 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
         private var nextLookupRetryAtMillis: Long = 0
 
         private const val LOOKUP_RETRY_BACKOFF_MS: Long = 5_000
+
+        /**
+         * Stable predefined scopes that do not depend on volatile UI state.
+         * The list is intentionally narrow so we only cache scopes that map 1:1 to well-known names.
+         */
+        private val stableScopeSuppliers: List<(Project) -> SearchScope> = listOf(
+            { ProjectScope.getProjectScope(it) },
+            { GlobalSearchScope.projectScope(it) },
+            { GlobalSearchScope.allScope(it) },
+        )
+
+        /**
+         * Weakly keyed cache to avoid retaining disposed projects. Each project keeps a small map
+         * of "stable" scope display names to the corresponding SearchScope instance.
+         * We only populate it when the display name exactly matches one of our invariant scopes.
+         */
+        private val stableScopeCache: MutableMap<Project, MutableMap<String, SearchScope>> =
+            Collections.synchronizedMap(WeakHashMap())
+
+        private fun resolveStableSearchScope(project: Project, scopeName: String?): SearchScope? {
+            if (scopeName.isNullOrEmpty()) return null
+            val projectCache: MutableMap<String, SearchScope> = stableScopeCache.getOrPut(project) { mutableMapOf() }
+            projectCache[scopeName]?.let { return it }
+
+            val stableScope: SearchScope = stableScopeSuppliers
+                .asSequence()
+                .map { supplier: (Project) -> SearchScope -> supplier(project) }
+                .firstOrNull { scope: SearchScope -> scope.displayName == scopeName }
+                ?: return null
+
+            projectCache[scopeName] = stableScope
+            return stableScope
+        }
 
         /**
          * Resolve the platform's `gotoDeclarationOrUsages` MethodHandle exactly once and reuse it.
@@ -168,7 +205,7 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
 
             val actionResult: GTDUActionResultMirror? = underModalProgress(
                 project,
-                RESOLVING_REFERENCES,
+                progressTitle = RESOLVING_REFERENCES,
             ) {
                 val actionData: Any = try {
                     gotoDeclarationOrUsagesInvoker.invoke(project, editor, file, offset)
@@ -351,15 +388,25 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
 
         try {
             val popupPosition: RelativePoint = JBPopupFactory.getInstance().guessBestPopupLocation(editor)
+            val defaultScopeName: String? = FindUsagesSettings.getInstance().defaultScopeName
+            // Prefer a cache-backed path for invariant scopes; fall back to the full enumeration when the name is unknown.
+            val searchScope: SearchScope = when (val stable = resolveStableSearchScope(project, defaultScopeName)) {
+                null -> {
+                    LOG.debug { "Stable scope not found. Falling back to dynamic scope: $defaultScopeName" }
+                    FindUsagesOptions.findScopeByName(project, dataContext, defaultScopeName)
+                }
+
+                else -> {
+                    LOG.debug { "Using stable cached scope: ${stable.displayName}" }
+                    stable
+                }
+            }
+
             findShowUsagesSplit(
                 project, editor, popupPosition, targetVariants, SHOW_USAGES_AMBIGUOUS_TITLE,
                 createVariantHandler(
                     project, editor, popupPosition,
-                    FindUsagesOptions.findScopeByName(
-                        project,
-                        dataContext,
-                        FindUsagesSettings.getInstance().defaultScopeName,
-                    ),
+                    searchScope,
                 ),
             )
         } catch (_: IndexNotReadyException) {
