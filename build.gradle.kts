@@ -168,7 +168,7 @@ tasks {
             "-XX:+DebugNonSafepoints",
             "-Dignore.ide.script.launcher.used=true",
             "-Dide.slow.operations.assertion=true",
-            "-Didea.is.internal=false",
+            "-Didea.is.internal=true",
             "-Didea.logger.exception.expiration.minutes=0"
         )
         jvmArgumentProviders += CommandLineArgumentProvider {
@@ -181,7 +181,7 @@ tasks {
                 "-XX:+DebugNonSafepoints",
                 "-Dignore.ide.script.launcher.used=true",
                 "-Dide.slow.operations.assertion=true",
-                "-Didea.is.internal=false",
+                "-Didea.is.internal=true",
                 "-Didea.logger.exception.expiration.minutes=0"
             )
         }
