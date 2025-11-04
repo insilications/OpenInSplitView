@@ -3,6 +3,7 @@
 import com.github.benmanes.gradle.versions.updates.DependencyUpdatesTask
 import org.jetbrains.changelog.markdownToHTML
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
+import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.jetbrains.intellij.platform.gradle.tasks.PrepareSandboxTask
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
@@ -41,6 +42,35 @@ repositories {
     }
 }
 
+
+
+sourceSets {
+    main {
+        java.srcDirs("src/main")
+        kotlin.srcDirs("src/main")
+    }
+}
+
+//sourceSets {
+//    create("integrationTest") {
+//        compileClasspath += sourceSets.main.get().output
+//        runtimeClasspath += sourceSets.main.get().output
+//    }
+//}
+
+//val integrationTestImplementation: Configuration by configurations.getting {
+//    extendsFrom(configurations.testImplementation.get())
+//}
+
+val integrationTest: SourceSet by sourceSets.creating
+
+configurations.named(integrationTest.implementationConfigurationName).configure {
+    extendsFrom(configurations.testImplementation.get())
+}
+configurations.named(integrationTest.runtimeOnlyConfigurationName).configure {
+    extendsFrom(configurations.testRuntimeOnly.get())
+}
+
 dependencies {
     // IntelliJ Platform Gradle Plugin Dependencies Extension: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-dependencies-extension.html
     intellijPlatform {
@@ -50,9 +80,25 @@ dependencies {
         bundledPlugin("com.intellij.java")
 
         pluginVerifier()
+
+        testFramework(TestFrameworkType.Platform, configurationName = "integrationTestImplementation")
+        testFramework(TestFrameworkType.JUnit5, configurationName = "integrationTestImplementation")
+        testFramework(TestFrameworkType.Starter, configurationName = "integrationTestImplementation")
     }
 
+//    integrationTestImplementation("org.junit.jupiter:junit-jupiter:6.0.1")
+//    integrationTestImplementation("org.kodein.di:kodein-di-jvm:7.28.0")
+//    integrationTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.10.2")
+
+    add(integrationTest.implementationConfigurationName, "org.kodein.di:kodein-di-jvm:7.28.0")
+    add(integrationTest.implementationConfigurationName, "org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.10.2")
+    add(integrationTest.implementationConfigurationName, sourceSets.main.get().output)
+
     compileOnly(libs.jetbrains.annotations)
+}
+
+dependencies {
+    add(integrationTest.implementationConfigurationName, sourceSets.main.get().output)
 }
 
 // Configure IntelliJ Platform Gradle Plugin: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-extension.html
@@ -95,6 +141,13 @@ intellijPlatform {
     }
 }
 
+intellijPlatformTesting {
+    runIde
+    testIde
+    testIdeUi
+    testIdePerformance
+}
+
 idea {
     module {
         isDownloadSources = true
@@ -116,13 +169,6 @@ kotlin {
     }
 
     jvmToolchain(21)
-}
-
-sourceSets {
-    main {
-        java.srcDirs("src/main")
-        kotlin.srcDirs("src/main")
-    }
 }
 
 tasks {
@@ -200,6 +246,15 @@ tasks.named<DependencyUpdatesTask>("dependencyUpdates").configure {
     outputDir = "build/dependencyUpdates"
     reportfileName = "report"
 }
+
+//val integrationTest = tasks.register<Test>("integrationTest") {
+//    val integrationTestSourceSet = sourceSets.getByName("integrationTest")
+//    testClassesDirs = integrationTestSourceSet.output.classesDirs
+//    classpath = integrationTestSourceSet.runtimeClasspath
+//    systemProperty("path.to.build.plugin", tasks.prepareSandbox.get().pluginDirectory.get().asFile)
+//    useJUnitPlatform()
+//    dependsOn(tasks.prepareSandbox)
+//}
 
 fun isStable(version: String): Boolean {
     val stableKeyword = listOf("RELEASE", "FINAL", "GA").any { version.uppercase().contains(it) }
