@@ -49,26 +49,17 @@ sourceSets {
         java.srcDirs("src/main")
         kotlin.srcDirs("src/main")
     }
+
+    val testIntegration = create("testIntegration")
+    testIntegration.apply {
+        compileClasspath += sourceSets.main.get().output
+        runtimeClasspath += sourceSets.main.get().output
+        kotlin.srcDirs("src/testIntegration")
+    }
 }
 
-//sourceSets {
-//    create("integrationTest") {
-//        compileClasspath += sourceSets.main.get().output
-//        runtimeClasspath += sourceSets.main.get().output
-//    }
-//}
-
-//val integrationTestImplementation: Configuration by configurations.getting {
-//    extendsFrom(configurations.testImplementation.get())
-//}
-
-val integrationTest: SourceSet by sourceSets.creating
-
-configurations.named(integrationTest.implementationConfigurationName).configure {
+val testIntegrationImplementation: Configuration by configurations.getting {
     extendsFrom(configurations.testImplementation.get())
-}
-configurations.named(integrationTest.runtimeOnlyConfigurationName).configure {
-    extendsFrom(configurations.testRuntimeOnly.get())
 }
 
 dependencies {
@@ -81,24 +72,14 @@ dependencies {
 
         pluginVerifier()
 
-        testFramework(TestFrameworkType.Platform, configurationName = "integrationTestImplementation")
-        testFramework(TestFrameworkType.JUnit5, configurationName = "integrationTestImplementation")
-        testFramework(TestFrameworkType.Starter, configurationName = "integrationTestImplementation")
+        testFramework(TestFrameworkType.Starter, configurationName = "testIntegrationImplementation")
     }
 
-//    integrationTestImplementation("org.junit.jupiter:junit-jupiter:6.0.1")
-//    integrationTestImplementation("org.kodein.di:kodein-di-jvm:7.28.0")
-//    integrationTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.10.2")
-
-    add(integrationTest.implementationConfigurationName, "org.kodein.di:kodein-di-jvm:7.28.0")
-    add(integrationTest.implementationConfigurationName, "org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.10.2")
-    add(integrationTest.implementationConfigurationName, sourceSets.main.get().output)
+    testIntegrationImplementation("org.junit.jupiter:junit-jupiter:5.7.1")
+    testIntegrationImplementation("org.kodein.di:kodein-di-jvm:7.20.2")
+    testIntegrationImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.10.1")
 
     compileOnly(libs.jetbrains.annotations)
-}
-
-dependencies {
-    add(integrationTest.implementationConfigurationName, sourceSets.main.get().output)
 }
 
 // Configure IntelliJ Platform Gradle Plugin: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-extension.html
@@ -204,6 +185,10 @@ tasks {
         }
     }
 
+    test {
+        useJUnitPlatform()
+    }
+
     runIde {
         jvmArgs = listOf(
             "-Xms256m",
@@ -247,14 +232,15 @@ tasks.named<DependencyUpdatesTask>("dependencyUpdates").configure {
     reportfileName = "report"
 }
 
-//val integrationTest = tasks.register<Test>("integrationTest") {
-//    val integrationTestSourceSet = sourceSets.getByName("integrationTest")
-//    testClassesDirs = integrationTestSourceSet.output.classesDirs
-//    classpath = integrationTestSourceSet.runtimeClasspath
-//    systemProperty("path.to.build.plugin", tasks.prepareSandbox.get().pluginDirectory.get().asFile)
-//    useJUnitPlatform()
-//    dependsOn(tasks.prepareSandbox)
-//}
+val testIntegration = tasks.register<Test>("testIntegration") {
+    dependsOn(tasks.buildPlugin)
+    val integrationTestSourceSet = sourceSets.getByName("testIntegration")
+    testClassesDirs = integrationTestSourceSet.output.classesDirs
+    classpath = integrationTestSourceSet.runtimeClasspath
+    systemProperty("path.to.build.plugin", tasks.prepareSandbox.get().pluginDirectory.get().asFile)
+    useJUnitPlatform()
+    dependsOn(tasks.prepareSandbox)
+}
 
 fun isStable(version: String): Boolean {
     val stableKeyword = listOf("RELEASE", "FINAL", "GA").any { version.uppercase().contains(it) }
