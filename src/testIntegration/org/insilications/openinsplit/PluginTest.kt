@@ -56,10 +56,10 @@ class PluginTest {
                 .withVersion("2025.2.1")
 
         ).applyVMOptionsPatch {
-//            addSystemProperty("idea.system.path", "/king/.config/JetBrains/IC/system")
-//            addSystemProperty("idea.config.path", "/king/.config/JetBrains/IC/config")
-//            addSystemProperty("idea.plugins.path", "/king/.config/JetBrains/IC/config/plugins")
-//            addSystemProperty("idea.log.path", "/king/.config/JetBrains/IC/system/log")
+            addSystemProperty("idea.system.path", "/king/.config/JetBrains/IC/system")
+            addSystemProperty("idea.config.path", "/king/.config/JetBrains/IC/config")
+            addSystemProperty("idea.plugins.path", "/king/.config/JetBrains/IC/config/plugins")
+            addSystemProperty("idea.log.path", "/king/.config/JetBrains/IC/system/log")
             withXmx(8096)
             addSystemProperty("-Dawt.useSystemAAFontSettings", "lcd_hbgr")
             addSystemProperty("-Dswing.aatext", true)
@@ -72,6 +72,7 @@ class PluginTest {
             addLine("-XX:+UnlockDiagnosticVMOptions")
             addLine("-XX:+DebugNonSafepoints")
             // Required JVM arguments for module access
+            addLine("-Xms4096m")
             addLine("--add-opens java.base/java.lang=ALL-UNNAMED")
             addLine("--add-opens java.desktop/javax.swing=ALL-UNNAMED")
 
@@ -93,8 +94,8 @@ class PluginTest {
             addSystemProperty("ide.open.project.at.startup", false)
         }.enableAsyncProfiler().executeDuringIndexing(false).apply {
             val pathToPlugin = System.getProperty("path.to.build.plugin")
-//            println("Path to plugin: $pathToPlugin")
-            PluginConfigurator(this).installPluginFromPath(Path(pathToPlugin))
+            println("Path to plugin: $pathToPlugin")
+            PluginConfigurator(this).installPluginFromDir(Path(pathToPlugin))
 //            withBuildTool<GradleBuildTool>()
         }.runIdeWithDriver().useDriverAndCloseIde {
             waitForIndicators(1.minutes)
