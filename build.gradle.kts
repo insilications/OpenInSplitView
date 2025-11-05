@@ -42,8 +42,6 @@ repositories {
     }
 }
 
-
-
 sourceSets {
     main {
         java.srcDirs("src/main")
@@ -62,6 +60,10 @@ val testIntegrationImplementation: Configuration by configurations.getting {
     extendsFrom(configurations.testImplementation.get())
 }
 
+val testIntegrationRuntimeOnly: Configuration by configurations.getting {
+    extendsFrom(configurations.testRuntimeOnly.get())
+}
+
 dependencies {
     // IntelliJ Platform Gradle Plugin Dependencies Extension: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-dependencies-extension.html
     intellijPlatform {
@@ -78,6 +80,7 @@ dependencies {
     testIntegrationImplementation("org.junit.jupiter:junit-jupiter:5.7.1")
     testIntegrationImplementation("org.kodein.di:kodein-di-jvm:7.20.2")
     testIntegrationImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.10.1")
+    testIntegrationRuntimeOnly("org.junit.platform:junit-platform-launcher")
 
     compileOnly(libs.jetbrains.annotations)
 }
@@ -185,10 +188,6 @@ tasks {
         }
     }
 
-    test {
-        useJUnitPlatform()
-    }
-
     runIde {
         jvmArgs = listOf(
             "-Xms256m",
@@ -234,12 +233,15 @@ tasks.named<DependencyUpdatesTask>("dependencyUpdates").configure {
 
 val testIntegration = tasks.register<Test>("testIntegration") {
     dependsOn(tasks.buildPlugin)
+    dependsOn(tasks.prepareSandbox)
+
     val integrationTestSourceSet = sourceSets.getByName("testIntegration")
     testClassesDirs = integrationTestSourceSet.output.classesDirs
     classpath = integrationTestSourceSet.runtimeClasspath
-    systemProperty("path.to.build.plugin", tasks.prepareSandbox.get().pluginDirectory.get().asFile)
+//    systemProperty("path.to.build.plugin", tasks.buildPlugin.get().outputs.files.singleFile)
+    systemProperty("path.to.build.plugin", tasks.buildPlugin.get().archiveFile.get().asFile.absolutePath)
     useJUnitPlatform()
-    dependsOn(tasks.prepareSandbox)
+
 }
 
 fun isStable(version: String): Boolean {
