@@ -1,26 +1,38 @@
 package org.insilications.openinsplit
 
+import com.intellij.driver.sdk.waitForIndicators
 import com.intellij.ide.starter.ci.CIServer
 import com.intellij.ide.starter.ci.NoCIServer
 import com.intellij.ide.starter.di.di
+import com.intellij.ide.starter.driver.engine.runIdeWithDriver
 import com.intellij.ide.starter.ide.IdeProductProvider
 import com.intellij.ide.starter.junit5.hyphenateWithClass
 import com.intellij.ide.starter.models.TestCase
+import com.intellij.ide.starter.path.GlobalPaths
 import com.intellij.ide.starter.plugins.PluginConfigurator
 import com.intellij.ide.starter.project.NoProject
 import com.intellij.ide.starter.runner.CurrentTestMethod
 import com.intellij.ide.starter.runner.Starter
+import com.intellij.ide.starter.utils.Git
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.fail
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
 import java.nio.file.Path
 import kotlin.io.path.Path
+import kotlin.time.Duration.Companion.minutes
 
 class PluginTest {
+    /**
+     * Custom GlobalPaths implementation that points to the project's build directory.
+     * This ensures all test artifacts are stored within the project structure.
+     */
+    class TemplatePaths : GlobalPaths(Git.getRepoRoot().resolve("build"))
+
     init {
         di = DI {
             extend(di)
+            bindSingleton<GlobalPaths>(overrides = true) { TemplatePaths() }
             bindSingleton<CIServer>(overrides = true) {
                 object : CIServer by NoCIServer {
                     override fun publishArtifact(source: Path, artifactPath: String, artifactName: String) {
@@ -91,6 +103,7 @@ class PluginTest {
             addSystemProperty("idea.diagnostic.opentelemetry.otlp", false)
             addSystemProperty("ide.performance.screenshot", "")
         }.enableAsyncProfiler()
+            .suppressStatisticsReport()
             .withKotlinPluginK2()
             .executeDuringIndexing(false).apply {
                 val pathToPlugin = System.getProperty("path.to.build.plugin")
@@ -98,8 +111,12 @@ class PluginTest {
                 PluginConfigurator(this).installPluginFromDir(Path(pathToPlugin))
 //            withBuildTool<GradleBuildTool>()
             }
-//            .runIdeWithDriver().useDriverAndCloseIde {
-//                waitForIndicators(1.minutes)
-//            }
+            .runIdeWithDriver().provideDriverProperties {
+                // you can specify additional driver properties here
+            }}
+
+        useDriverAndCloseIde {
+            waitForIndicators(1.minutes)
+        }
     }
 }
