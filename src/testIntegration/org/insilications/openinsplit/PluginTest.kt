@@ -101,7 +101,6 @@ class PluginTest {
             addSystemProperty("idea.diagnostic.opentelemetry.metrics.file", "")
             addSystemProperty("idea.diagnostic.opentelemetry.meters.file.json", "")
             addSystemProperty("idea.diagnostic.opentelemetry.otlp", false)
-            addSystemProperty("ide.performance.screenshot", "")
         }.enableAsyncProfiler()
             .suppressStatisticsReport()
             .withKotlinPluginK2()
@@ -111,12 +110,18 @@ class PluginTest {
                 PluginConfigurator(this).installPluginFromDir(Path(pathToPlugin))
 //            withBuildTool<GradleBuildTool>()
             }
-            .runIdeWithDriver().provideDriverProperties {
-                // you can specify additional driver properties here
-            }}
-
-        useDriverAndCloseIde {
-            waitForIndicators(1.minutes)
-        }
+            .runIdeWithDriver(configure = {
+                addVMOptionsPatch {
+                    clearSystemProperty("ide.performance.screenshot")
+                    addSystemProperty(
+                        "idea.diagnostic.opentelemetry.otlp",
+                        false
+                    )
+                    addSystemProperty("idea.diagnostic.opentelemetry.metrics.file", "")
+                    addSystemProperty("idea.diagnostic.opentelemetry.meters.file.json", "")
+                }
+            }).useDriverAndCloseIde {
+                waitForIndicators(1.minutes)
+            }
     }
 }

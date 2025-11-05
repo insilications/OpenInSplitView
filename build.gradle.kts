@@ -234,6 +234,7 @@ tasks.named<DependencyUpdatesTask>("dependencyUpdates").configure {
 }
 
 val testIntegration = tasks.register<Test>("testIntegration") {
+    outputs.upToDateWhen { false }
     dependsOn(tasks.buildPlugin)
     dependsOn(tasks.prepareSandbox)
 
