@@ -1,12 +1,24 @@
 [versions]
 ideaVersion = "2025.2.1"
 changelog = "2.4.0"
+kotlinCoroutines = "1.10.2"
+junit5 = "5.13.4"
+kotlin = "2.2.21"
+intellijPlatform = "2.10.4"
+benManesVersions = "0.53.0"
+kodeinDiJvm = "7.28.0"
 
 [libraries]
 jetbrains-annotations = { group = "org.jetbrains", name = "annotations", version = "26.0.2-1" }
+# platfom launcher version selected by BOM
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
+junit5-bom = { module = "org.junit:junit-bom", version.ref = "junit5" }
+junit5-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit5" }
+kotlin-coroutines-jvm = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm", version.ref = "kotlinCoroutines" }
+kodein-di-jvm = { module = "org.kodein.di:kodein-di-jvm", version.ref = "kodeinDiJvm" }
 
 [plugins]
-kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version = "2.2.21" }
-intellij-platform = { id = "org.jetbrains.intellij.platform", version = "2.10.4" }
-ben-manes-versions = { id = "com.github.ben-manes.versions", version = "0.53.0" }
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+intellij-platform = { id = "org.jetbrains.intellij.platform", version.ref = "intellijPlatform" }
+ben-manes-versions = { id = "com.github.ben-manes.versions", version.ref = "benManesVersions" }
 changelog = { id = "org.jetbrains.changelog", version.ref = "changelog" }

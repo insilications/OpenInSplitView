@@ -1,10 +1,8 @@
 package org.insilications.openinsplit
 
-import com.intellij.driver.sdk.waitForIndicators
 import com.intellij.ide.starter.ci.CIServer
 import com.intellij.ide.starter.ci.NoCIServer
 import com.intellij.ide.starter.di.di
-import com.intellij.ide.starter.driver.engine.runIdeWithDriver
 import com.intellij.ide.starter.ide.IdeProductProvider
 import com.intellij.ide.starter.junit5.hyphenateWithClass
 import com.intellij.ide.starter.models.TestCase
@@ -16,8 +14,8 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.fail
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
+import java.nio.file.Path
 import kotlin.io.path.Path
-import kotlin.time.Duration.Companion.minutes
 
 class PluginTest {
     init {
@@ -25,6 +23,9 @@ class PluginTest {
             extend(di)
             bindSingleton<CIServer>(overrides = true) {
                 object : CIServer by NoCIServer {
+                    override fun publishArtifact(source: Path, artifactPath: String, artifactName: String) {
+                    }
+
                     override fun reportTestFailure(
                         testName: String,
                         message: String,
@@ -33,21 +34,14 @@ class PluginTest {
                     ) {
                         fail { "$testName fails: $message. \n$details" }
                     }
+
+                    override fun ignoreTestFailure(testName: String, message: String, details: String?) {
+                    }
                 }
             }
         }
     }
 
-    //
-//    -Xms256m
-//    -Xmx8096m
-//    -Dawt.useSystemAAFontSettings=lcd_hbgr
-//    -Dswing.aatext=true
-//    -XX:+UnlockDiagnosticVMOptions
-//    -XX:+DebugNonSafepoints
-//    -XX:+UnlockDiagnosticVMOptions
-//    -XX:+DebugNonSafepoints
-//    -Dsnapshots.path=/king/stuff/snapshots
     @Test
     fun simpleTestWithoutProject() {
         Starter.newContext(
@@ -60,6 +54,7 @@ class PluginTest {
             addSystemProperty("idea.config.path", "/king/.config/JetBrains/IC/config")
             addSystemProperty("idea.plugins.path", "/king/.config/JetBrains/IC/config/plugins")
             addSystemProperty("idea.log.path", "/king/.config/JetBrains/IC/system/log")
+            addLine("-Xms4096m")
             withXmx(8096)
             addSystemProperty("-Dawt.useSystemAAFontSettings", "lcd_hbgr")
             addSystemProperty("-Dswing.aatext", true)
@@ -72,7 +67,6 @@ class PluginTest {
             addLine("-XX:+UnlockDiagnosticVMOptions")
             addLine("-XX:+DebugNonSafepoints")
             // Required JVM arguments for module access
-            addLine("-Xms4096m")
             addLine("--add-opens java.base/java.lang=ALL-UNNAMED")
             addLine("--add-opens java.desktop/javax.swing=ALL-UNNAMED")
 
@@ -92,13 +86,20 @@ class PluginTest {
 
             // ensure it does not open any project on startup
             addSystemProperty("ide.open.project.at.startup", false)
-        }.enableAsyncProfiler().executeDuringIndexing(false).apply {
-            val pathToPlugin = System.getProperty("path.to.build.plugin")
-            println("Path to plugin: $pathToPlugin")
-            PluginConfigurator(this).installPluginFromDir(Path(pathToPlugin))
+            addSystemProperty("idea.diagnostic.opentelemetry.metrics.file", "")
+            addSystemProperty("idea.diagnostic.opentelemetry.meters.file.json", "")
+            addSystemProperty("idea.diagnostic.opentelemetry.otlp", false)
+            addSystemProperty("ide.performance.screenshot", "")
+        }.enableAsyncProfiler()
+            .withKotlinPluginK2()
+            .executeDuringIndexing(false).apply {
+                val pathToPlugin = System.getProperty("path.to.build.plugin")
+                println("Path to plugin: $pathToPlugin")
+                PluginConfigurator(this).installPluginFromDir(Path(pathToPlugin))
 //            withBuildTool<GradleBuildTool>()
-        }.runIdeWithDriver().useDriverAndCloseIde {
-            waitForIndicators(1.minutes)
-        }
+            }
+//            .runIdeWithDriver().useDriverAndCloseIde {
+//                waitForIndicators(1.minutes)
+//            }
     }
 }

@@ -77,12 +77,12 @@ dependencies {
         testFramework(TestFrameworkType.Starter, version = "latest", configurationName = testIntegrationImplementation.name)
     }
 
-    testIntegrationImplementation("org.junit.jupiter:junit-jupiter:5.13.4")
-    testIntegrationImplementation("org.kodein.di:kodein-di-jvm:7.28.0")
-//    testIntegrationImplementation("org.kodein.di:kodein-di-jvm:7.20.2")
-    testIntegrationImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.10.2")
-//    testIntegrationImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.10.1")
-    testIntegrationRuntimeOnly("org.junit.platform:junit-platform-launcher:1.13.4")
+//    testIntegrationImplementation("org.kodein.di:kodein-di-jvm:7.28.0")
+    testIntegrationImplementation(libs.kodein.di.jvm)
+    testIntegrationImplementation(platform(libs.junit5.bom))
+    testIntegrationImplementation(libs.junit5.jupiter)
+    testIntegrationImplementation(libs.kotlin.coroutines.jvm)
+    testIntegrationRuntimeOnly(libs.junit.platform.launcher)
 
     compileOnly(libs.jetbrains.annotations)
 }
