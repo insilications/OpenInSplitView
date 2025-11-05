@@ -1,7 +1,6 @@
 package org.insilications.openinsplit
 
 import com.intellij.driver.sdk.waitForIndicators
-import com.intellij.ide.starter.buildTool.GradleBuildTool
 import com.intellij.ide.starter.ci.CIServer
 import com.intellij.ide.starter.ci.NoCIServer
 import com.intellij.ide.starter.di.di
@@ -46,30 +45,35 @@ class PluginTest {
 //    -Dswing.aatext=true
 //    -XX:+UnlockDiagnosticVMOptions
 //    -XX:+DebugNonSafepoints
+//    -XX:+UnlockDiagnosticVMOptions
+//    -XX:+DebugNonSafepoints
+//    -Dsnapshots.path=/king/stuff/snapshots
     @Test
     fun simpleTestWithoutProject() {
         Starter.newContext(
             CurrentTestMethod.hyphenateWithClass(),
             TestCase(IdeProductProvider.IC, projectInfo = NoProject)
                 .withVersion("2025.2.1")
-        ).enableAsyncProfiler().executeDuringIndexing(false).applyVMOptionsPatch {
-            addSystemProperty("idea.system.path", "/king/.config/JetBrains/IC/system")
-            addSystemProperty("idea.config.path", "/king/.config/JetBrains/IC/config")
-            addSystemProperty("idea.plugins.path", "/king/.config/JetBrains/IC/config/plugins")
-            addSystemProperty("idea.log.path", "/king/.config/JetBrains/IC/system/log")
+
+        ).applyVMOptionsPatch {
+//            addSystemProperty("idea.system.path", "/king/.config/JetBrains/IC/system")
+//            addSystemProperty("idea.config.path", "/king/.config/JetBrains/IC/config")
+//            addSystemProperty("idea.plugins.path", "/king/.config/JetBrains/IC/config/plugins")
+//            addSystemProperty("idea.log.path", "/king/.config/JetBrains/IC/system/log")
             withXmx(8096)
-            addSystemProperty("gradle.user.home", "/king/.gradle")
             addSystemProperty("-Dawt.useSystemAAFontSettings", "lcd_hbgr")
             addSystemProperty("-Dswing.aatext", true)
             addSystemProperty("ide.experimental.ui", true)
-            addSystemProperty("ide.browser.jcef.enabled", true)
+//            addSystemProperty("ide.browser.jcef.enabled", true)
             addSystemProperty("jdk.gtk.verbose", true)
             addSystemProperty("jdk.gtk.version", 3)
             addSystemProperty("idea.is.internal", false)
-
+            addSystemProperty("snapshots.path", "/king/stuff/snapshots")
+            addLine("-XX:+UnlockDiagnosticVMOptions")
+            addLine("-XX:+DebugNonSafepoints")
             // Required JVM arguments for module access
-//            addSystemProperty("--add-opens", "java.base/java.lang=ALL-UNNAMED")
-//            addSystemProperty("--add-opens", "java.desktop/javax.swing=ALL-UNNAMED")
+            addLine("--add-opens java.base/java.lang=ALL-UNNAMED")
+            addLine("--add-opens java.desktop/javax.swing=ALL-UNNAMED")
 
             // Core IDE configuration
             addSystemProperty("idea.trust.all.projects", true) // Trust all projects automatically
@@ -87,11 +91,11 @@ class PluginTest {
 
             // ensure it does not open any project on startup
             addSystemProperty("ide.open.project.at.startup", false)
-        }.apply {
+        }.enableAsyncProfiler().executeDuringIndexing(false).apply {
             val pathToPlugin = System.getProperty("path.to.build.plugin")
 //            println("Path to plugin: $pathToPlugin")
             PluginConfigurator(this).installPluginFromPath(Path(pathToPlugin))
-            withBuildTool<GradleBuildTool>()
+//            withBuildTool<GradleBuildTool>()
         }.runIdeWithDriver().useDriverAndCloseIde {
             waitForIndicators(1.minutes)
         }
