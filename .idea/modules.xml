@@ -3,7 +3,6 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/modules/OpenInSplitView.iml" filepath="$PROJECT_DIR$/.idea/modules/OpenInSplitView.iml" />
-      <module fileurl="file://$PROJECT_DIR$/.idea/modules/OpenInSplitView.testIntegration.iml" filepath="$PROJECT_DIR$/.idea/modules/OpenInSplitView.testIntegration.iml" />
     </modules>
   </component>
 </project>

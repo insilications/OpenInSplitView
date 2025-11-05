@@ -1,38 +1,50 @@
 package org.insilications.openinsplit
 
+import com.intellij.driver.client.Driver
+import com.intellij.driver.sdk.waitFor
 import com.intellij.driver.sdk.waitForIndicators
 import com.intellij.ide.starter.ci.CIServer
 import com.intellij.ide.starter.ci.NoCIServer
 import com.intellij.ide.starter.di.di
+import com.intellij.ide.starter.driver.engine.BackgroundRun
 import com.intellij.ide.starter.driver.engine.runIdeWithDriver
+import com.intellij.ide.starter.ide.IdeDistributionFactory
 import com.intellij.ide.starter.ide.IdeProductProvider
+import com.intellij.ide.starter.ide.InstalledIde
 import com.intellij.ide.starter.junit5.hyphenateWithClass
+import com.intellij.ide.starter.models.IDEStartResult
 import com.intellij.ide.starter.models.TestCase
-import com.intellij.ide.starter.path.GlobalPaths
 import com.intellij.ide.starter.plugins.PluginConfigurator
 import com.intellij.ide.starter.project.NoProject
 import com.intellij.ide.starter.runner.CurrentTestMethod
+import com.intellij.ide.starter.runner.IDEHandle
 import com.intellij.ide.starter.runner.Starter
-import com.intellij.ide.starter.utils.Git
+import com.intellij.tools.ide.util.common.logError
+import com.intellij.tools.ide.util.common.logOutput
+import kotlinx.coroutines.runBlocking
+import org.insilications.openinsplit.util.MyLinuxIdeDistribution
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.fail
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
+import java.io.File
 import java.nio.file.Path
 import kotlin.io.path.Path
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 
 class PluginTest {
     /**
      * Custom GlobalPaths implementation that points to the project's build directory.
      * This ensures all test artifacts are stored within the project structure.
      */
-    class TemplatePaths : GlobalPaths(Git.getRepoRoot().resolve("build"))
+//    class TemplatePaths : GlobalPaths(Git.getRepoRoot().resolve("build"))
 
     init {
         di = DI {
             extend(di)
-            bindSingleton<GlobalPaths>(overrides = true) { TemplatePaths() }
+//            bindSingleton<GlobalPaths>(overrides = true) { TemplatePaths() }
             bindSingleton<CIServer>(overrides = true) {
                 object : CIServer by NoCIServer {
                     override fun publishArtifact(source: Path, artifactPath: String, artifactName: String) {
@@ -51,16 +63,29 @@ class PluginTest {
                     }
                 }
             }
+            bindSingleton<IdeDistributionFactory>(overrides = true) { createDistributionFactory() }
+//            bindProvider<TestContainer<*>>(overrides = true) { TestContainer.newInstance<RemDevTestContainer>() }
         }
+    }
+
+    private fun createDistributionFactory() = object : IdeDistributionFactory {
+        override fun installIDE(unpackDir: File, executableFileName: String): InstalledIde {
+            return MyLinuxIdeDistribution().installIde(unpackDir.toPath(), executableFileName)
+        }
+
     }
 
     @Test
     fun simpleTestWithoutProject() {
+
+//        EventsBus.subscribeOnce(runContext) { event: IdeBeforeRunIdeProcessEvent ->
+//            event.runContext.withVMOptions { }
+//        }
+//        val runContext =
         Starter.newContext(
             CurrentTestMethod.hyphenateWithClass(),
             TestCase(IdeProductProvider.IC, projectInfo = NoProject)
                 .withVersion("2025.2.1")
-
         ).applyVMOptionsPatch {
             addSystemProperty("idea.system.path", "/king/.config/JetBrains/IC/system")
             addSystemProperty("idea.config.path", "/king/.config/JetBrains/IC/config")
@@ -100,6 +125,7 @@ class PluginTest {
             addSystemProperty("ide.open.project.at.startup", false)
             addSystemProperty("idea.diagnostic.opentelemetry.metrics.file", "")
             addSystemProperty("idea.diagnostic.opentelemetry.meters.file.json", "")
+            addSystemProperty("idea.diagnostic.opentelemetry.file", "")
             addSystemProperty("idea.diagnostic.opentelemetry.otlp", false)
         }.enableAsyncProfiler()
             .suppressStatisticsReport()
@@ -113,15 +139,64 @@ class PluginTest {
             .runIdeWithDriver(configure = {
                 addVMOptionsPatch {
                     clearSystemProperty("ide.performance.screenshot")
+                    clearSystemProperty("idea.diagnostic.opentelemetry.otlp")
                     addSystemProperty(
                         "idea.diagnostic.opentelemetry.otlp",
                         false
                     )
+                    clearSystemProperty("idea.diagnostic.opentelemetry.metrics.file")
+                    clearSystemProperty("idea.diagnostic.opentelemetry.meters.file.json")
+                    clearSystemProperty("idea.diagnostic.opentelemetry.file")
                     addSystemProperty("idea.diagnostic.opentelemetry.metrics.file", "")
                     addSystemProperty("idea.diagnostic.opentelemetry.meters.file.json", "")
+                    addSystemProperty("idea.diagnostic.opentelemetry.file", "")
                 }
-            }).useDriverAndCloseIde {
-                waitForIndicators(1.minutes)
+            }).apply {
+//                val ideStartResult: IDEStartResult
+                try {
+                    driver.withContext { waitForIndicators(1.minutes) }
+                } finally {
+                    closeIdeAndWait(this, driver, 1.minutes)
+//                    ideStartResult = closeIdeAndWait(this, driver, 1.minutes)
+                }
+                return
             }
+
+//            useDriverAndCloseIde {
+//                waitForIndicators(1.minutes)
+//            }
+    }
+
+    private fun closeIdeAndWait(backgroundRun: BackgroundRun, driver: Driver, closeIdeTimeout: Duration): IDEStartResult {
+        val process: IDEHandle = backgroundRun.process
+        try {
+            if (driver.isConnected) {
+                driver.exitApplication()
+                waitFor("Driver is not connected", closeIdeTimeout, 3.seconds) { !driver.isConnected }
+            } else {
+                error("Driver is not connected, so it can't exit IDE")
+            }
+        } catch (t: Throwable) {
+            logError("Error on exit application via Driver", t)
+            logOutput("Performing force kill")
+            process.kill()
+        } finally {
+            try {
+                if (driver.isConnected) {
+                    driver.close()
+                }
+                waitFor("Process is closed", closeIdeTimeout, 3.seconds) { !process.isAlive }
+            } catch (e: Throwable) {
+                logError("Error waiting IDE is closed: ${e.message}: ${e.stackTraceToString()}", e)
+                logOutput("Performing force kill")
+                process.kill()
+                throw IllegalStateException("Process didn't die after waiting for Driver to close IDE", e)
+            }
+        }
+
+        @Suppress("SSBasedInspection")
+        return runBlocking {
+            backgroundRun.startResult.await()
+        }
     }
 }
