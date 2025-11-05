@@ -8,6 +8,7 @@ import com.intellij.ide.starter.ci.NoCIServer
 import com.intellij.ide.starter.di.di
 import com.intellij.ide.starter.driver.engine.BackgroundRun
 import com.intellij.ide.starter.driver.engine.runIdeWithDriver
+import com.intellij.ide.starter.driver.execute
 import com.intellij.ide.starter.ide.IdeDistributionFactory
 import com.intellij.ide.starter.ide.IdeProductProvider
 import com.intellij.ide.starter.ide.InstalledIde
@@ -19,6 +20,10 @@ import com.intellij.ide.starter.project.NoProject
 import com.intellij.ide.starter.runner.CurrentTestMethod
 import com.intellij.ide.starter.runner.IDEHandle
 import com.intellij.ide.starter.runner.Starter
+import com.intellij.tools.ide.performanceTesting.commands.CommandChain
+import com.intellij.tools.ide.performanceTesting.commands.startProfile
+import com.intellij.tools.ide.performanceTesting.commands.stopProfile
+import com.intellij.tools.ide.performanceTesting.commands.waitForSmartMode
 import com.intellij.tools.ide.util.common.logError
 import com.intellij.tools.ide.util.common.logOutput
 import kotlinx.coroutines.runBlocking
@@ -134,7 +139,6 @@ class PluginTest {
                 val pathToPlugin = System.getProperty("path.to.build.plugin")
                 println("Path to plugin: $pathToPlugin")
                 PluginConfigurator(this).installPluginFromDir(Path(pathToPlugin))
-//            withBuildTool<GradleBuildTool>()
             }
             .runIdeWithDriver(configure = {
                 addVMOptionsPatch {
@@ -154,7 +158,14 @@ class PluginTest {
             }).apply {
 //                val ideStartResult: IDEStartResult
                 try {
-                    driver.withContext { waitForIndicators(1.minutes) }
+                    driver.withContext {
+                        // event=wall,interval=100000ns,jstackdepth=36384,jfrsync=profile
+                        val commands =
+                            CommandChain().startProfile("indexing", "event=wall,interval=100000ns,jstackdepth=36384,jfrsync=profile").waitForSmartMode()
+                                .stopProfile()
+                        execute(commands)
+                        waitForIndicators(3.minutes)
+                    }
                 } finally {
                     closeIdeAndWait(this, driver, 1.minutes)
 //                    ideStartResult = closeIdeAndWait(this, driver, 1.minutes)
