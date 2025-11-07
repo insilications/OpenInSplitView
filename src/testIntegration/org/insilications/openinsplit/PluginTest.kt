@@ -69,7 +69,6 @@ class PluginTest {
                 }
             }
             bindSingleton<IdeDistributionFactory>(overrides = true) { createDistributionFactory() }
-//            bindProvider<TestContainer<*>>(overrides = true) { TestContainer.newInstance<RemDevTestContainer>() }
         }
     }
 
@@ -82,11 +81,6 @@ class PluginTest {
 
     @Test
     fun simpleTestWithoutProject() {
-
-//        EventsBus.subscribeOnce(runContext) { event: IdeBeforeRunIdeProcessEvent ->
-//            event.runContext.withVMOptions { }
-//        }
-//        val runContext =
         Starter.newContext(
             CurrentTestMethod.hyphenateWithClass(),
             TestCase(IdeProductProvider.IC, projectInfo = NoProject)
@@ -101,7 +95,6 @@ class PluginTest {
             addSystemProperty("-Dawt.useSystemAAFontSettings", "lcd_hbgr")
             addSystemProperty("-Dswing.aatext", true)
             addSystemProperty("ide.experimental.ui", true)
-//            addSystemProperty("ide.browser.jcef.enabled", true)
             addSystemProperty("jdk.gtk.verbose", true)
             addSystemProperty("jdk.gtk.version", 3)
             addSystemProperty("idea.is.internal", false)
@@ -113,25 +106,27 @@ class PluginTest {
             addLine("--add-opens java.desktop/javax.swing=ALL-UNNAMED")
 
             // Core IDE configuration
-            addSystemProperty("idea.trust.all.projects", true) // Trust all projects automatically
-            addSystemProperty("jb.consents.confirmation.enabled", false) // Disable consent dialogs
-            addSystemProperty("jb.privacy.policy.text", "<!--999.999-->") // Skip privacy policy
-            addSystemProperty("ide.show.tips.on.startup.default.value", false) // No tips on startup
+            // Trust all projects automatically
+            addSystemProperty("idea.trust.all.projects", true)
+            // Disable consent dialogs
+            addSystemProperty("jb.consents.confirmation.enabled", false)
+            // Skip privacy policy
+            addSystemProperty("jb.privacy.policy.text", "<!--999.999-->")
+            // No tips on startup
+            addSystemProperty("ide.show.tips.on.startup.default.value", false)
 
             // Test framework configuration
             addSystemProperty("junit.jupiter.extensions.autodetection.enabled", true)
             addSystemProperty("shared.indexes.download.auto.consent", true)
 
             // UI testing specific
-            addSystemProperty("expose.ui.hierarchy.url", true) // Enable UI hierarchy inspection
-            addSystemProperty("ide.experimental.ui", true) // Use new UI for testing
+            // Enable UI hierarchy inspection
+            addSystemProperty("expose.ui.hierarchy.url", true)
+            // Use new UI for testing
+            addSystemProperty("ide.experimental.ui", true)
 
-            // ensure it does not open any project on startup
+            // Ensure it does not open any project on startup
             addSystemProperty("ide.open.project.at.startup", false)
-            addSystemProperty("idea.diagnostic.opentelemetry.metrics.file", "")
-            addSystemProperty("idea.diagnostic.opentelemetry.meters.file.json", "")
-            addSystemProperty("idea.diagnostic.opentelemetry.file", "")
-            addSystemProperty("idea.diagnostic.opentelemetry.otlp", false)
         }.enableAsyncProfiler()
             .suppressStatisticsReport()
             .withKotlinPluginK2()
