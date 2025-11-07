@@ -77,7 +77,6 @@ dependencies {
         testFramework(TestFrameworkType.Starter, version = "latest", configurationName = testIntegrationImplementation.name)
     }
 
-//    testIntegrationImplementation("org.kodein.di:kodein-di-jvm:7.28.0")
     testIntegrationImplementation(libs.kodein.di.jvm)
     testIntegrationImplementation(platform(libs.junit5.bom))
     testIntegrationImplementation(libs.junit5.jupiter)
@@ -200,8 +199,15 @@ tasks {
             "-XX:+DebugNonSafepoints",
             "-Dignore.ide.script.launcher.used=true",
             "-Dide.slow.operations.assertion=true",
-            "-Didea.is.internal=true",
-            "-Didea.logger.exception.expiration.minutes=0"
+            "-Didea.is.internal=false",
+            "-Didea.logger.exception.expiration.minutes=0",
+            "-Dsnapshots.path=/king/stuff/snapshots",
+            "-Djdk.gtk.verbose=true",
+            "-Djdk.gtk.version=3",
+            "-Didea.diagnostic.opentelemetry.metrics.file=",
+            "-Didea.diagnostic.opentelemetry.meters.file.json=",
+            "-Didea.diagnostic.opentelemetry.file=",
+            "-Didea.diagnostic.opentelemetry.otlp=false"
         )
         jvmArgumentProviders += CommandLineArgumentProvider {
             listOf(
@@ -213,8 +219,15 @@ tasks {
                 "-XX:+DebugNonSafepoints",
                 "-Dignore.ide.script.launcher.used=true",
                 "-Dide.slow.operations.assertion=true",
-                "-Didea.is.internal=true",
-                "-Didea.logger.exception.expiration.minutes=0"
+                "-Didea.is.internal=false",
+                "-Didea.logger.exception.expiration.minutes=0",
+                "-Dsnapshots.path=/king/stuff/snapshots",
+                "-Djdk.gtk.verbose=true",
+                "-Djdk.gtk.version=3",
+                "-Didea.diagnostic.opentelemetry.metrics.file=",
+                "-Didea.diagnostic.opentelemetry.meters.file.json=",
+                "-Didea.diagnostic.opentelemetry.file=",
+                "-Didea.diagnostic.opentelemetry.otlp=false"
             )
         }
 
@@ -234,7 +247,7 @@ tasks.named<DependencyUpdatesTask>("dependencyUpdates").configure {
 }
 
 val testIntegration = tasks.register<Test>("testIntegration") {
-    outputs.upToDateWhen { false }
+//    outputs.upToDateWhen { false }
     dependsOn(tasks.buildPlugin)
     dependsOn(tasks.prepareSandbox)
 
@@ -242,8 +255,6 @@ val testIntegration = tasks.register<Test>("testIntegration") {
     testClassesDirs = integrationTestSourceSet.output.classesDirs
     classpath = integrationTestSourceSet.runtimeClasspath
     systemProperty("path.to.build.plugin", tasks.prepareSandbox.get().pluginDirectory.get().asFile)
-//    systemProperty("path.to.build.plugin", tasks.buildPlugin.get().outputs.files.singleFile)
-//    systemProperty("path.to.build.plugin", tasks.buildPlugin.get().archiveFile.get().asFile.absolutePath)
     useJUnitPlatform()
 
 }
