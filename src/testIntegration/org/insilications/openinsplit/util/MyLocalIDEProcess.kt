@@ -82,18 +82,27 @@ class MyLinuxIdeDistribution : IdeDistribution() {
             override val patchedVMOptionsFile = appHome.parent.resolve("${appHome.fileName}.vmoptions")
 
             override fun startConfig(vmOptions: VMOptions, logsDir: Path): IDEStartConfig {
+                vmOptions.clearSystemProperty("ide.performance.screenshot")
+                vmOptions.clearSystemProperty("idea.diagnostic.opentelemetry.metrics.max-files-to-keep")
                 vmOptions.clearSystemProperty("idea.diagnostic.opentelemetry.metrics.file")
                 vmOptions.clearSystemProperty("idea.diagnostic.opentelemetry.meters.file.json")
                 vmOptions.clearSystemProperty("idea.diagnostic.opentelemetry.file")
                 vmOptions.addSystemProperty("idea.diagnostic.opentelemetry.metrics.file", "")
                 vmOptions.addSystemProperty("idea.diagnostic.opentelemetry.meters.file.json", "")
                 vmOptions.addSystemProperty("idea.diagnostic.opentelemetry.file", "")
-                val xvfbRunLog = createXvfbRunLog(logsDir)
+                vmOptions.addSystemProperty(
+                    "idea.diagnostic.opentelemetry.otlp",
+                    false
+                )
+                vmOptions.withEnv("ENV_MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
+                vmOptions.withEnv("MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
+                val xvfbRunLog: Path = createXvfbRunLog(logsDir)
                 return object : InstalledBackedIDEStartConfig(patchedVMOptionsFile, vmOptions) {
-                    override val errorDiagnosticFiles = listOf(xvfbRunLog)
-                    override val workDir = appHome
-                    override val commandLine: List<String> =
-                        linuxCommandLine(xvfbRunLog, vmOptions.environmentVariables) + executablePath.toAbsolutePath().toString()
+                    override val errorDiagnosticFiles: List<Path> = listOf(xvfbRunLog)
+                    override val workDir: Path = appHome
+                    override val commandLine: List<String> = listOf(executablePath.toAbsolutePath().toString())
+//                    override val commandLine: List<String> =
+//                        linuxCommandLine(xvfbRunLog, vmOptions.environmentVariables) + executablePath.toAbsolutePath().toString()
                 }
             }
 

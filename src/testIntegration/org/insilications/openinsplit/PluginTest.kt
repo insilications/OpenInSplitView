@@ -5,6 +5,8 @@ import com.intellij.driver.sdk.waitFor
 import com.intellij.driver.sdk.waitForIndicators
 import com.intellij.ide.starter.ci.CIServer
 import com.intellij.ide.starter.ci.NoCIServer
+import com.intellij.ide.starter.config.ConfigurationStorage
+import com.intellij.ide.starter.config.starterConfigurationStorageDefaults
 import com.intellij.ide.starter.di.di
 import com.intellij.ide.starter.driver.engine.BackgroundRun
 import com.intellij.ide.starter.driver.engine.runIdeWithDriver
@@ -39,9 +41,10 @@ class PluginTest {
      * Custom GlobalPaths implementation that points to the project's build directory.
      * This ensures all test artifacts are stored within the project structure.
      */
-//    class TemplatePaths : GlobalPaths(Git.getRepoRoot().resolve("build"))
+//    class TemplatePaths : GlobalPaths(Git.getRepoRoot().resolve("build")) {
 
     init {
+        val starterConfigurationStorageDef: Map<String, String> = starterConfigurationStorageDefaults + ("MONITORING_DUMPS_INTERVAL_SECONDS" to "6000")
         di = DI {
             extend(di)
 //            bindSingleton<GlobalPaths>(overrides = true) { TemplatePaths() }
@@ -64,6 +67,13 @@ class PluginTest {
                 }
             }
             bindSingleton<IdeDistributionFactory>(overrides = true) { createDistributionFactory() }
+            bindSingleton<ConfigurationStorage>(overrides = true) {
+                ConfigurationStorage(
+                    this,
+                    starterConfigurationStorageDefaults + ("MONITORING_DUMPS_INTERVAL_SECONDS" to "6000")
+                )
+            }
+            ConfigurationStorage.instance().put("MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
         }
     }
 
@@ -81,10 +91,11 @@ class PluginTest {
             TestCase(IdeProductProvider.IC, projectInfo = NoProject)
                 .withVersion("2025.2.1")
         ).applyVMOptionsPatch {
+            withEnv("MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
             addSystemProperty("idea.system.path", "/king/.config/JetBrains/IC/system")
             addSystemProperty("idea.config.path", "/king/.config/JetBrains/IC/config")
-            addSystemProperty("idea.plugins.path", "/king/.config/JetBrains/IC/config/plugins")
-            addSystemProperty("idea.log.path", "/king/.config/JetBrains/IC/system/log")
+            addSystemProperty("idea.plugins.path", "/king/.config/JetBrains/IC/plugins")
+//            addSystemProperty("idea.log.path", "/king/.config/JetBrains/IC/system/log")
             addLine("-Xms4096m")
             withXmx(8096)
             addSystemProperty("-Dawt.useSystemAAFontSettings", "lcd_hbgr")
@@ -126,27 +137,11 @@ class PluginTest {
             .suppressStatisticsReport()
             .withKotlinPluginK2()
             .executeDuringIndexing(false).apply {
-                val pathToPlugin = System.getProperty("path.to.build.plugin")
+                val pathToPlugin: String = System.getProperty("path.to.build.plugin")
                 println("Path to plugin: $pathToPlugin")
                 PluginConfigurator(this).installPluginFromDir(Path(pathToPlugin))
             }
-            .runIdeWithDriver(configure = {
-                addVMOptionsPatch {
-                    clearSystemProperty("idea.diagnostic.opentelemetry.metrics.max-files-to-keep")
-                    clearSystemProperty("ide.performance.screenshot")
-                    clearSystemProperty("idea.diagnostic.opentelemetry.otlp")
-                    addSystemProperty(
-                        "idea.diagnostic.opentelemetry.otlp",
-                        false
-                    )
-                    clearSystemProperty("idea.diagnostic.opentelemetry.metrics.file")
-                    clearSystemProperty("idea.diagnostic.opentelemetry.meters.file.json")
-                    clearSystemProperty("idea.diagnostic.opentelemetry.file")
-                    addSystemProperty("idea.diagnostic.opentelemetry.metrics.file", "")
-                    addSystemProperty("idea.diagnostic.opentelemetry.meters.file.json", "")
-                    addSystemProperty("idea.diagnostic.opentelemetry.file", "")
-                }
-            }).apply {
+            .runIdeWithDriver().apply {
                 try {
                     driver.withContext {
                         waitForIndicators(3.minutes)
