@@ -179,7 +179,7 @@ class PluginTest {
                             }
                             invokeAction(GO_TO_DECLARATION_ACTION)
                             table(DIV_CLASS_SHOW_USAGES_TABLE).apply {
-                                waitForIt("Usages table is populated", 2.minutes, 5.seconds) {
+                                waitForIt("Usages table is populated", 1.minutes, 200.milliseconds) {
                                     this.rowCount() > 0
                                 }
                                 showUsagesTableRowCount = this.rowCount() - 1
@@ -195,7 +195,7 @@ class PluginTest {
                             invokeAction(GO_TO_DECLARATION_ACTION)
 
                             table(DIV_CLASS_SHOW_USAGES_TABLE).apply {
-                                waitForIt("Usages table is populated", 2.minutes, 500.milliseconds) {
+                                waitForIt("Usages table is populated", 1.minutes, 200.milliseconds) {
                                     this.rowCount() > 0
                                 }
                                 clickCell(showUsagesTableRowCount, 0)
@@ -209,7 +209,7 @@ class PluginTest {
                             invokeAction(GO_TO_DECLARATION_ACTION)
 
                             table(DIV_CLASS_SHOW_USAGES_TABLE).apply {
-                                waitForIt("Usages table is populated", 1.minutes, 500.milliseconds) {
+                                waitForIt("Usages table is populated", 1.minutes, 200.milliseconds) {
                                     this.rowCount() > 0
                                 }
                                 clickCell(showUsagesTableRowCount, 0)
@@ -223,7 +223,7 @@ class PluginTest {
                             invokeAction(GO_TO_DECLARATION_ACTION)
 
                             table(DIV_CLASS_SHOW_USAGES_TABLE).apply {
-                                waitForIt("Usages table is populated", 1.minutes, 500.milliseconds) {
+                                waitForIt("Usages table is populated", 1.minutes, 200.milliseconds) {
                                     this.rowCount() > 0
                                 }
                                 keyboard {
