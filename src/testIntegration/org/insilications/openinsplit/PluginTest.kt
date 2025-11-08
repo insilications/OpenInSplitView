@@ -1,12 +1,18 @@
+@file:Suppress("NOTHING_TO_INLINE")
+
 package org.insilications.openinsplit
 
 
 import com.intellij.driver.client.Driver
-import com.intellij.driver.sdk.invokeAction
+import com.intellij.driver.client.service
+import com.intellij.driver.model.LockSemantics
+import com.intellij.driver.model.OnDispatcher
+import com.intellij.driver.model.RdTarget
+import com.intellij.driver.sdk.ActionManager
+import com.intellij.driver.sdk.AnAction
 import com.intellij.driver.sdk.ui.components.common.JEditorUiComponent
 import com.intellij.driver.sdk.ui.components.common.ideFrame
 import com.intellij.driver.sdk.ui.components.elements.table
-import com.intellij.driver.sdk.waitFor
 import com.intellij.driver.sdk.waitForIndicators
 import com.intellij.ide.starter.ci.CIServer
 import com.intellij.ide.starter.ci.NoCIServer
@@ -15,7 +21,6 @@ import com.intellij.ide.starter.config.starterConfigurationStorageDefaults
 import com.intellij.ide.starter.di.di
 import com.intellij.ide.starter.driver.engine.BackgroundRun
 import com.intellij.ide.starter.driver.engine.runIdeWithDriver
-import com.intellij.ide.starter.driver.execute
 import com.intellij.ide.starter.ide.IdeDistributionFactory
 import com.intellij.ide.starter.ide.IdeDownloader
 import com.intellij.ide.starter.ide.IdeProductProvider
@@ -34,8 +39,6 @@ import com.intellij.ide.starter.runner.IDEHandle
 import com.intellij.ide.starter.runner.Starter
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.diagnostic.fileLogger
-import com.intellij.tools.ide.performanceTesting.commands.CommandChain
-import com.intellij.tools.ide.performanceTesting.commands.waitForSmartMode
 import com.intellij.tools.ide.util.common.logError
 import com.intellij.tools.ide.util.common.logOutput
 import kotlinx.coroutines.runBlocking
@@ -96,14 +99,14 @@ class PluginTest {
 
     private val platformPath: String = System.getProperty("path.to.platform")
 
-    private fun createDistributionFactory() = object : IdeDistributionFactory {
+    private fun createDistributionFactory(): IdeDistributionFactory = object : IdeDistributionFactory {
         override fun installIDE(unpackDir: File, executableFileName: String): InstalledIde {
             return MyLinuxIdeDistribution().installIde(unpackDir.toPath(), executableFileName)
         }
 
     }
 
-    private fun createInstallerFactory() = object : IdeInstallerFactory() {
+    private fun createInstallerFactory(): IdeInstallerFactory = object : IdeInstallerFactory() {
         @Suppress("PathAnnotationInspection")
         override fun createInstaller(ideInfo: IdeInfo, downloader: IdeDownloader) =
             ExistingIdeInstaller(Paths.get(platformPath))
@@ -146,6 +149,9 @@ class PluginTest {
             addSystemProperty("jdk.gtk.version", 3)
             addSystemProperty("idea.is.internal", false)
             addSystemProperty("snapshots.path", "/king/stuff/snapshots")
+            addSystemProperty("performance.watcher.unresponsive.interval.ms", "3600000")
+            addSystemProperty("performance.watcher.sampling.interval.ms", "3600000")
+
             addLine("-XX:+UnlockDiagnosticVMOptions")
             addLine("-XX:+DebugNonSafepoints")
             // Required JVM arguments for module access
@@ -186,7 +192,8 @@ class PluginTest {
                 try {
                     driver.withContext {
                         waitForIndicators(3.minutes)
-                        execute(CommandChain().waitForSmartMode())
+//                        Thread.sleep(30.minutes.inWholeMilliseconds)
+//                        execute(CommandChain().waitForSmartMode())
                         ideFrame {
                             val firstEditor: JEditorUiComponent = xx(JEditorUiComponent::class.java) {
                                 and(
@@ -195,62 +202,85 @@ class PluginTest {
                                 )
                             }.list()
                                 .first()
+
+                            val actionManager: ActionManager = service<ActionManager>(RdTarget.DEFAULT)
+                            val action: AnAction = withContext(OnDispatcher.EDT) {
+                                actionManager.getAction(GO_TO_DECLARATION_ACTION)
+                            } ?: return@ideFrame
                             var showUsagesTableRowCount = 0
 
-                            firstEditor.apply {
-                                goToPosition(68, 22)
+                            firstEditor.goToPosition(68, 22)
+                            withContext(OnDispatcher.EDT, semantics = LockSemantics.READ_ACTION) {
+                                actionManager.tryToExecute(action, null, null, null, true)
                             }
-                            invokeAction(GO_TO_DECLARATION_ACTION)
+
                             table(DIV_CLASS_SHOW_USAGES_TABLE).apply {
-                                waitForIt(MESSAGE_SHOW_USAGES_TABLE_POPULATED, 1.minutes, 200.milliseconds) {
+                                waitForIt(MESSAGE_SHOW_USAGES_TABLE_POPULATED, 1.minutes, 50.milliseconds) {
                                     this.rowCount() > 0
                                 }
                                 showUsagesTableRowCount = this.rowCount() - 1
-                                LOG.info("Row count: ${this.rowCount()}")
-                                clickCell(showUsagesTableRowCount, 0)
-                                showUsagesTableRowCount -= 1
-                            }
-
-                            firstEditor.apply {
-                                goToPosition(68, 22)
-                            }
-                            invokeAction(GO_TO_DECLARATION_ACTION)
-
-                            table(DIV_CLASS_SHOW_USAGES_TABLE).apply {
-                                waitForIt(MESSAGE_SHOW_USAGES_TABLE_POPULATED, 1.minutes, 200.milliseconds) {
-                                    this.rowCount() > 0
-                                }
-                                clickCell(showUsagesTableRowCount, 0)
-                                showUsagesTableRowCount -= 1
-                            }
-
-                            firstEditor.apply {
-                                goToPosition(68, 22)
-                            }
-                            invokeAction(GO_TO_DECLARATION_ACTION)
-
-                            table(DIV_CLASS_SHOW_USAGES_TABLE).apply {
-                                waitForIt(MESSAGE_SHOW_USAGES_TABLE_POPULATED, 1.minutes, 200.milliseconds) {
-                                    this.rowCount() > 0
-                                }
-                                clickCell(showUsagesTableRowCount, 0)
-                                showUsagesTableRowCount -= 1
-                            }
-
-                            firstEditor.apply {
-                                goToPosition(68, 22)
-                            }
-                            invokeAction(GO_TO_DECLARATION_ACTION)
-
-                            table(DIV_CLASS_SHOW_USAGES_TABLE).apply {
-                                waitForIt(MESSAGE_SHOW_USAGES_TABLE_POPULATED, 1.minutes, 200.milliseconds) {
-                                    this.rowCount() > 0
-                                }
                                 keyboard {
                                     key(KeyEvent.VK_DOWN)
                                     key(KeyEvent.VK_ENTER)
                                 }
                             }
+
+                            repeat(10) {
+                                firstEditor.goToPosition(68, 22)
+                                withContext(OnDispatcher.EDT, semantics = LockSemantics.READ_ACTION) {
+                                    actionManager.tryToExecute(action, null, null, null, true)
+                                }
+
+                                table(DIV_CLASS_SHOW_USAGES_TABLE).apply {
+                                    waitForIt(MESSAGE_SHOW_USAGES_TABLE_POPULATED, 1.minutes, 50.milliseconds) {
+                                        this.rowCount() > 0
+                                    }
+                                    keyboard {
+                                        key(KeyEvent.VK_DOWN)
+                                        key(KeyEvent.VK_ENTER)
+                                    }
+                                }
+                            }
+
+//                            firstEditor.apply {
+//                                goToPosition(68, 22)
+//                            }
+//                            invokeAction(GO_TO_DECLARATION_ACTION)
+//                            table(DIV_CLASS_SHOW_USAGES_TABLE).apply {
+//                                waitForIt(MESSAGE_SHOW_USAGES_TABLE_POPULATED, 1.minutes, 200.milliseconds) {
+//                                    this.rowCount() > 0
+//                                }
+//                                showUsagesTableRowCount = this.rowCount() - 1
+//                                LOG.info("Row count: ${this.rowCount()}")
+//                                clickCell(showUsagesTableRowCount, 0)
+//                                showUsagesTableRowCount -= 1
+//                            }
+//
+//                            firstEditor.apply {
+//                                goToPosition(68, 22)
+//                            }
+//                            invokeAction(GO_TO_DECLARATION_ACTION)
+//
+//                            table(DIV_CLASS_SHOW_USAGES_TABLE).apply {
+//                                waitForIt(MESSAGE_SHOW_USAGES_TABLE_POPULATED, 1.minutes, 200.milliseconds) {
+//                                    this.rowCount() > 0
+//                                }
+//                                clickCell(showUsagesTableRowCount, 0)
+//                                showUsagesTableRowCount -= 1
+//                            }
+//
+//                            firstEditor.apply {
+//                                goToPosition(68, 22)
+//                            }
+//                            invokeAction(GO_TO_DECLARATION_ACTION)
+//
+//                            table(DIV_CLASS_SHOW_USAGES_TABLE).apply {
+//                                waitForIt(MESSAGE_SHOW_USAGES_TABLE_POPULATED, 1.minutes, 200.milliseconds) {
+//                                    this.rowCount() > 0
+//                                }
+//                                clickCell(showUsagesTableRowCount, 0)
+//                                showUsagesTableRowCount -= 1
+//                            }
                         }
                         Thread.sleep(30.minutes.inWholeMilliseconds)
                         // event=wall,interval=100000ns,jstackdepth=36384,jfrsync=profile
@@ -261,18 +291,18 @@ class PluginTest {
 
                     }
                 } finally {
-                    closeIdeAndWait(this, driver, 1.minutes)
+                    myCloseIdeAndWait(this, driver, 1.minutes)
                 }
                 return
             }
     }
 
-    private fun closeIdeAndWait(backgroundRun: BackgroundRun, driver: Driver, closeIdeTimeout: Duration): IDEStartResult {
+    private inline fun myCloseIdeAndWait(backgroundRun: BackgroundRun, driver: Driver, closeIdeTimeout: Duration): IDEStartResult {
         val process: IDEHandle = backgroundRun.process
         try {
             if (driver.isConnected) {
                 driver.exitApplication()
-                waitFor("Driver is not connected", closeIdeTimeout, 3.seconds) { !driver.isConnected }
+                waitForIt("Driver is not connected", closeIdeTimeout, 3.seconds) { !driver.isConnected }
             } else {
                 error("Driver is not connected, so it can't exit IDE")
             }
@@ -285,7 +315,7 @@ class PluginTest {
                 if (driver.isConnected) {
                     driver.close()
                 }
-                waitFor("Process is closed", closeIdeTimeout, 3.seconds) { !process.isAlive }
+                waitForIt("Process is closed", closeIdeTimeout, 3.seconds) { !process.isAlive }
             } catch (e: Throwable) {
                 logError("Error waiting IDE is closed: ${e.message}: ${e.stackTraceToString()}", e)
                 logOutput("Performing force kill")
