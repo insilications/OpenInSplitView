@@ -12,6 +12,7 @@ import com.intellij.driver.sdk.AnAction
 import com.intellij.driver.sdk.ui.components.common.JEditorUiComponent
 import com.intellij.driver.sdk.ui.components.common.ideFrame
 import com.intellij.driver.sdk.ui.components.elements.table
+import com.intellij.driver.sdk.ui.remote.Robot
 import com.intellij.driver.sdk.waitForIndicators
 import com.intellij.ide.starter.ci.CIServer
 import com.intellij.ide.starter.ci.NoCIServer
@@ -189,8 +190,6 @@ class PluginTest {
             }
             .runIdeWithDriver().apply {
                 try {
-                    val kk = System.getenv().getOrDefault(MONITORING_DUMPS_INTERVAL_SECONDS, "60")
-                    println("")
                     driver.withContext {
                         waitForIndicators(3.minutes)
 //                        Thread.sleep(30.minutes.inWholeMilliseconds)
@@ -204,29 +203,14 @@ class PluginTest {
                             }.list()
                                 .first()
 
+                            val robot: Robot = robotProvider.defaultRobot
                             val actionManager: ActionManager = service<ActionManager>(RdTarget.DEFAULT)
                             val action: AnAction = withContext(OnDispatcher.EDT) {
                                 actionManager.getAction(GO_TO_DECLARATION_ACTION)
                             } ?: return@ideFrame
 //                            var showUsagesTableRowCount = 0
 
-//                            firstEditor.goToPosition(68, 22)
-//                            withContext(OnDispatcher.EDT, semantics = LockSemantics.READ_ACTION) {
-//                                actionManager.tryToExecute(action, null, null, null, true)
-//                            }
-//
-//                            table(DIV_CLASS_SHOW_USAGES_TABLE).apply {
-//                                waitForIt(MESSAGE_SHOW_USAGES_TABLE_POPULATED, 1.minutes, 50.milliseconds) {
-//                                    this.rowCount() > 0
-//                                }
-//                                showUsagesTableRowCount = this.rowCount() - 1
-//                                keyboard {
-//                                    key(KeyEvent.VK_DOWN)
-//                                    key(KeyEvent.VK_ENTER)
-//                                }
-//                            }
-
-                            repeat(10) {
+                            repeat(3) {
                                 firstEditor.goToPosition(68, 22)
                                 withContext(OnDispatcher.EDT, semantics = LockSemantics.READ_ACTION) {
                                     actionManager.tryToExecute(action, null, null, null, true)
@@ -236,10 +220,7 @@ class PluginTest {
                                     waitForIt(MESSAGE_SHOW_USAGES_TABLE_POPULATED, 1.minutes, 50.milliseconds) {
                                         this.rowCount() > 0
                                     }
-                                    keyboard {
-//                                        key(KeyEvent.VK_DOWN)
-                                        key(KeyEvent.VK_ENTER)
-                                    }
+                                    robot.pressAndReleaseKey(KeyEvent.VK_ENTER)
                                 }
                             }
 

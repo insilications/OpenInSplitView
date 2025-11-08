@@ -130,13 +130,6 @@ intellijPlatform {
     }
 }
 
-intellijPlatformTesting {
-    runIde
-    testIde
-    testIdeUi
-    testIdePerformance
-}
-
 idea {
     module {
         isDownloadSources = true
