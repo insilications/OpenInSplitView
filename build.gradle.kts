@@ -92,7 +92,11 @@ intellijPlatform {
     buildSearchableOptions = false
     instrumentCode = false
     autoReload = false
-//    sandboxContainer = file("/king/.config/JetBrains/")
+    sandboxContainer = file("/king/.config/JetBrains/IC")
+    intellijPlatform.caching.ides.enabled = true
+
+    println("Sandbox container set to: ${sandboxContainer.get().asFile}")
+    println("platformPath: $platformPath")
 
     pluginConfiguration {
         id = pluginGroup
@@ -170,6 +174,8 @@ tasks {
     withType<PrepareSandboxTask> {
         sandboxDirectory.set(file("/king/.config/JetBrains/IC/"))
         sandboxSuffix.set("")
+        println("Sandbox directory set to: ${sandboxDirectory.get().asFile}")
+
 
         // Resolve the source directory during the configuration phase.
         val sourceConfigDir = project.file("sandbox-config")
@@ -255,6 +261,7 @@ val testIntegration = tasks.register<Test>("testIntegration") {
     testClassesDirs = integrationTestSourceSet.output.classesDirs
     classpath = integrationTestSourceSet.runtimeClasspath
     systemProperty("path.to.build.plugin", tasks.prepareSandbox.get().pluginDirectory.get().asFile)
+    systemProperty("path.to.platform", tasks.prepareSandbox.get().platformPath)
     environment("MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
     environment("ENV_MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
     useJUnitPlatform()
