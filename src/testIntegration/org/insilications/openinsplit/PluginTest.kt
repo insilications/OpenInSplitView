@@ -17,7 +17,6 @@ import com.intellij.driver.sdk.waitForIndicators
 import com.intellij.ide.starter.ci.CIServer
 import com.intellij.ide.starter.ci.NoCIServer
 import com.intellij.ide.starter.config.ConfigurationStorage
-import com.intellij.ide.starter.config.starterConfigurationStorageDefaults
 import com.intellij.ide.starter.di.di
 import com.intellij.ide.starter.driver.engine.BackgroundRun
 import com.intellij.ide.starter.driver.engine.runIdeWithDriver
@@ -86,13 +85,12 @@ class PluginTest {
                 @Suppress("PathAnnotationInspection")
                 IdeNotDownloader(Paths.get(platformPath))
             }
-            bindSingleton<ConfigurationStorage>(overrides = true) {
-                ConfigurationStorage(
-                    this,
-                    starterConfigurationStorageDefaults + ("MONITORING_DUMPS_INTERVAL_SECONDS" to "6000")
-                )
+            val defaults = ConfigurationStorage.instance().defaults.toMutableMap().apply {
+                put("MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
             }
-            ConfigurationStorage.instance().put("MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
+            bindSingleton<ConfigurationStorage>(overrides = true) {
+                ConfigurationStorage(this, defaults)
+            }
         }
     }
 
