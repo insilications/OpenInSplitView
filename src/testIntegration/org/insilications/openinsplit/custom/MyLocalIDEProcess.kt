@@ -1,4 +1,4 @@
-package org.insilications.openinsplit.util
+package org.insilications.openinsplit.custom
 
 
 import com.intellij.ide.starter.ide.IDEStartConfig

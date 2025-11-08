@@ -3,9 +3,7 @@ package org.insilications.openinsplit
 
 import com.intellij.driver.client.Driver
 import com.intellij.driver.sdk.invokeAction
-import com.intellij.driver.sdk.ui.components.UiComponent.Companion.waitFound
 import com.intellij.driver.sdk.ui.components.common.JEditorUiComponent
-import com.intellij.driver.sdk.ui.components.common.codeEditorForFile
 import com.intellij.driver.sdk.ui.components.common.ideFrame
 import com.intellij.driver.sdk.ui.components.elements.table
 import com.intellij.driver.sdk.waitFor
@@ -34,7 +32,8 @@ import com.intellij.tools.ide.performanceTesting.commands.waitForSmartMode
 import com.intellij.tools.ide.util.common.logError
 import com.intellij.tools.ide.util.common.logOutput
 import kotlinx.coroutines.runBlocking
-import org.insilications.openinsplit.util.MyLinuxIdeDistribution
+import org.insilications.openinsplit.custom.MyLinuxIdeDistribution
+import org.insilications.openinsplit.custom.waitForIt
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.fail
 import org.kodein.di.DI
@@ -94,6 +93,13 @@ class PluginTest {
             return MyLinuxIdeDistribution().installIde(unpackDir.toPath(), executableFileName)
         }
 
+    }
+
+    companion object {
+        private const val EDITOR_COMPONENT_IMPL: String = "EditorComponentImpl"
+        private const val EDITOR_FOR_GOTODECLARATION: String = "Editor for GotoDeclarationOrUsageHandler2Split.kt"
+        private const val GO_TO_DECLARATION_ACTION: String = "GotoDeclarationActionSplit"
+        private const val DIV_CLASS_SHOW_USAGES_TABLE: String = "//div[@class='ShowUsagesTable']"
     }
 
     @Test
@@ -158,27 +164,22 @@ class PluginTest {
                     driver.withContext {
                         waitForIndicators(3.minutes)
                         execute(CommandChain().waitForSmartMode())
-//                        openFile(
-//                            "src/main/kotlin/org/insilications/openinsplit/codeInsight/navigation/actions/GotoDeclarationOrUsageHandler2Split.kt",
-//                            waitForCodeAnalysis = true
-//                        )
-
                         ideFrame {
-//                            val project = singleProject()
-//                            project.
-//                            val allEditors = findAll<JEditorUiComponent>(byClass("JEditorUiComponent"))
-//                            val kk = getProjects()
+                            val firstEditor: JEditorUiComponent = xx(JEditorUiComponent::class.java) {
+                                and(
+                                    byClass(EDITOR_COMPONENT_IMPL),
+                                    byAccessibleName(EDITOR_FOR_GOTODECLARATION)
+                                )
+                            }.list()
+                                .first()
                             var showUsagesTableRowCount = 0
-//                            codeEditorForFile("GotoDeclarationOrUsageHandler2Split.kt").click()
-                            val firstEditor: JEditorUiComponent = codeEditorForFile("GotoDeclarationOrUsageHandler2Split.kt")
                             firstEditor.apply {
-                                waitFound()
+//                                waitFound()
                                 goToPosition(68, 22)
                             }
-                            invokeAction("GotoDeclarationActionSplit")
-                            // //div[@class='ShowUsagesTable']
-                            table("//div[@class='ShowUsagesTable']").apply {
-                                waitFor("Usages table is populated", 2.minutes, 5.seconds) {
+                            invokeAction(GO_TO_DECLARATION_ACTION)
+                            table(DIV_CLASS_SHOW_USAGES_TABLE).apply {
+                                waitForIt("Usages table is populated", 2.minutes, 5.seconds) {
                                     this.rowCount() > 0
                                 }
                                 showUsagesTableRowCount = this.rowCount() - 1
@@ -191,10 +192,10 @@ class PluginTest {
                                 click()
                                 goToPosition(68, 22)
                             }
-                            invokeAction("GotoDeclarationActionSplit")
+                            invokeAction(GO_TO_DECLARATION_ACTION)
 
-                            table("//div[@class='ShowUsagesTable']").apply {
-                                waitFor("Usages table is populated", 2.minutes, 500.milliseconds) {
+                            table(DIV_CLASS_SHOW_USAGES_TABLE).apply {
+                                waitForIt("Usages table is populated", 2.minutes, 500.milliseconds) {
                                     this.rowCount() > 0
                                 }
                                 clickCell(showUsagesTableRowCount, 0)
@@ -205,10 +206,10 @@ class PluginTest {
                                 click()
                                 goToPosition(68, 22)
                             }
-                            invokeAction("GotoDeclarationActionSplit")
+                            invokeAction(GO_TO_DECLARATION_ACTION)
 
-                            table("//div[@class='ShowUsagesTable']").apply {
-                                waitFor("Usages table is populated", 1.minutes, 500.milliseconds) {
+                            table(DIV_CLASS_SHOW_USAGES_TABLE).apply {
+                                waitForIt("Usages table is populated", 1.minutes, 500.milliseconds) {
                                     this.rowCount() > 0
                                 }
                                 clickCell(showUsagesTableRowCount, 0)
@@ -219,10 +220,10 @@ class PluginTest {
                                 click()
                                 goToPosition(68, 22)
                             }
-                            invokeAction("GotoDeclarationActionSplit")
+                            invokeAction(GO_TO_DECLARATION_ACTION)
 
-                            table("//div[@class='ShowUsagesTable']").apply {
-                                waitFor("Usages table is populated", 1.minutes, 500.milliseconds) {
+                            table(DIV_CLASS_SHOW_USAGES_TABLE).apply {
+                                waitForIt("Usages table is populated", 1.minutes, 500.milliseconds) {
                                     this.rowCount() > 0
                                 }
                                 keyboard {
