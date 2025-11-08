@@ -2,7 +2,6 @@
 
 package org.insilications.openinsplit
 
-
 import com.intellij.driver.client.Driver
 import com.intellij.driver.client.service
 import com.intellij.driver.model.LockSemantics
@@ -60,7 +59,7 @@ import kotlin.time.Duration.Companion.seconds
 class PluginTest {
     init {
         di = DI {
-            extend(di)
+            extend(di, true)
             bindSingleton<CIServer>(overrides = true) {
                 object : CIServer by NoCIServer {
                     override fun publishArtifact(source: Path, artifactPath: String, artifactName: String) {
@@ -91,6 +90,7 @@ class PluginTest {
             bindSingleton<ConfigurationStorage>(overrides = true) {
                 ConfigurationStorage(this, defaults)
             }
+            ConfigurationStorage.instance().put("MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
         }
     }
 
@@ -128,12 +128,12 @@ class PluginTest {
 
     @Test
     fun simpleTestWithoutProject() {
+        ConfigurationStorage.Companion.instance().put("MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
         Starter.newContext(
             CurrentTestMethod.hyphenateWithClass(),
             TestCase(IdeProductProvider.IC, projectInfo = NoProject)
 //                .withVersion("2025.2.1")
         ).applyVMOptionsPatch {
-            withEnv("MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
             addSystemProperty("idea.system.path", "/king/.config/JetBrains/IC/system")
             addSystemProperty("idea.config.path", "/king/.config/JetBrains/IC/config")
             addSystemProperty("idea.plugins.path", "/king/.config/JetBrains/IC/plugins")
@@ -185,9 +185,12 @@ class PluginTest {
                 val pathToPlugin: String = System.getProperty("path.to.build.plugin")
                 LOG.info("Path to plugin: $pathToPlugin")
                 PluginConfigurator(this).installPluginFromDir(Path(pathToPlugin))
+                ConfigurationStorage.Companion.instance().put("MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
             }
             .runIdeWithDriver().apply {
                 try {
+                    val kk = System.getenv().getOrDefault(MONITORING_DUMPS_INTERVAL_SECONDS, "60")
+                    println("")
                     driver.withContext {
                         waitForIndicators(3.minutes)
 //                        Thread.sleep(30.minutes.inWholeMilliseconds)
@@ -205,23 +208,23 @@ class PluginTest {
                             val action: AnAction = withContext(OnDispatcher.EDT) {
                                 actionManager.getAction(GO_TO_DECLARATION_ACTION)
                             } ?: return@ideFrame
-                            var showUsagesTableRowCount = 0
+//                            var showUsagesTableRowCount = 0
 
-                            firstEditor.goToPosition(68, 22)
-                            withContext(OnDispatcher.EDT, semantics = LockSemantics.READ_ACTION) {
-                                actionManager.tryToExecute(action, null, null, null, true)
-                            }
-
-                            table(DIV_CLASS_SHOW_USAGES_TABLE).apply {
-                                waitForIt(MESSAGE_SHOW_USAGES_TABLE_POPULATED, 1.minutes, 50.milliseconds) {
-                                    this.rowCount() > 0
-                                }
-                                showUsagesTableRowCount = this.rowCount() - 1
-                                keyboard {
-                                    key(KeyEvent.VK_DOWN)
-                                    key(KeyEvent.VK_ENTER)
-                                }
-                            }
+//                            firstEditor.goToPosition(68, 22)
+//                            withContext(OnDispatcher.EDT, semantics = LockSemantics.READ_ACTION) {
+//                                actionManager.tryToExecute(action, null, null, null, true)
+//                            }
+//
+//                            table(DIV_CLASS_SHOW_USAGES_TABLE).apply {
+//                                waitForIt(MESSAGE_SHOW_USAGES_TABLE_POPULATED, 1.minutes, 50.milliseconds) {
+//                                    this.rowCount() > 0
+//                                }
+//                                showUsagesTableRowCount = this.rowCount() - 1
+//                                keyboard {
+//                                    key(KeyEvent.VK_DOWN)
+//                                    key(KeyEvent.VK_ENTER)
+//                                }
+//                            }
 
                             repeat(10) {
                                 firstEditor.goToPosition(68, 22)
@@ -234,7 +237,7 @@ class PluginTest {
                                         this.rowCount() > 0
                                     }
                                     keyboard {
-                                        key(KeyEvent.VK_DOWN)
+//                                        key(KeyEvent.VK_DOWN)
                                         key(KeyEvent.VK_ENTER)
                                     }
                                 }
