@@ -1,5 +1,6 @@
 package org.insilications.openinsplit
 
+
 import com.intellij.driver.client.Driver
 import com.intellij.driver.sdk.invokeAction
 import com.intellij.driver.sdk.ui.components.UiComponent.Companion.waitFound
@@ -157,8 +158,16 @@ class PluginTest {
                     driver.withContext {
                         waitForIndicators(3.minutes)
                         execute(CommandChain().waitForSmartMode())
+//                        openFile(
+//                            "src/main/kotlin/org/insilications/openinsplit/codeInsight/navigation/actions/GotoDeclarationOrUsageHandler2Split.kt",
+//                            waitForCodeAnalysis = true
+//                        )
 
                         ideFrame {
+//                            val project = singleProject()
+//                            project.
+//                            val allEditors = findAll<JEditorUiComponent>(byClass("JEditorUiComponent"))
+//                            val kk = getProjects()
                             var showUsagesTableRowCount = 0
 //                            codeEditorForFile("GotoDeclarationOrUsageHandler2Split.kt").click()
                             val firstEditor: JEditorUiComponent = codeEditorForFile("GotoDeclarationOrUsageHandler2Split.kt")
