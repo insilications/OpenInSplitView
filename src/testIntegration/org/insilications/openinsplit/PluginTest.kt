@@ -103,6 +103,7 @@ class PluginTest {
         private const val EDITOR_FOR_GOTODECLARATION: String = "Editor for GotoDeclarationOrUsageHandler2Split.kt"
         private const val GO_TO_DECLARATION_ACTION: String = "GotoDeclarationActionSplit"
         private const val DIV_CLASS_SHOW_USAGES_TABLE: String = "//div[@class='ShowUsagesTable']"
+        private const val MESSAGE_SHOW_USAGES_TABLE_POPULATED: String = "Usages table is populated"
     }
 
     @Test
@@ -182,7 +183,7 @@ class PluginTest {
                             }
                             invokeAction(GO_TO_DECLARATION_ACTION)
                             table(DIV_CLASS_SHOW_USAGES_TABLE).apply {
-                                waitForIt("Usages table is populated", 1.minutes, 200.milliseconds) {
+                                waitForIt(MESSAGE_SHOW_USAGES_TABLE_POPULATED, 1.minutes, 200.milliseconds) {
                                     this.rowCount() > 0
                                 }
                                 showUsagesTableRowCount = this.rowCount() - 1
@@ -192,13 +193,12 @@ class PluginTest {
                             }
 
                             firstEditor.apply {
-                                click()
                                 goToPosition(68, 22)
                             }
                             invokeAction(GO_TO_DECLARATION_ACTION)
 
                             table(DIV_CLASS_SHOW_USAGES_TABLE).apply {
-                                waitForIt("Usages table is populated", 1.minutes, 200.milliseconds) {
+                                waitForIt(MESSAGE_SHOW_USAGES_TABLE_POPULATED, 1.minutes, 200.milliseconds) {
                                     this.rowCount() > 0
                                 }
                                 clickCell(showUsagesTableRowCount, 0)
@@ -206,13 +206,12 @@ class PluginTest {
                             }
 
                             firstEditor.apply {
-                                click()
                                 goToPosition(68, 22)
                             }
                             invokeAction(GO_TO_DECLARATION_ACTION)
 
                             table(DIV_CLASS_SHOW_USAGES_TABLE).apply {
-                                waitForIt("Usages table is populated", 1.minutes, 200.milliseconds) {
+                                waitForIt(MESSAGE_SHOW_USAGES_TABLE_POPULATED, 1.minutes, 200.milliseconds) {
                                     this.rowCount() > 0
                                 }
                                 clickCell(showUsagesTableRowCount, 0)
@@ -220,13 +219,12 @@ class PluginTest {
                             }
 
                             firstEditor.apply {
-                                click()
                                 goToPosition(68, 22)
                             }
                             invokeAction(GO_TO_DECLARATION_ACTION)
 
                             table(DIV_CLASS_SHOW_USAGES_TABLE).apply {
-                                waitForIt("Usages table is populated", 1.minutes, 200.milliseconds) {
+                                waitForIt(MESSAGE_SHOW_USAGES_TABLE_POPULATED, 1.minutes, 200.milliseconds) {
                                     this.rowCount() > 0
                                 }
                                 keyboard {
@@ -234,7 +232,6 @@ class PluginTest {
                                     key(KeyEvent.VK_ENTER)
                                 }
                             }
-
                         }
                         Thread.sleep(30.minutes.inWholeMilliseconds)
                         // event=wall,interval=100000ns,jstackdepth=36384,jfrsync=profile
