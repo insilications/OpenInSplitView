@@ -56,17 +56,9 @@ import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 class PluginTest {
-    /**
-     * Custom GlobalPaths implementation that points to the project's build directory.
-     * This ensures all test artifacts are stored within the project structure.
-     */
-//    class TemplatePaths : GlobalPaths(Git.getRepoRoot().resolve("build")) {
-
     init {
-        val starterConfigurationStorageDef: Map<String, String> = starterConfigurationStorageDefaults + ("MONITORING_DUMPS_INTERVAL_SECONDS" to "6000")
         di = DI {
             extend(di)
-//            bindSingleton<GlobalPaths>(overrides = true) { TemplatePaths() }
             bindSingleton<CIServer>(overrides = true) {
                 object : CIServer by NoCIServer {
                     override fun publishArtifact(source: Path, artifactPath: String, artifactName: String) {
@@ -86,7 +78,11 @@ class PluginTest {
                 }
             }
             bindSingleton<IdeInstallerFactory>(overrides = true) { createInstallerFactory() }
-//            bindSingleton<IdeDistributionFactory>(overrides = true) { createDistributionFactory() }
+            bindSingleton<IdeDistributionFactory>(overrides = true) { createDistributionFactory() }
+            bindSingleton<IdeDownloader>(overrides = true) {
+                @Suppress("PathAnnotationInspection")
+                IdeNotDownloader(Paths.get(platformPath))
+            }
             bindSingleton<ConfigurationStorage>(overrides = true) {
                 ConfigurationStorage(
                     this,
@@ -97,7 +93,8 @@ class PluginTest {
         }
     }
 
-    private val PLATFORM_PATH: String = System.getProperty("path.to.platform")
+
+    private val platformPath: String = System.getProperty("path.to.platform")
 
     private fun createDistributionFactory() = object : IdeDistributionFactory {
         override fun installIDE(unpackDir: File, executableFileName: String): InstalledIde {
@@ -107,8 +104,9 @@ class PluginTest {
     }
 
     private fun createInstallerFactory() = object : IdeInstallerFactory() {
+        @Suppress("PathAnnotationInspection")
         override fun createInstaller(ideInfo: IdeInfo, downloader: IdeDownloader) =
-            ExistingIdeInstaller(Paths.get(PLATFORM_PATH))
+            ExistingIdeInstaller(Paths.get(platformPath))
     }
 
     // This helpers are required to run locally installed IDE instead of downloading one
@@ -296,7 +294,6 @@ class PluginTest {
             }
         }
 
-        @Suppress("SSBasedInspection")
         return runBlocking {
             backgroundRun.startResult.await()
         }

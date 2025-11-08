@@ -6,8 +6,6 @@ import com.intellij.ide.starter.ide.IdeDistribution
 import com.intellij.ide.starter.ide.InstalledIde
 import com.intellij.ide.starter.models.VMOptions
 import com.intellij.ide.starter.models.VMOptionsDiff
-import com.intellij.ide.starter.process.exec.ExecOutputRedirect
-import com.intellij.ide.starter.process.exec.ProcessExecutor
 import com.intellij.ide.starter.utils.FileSystem.listDirectoryEntriesQuietly
 import com.intellij.ide.starter.utils.JvmUtils
 import com.intellij.openapi.util.SystemInfo
@@ -16,38 +14,37 @@ import com.intellij.util.system.OS
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.*
-import kotlin.time.Duration.Companion.seconds
 
-const val DEFAULT_DISPLAY_ID = "88"
+//const val DEFAULT_DISPLAY_ID: String = "88"
 
 class MyLinuxIdeDistribution : IdeDistribution() {
     companion object {
-        private const val DEFAULT_DISPLAY_RESOLUTION = "1920x1080"
-        internal const val XVFB_TOOL_NAME: String = "xvfb-run"
-        private val xvfbRunTool: String by lazy {
-            val homePath = Path(System.getProperty("user.home")).toAbsolutePath()
-            ProcessExecutor(
-                XVFB_TOOL_NAME, homePath, timeout = 5.seconds, args = listOf("which", XVFB_TOOL_NAME),
-                stdoutRedirect = ExecOutputRedirect.ToStdOut("$XVFB_TOOL_NAME-out"),
-                stderrRedirect = ExecOutputRedirect.ToStdOut("$XVFB_TOOL_NAME-err")
-            ).start()
-            XVFB_TOOL_NAME
-        }
+        //        private const val DEFAULT_DISPLAY_RESOLUTION = "1920x1080"
+//        private const val XVFB_TOOL_NAME: String = "xvfb-run"
+//        private val xvfbRunTool: String by lazy {
+//            val homePath = Path(System.getProperty("user.home")).toAbsolutePath()
+//            ProcessExecutor(
+//                XVFB_TOOL_NAME, homePath, timeout = 5.seconds, args = listOf("which", XVFB_TOOL_NAME),
+//                stdoutRedirect = ExecOutputRedirect.ToStdOut("$XVFB_TOOL_NAME-out"),
+//                stderrRedirect = ExecOutputRedirect.ToStdOut("$XVFB_TOOL_NAME-err")
+//            ).start()
+//            XVFB_TOOL_NAME
+//        }
 
-        fun linuxCommandLine(xvfbRunLog: Path, commandEnv: Map<String, String> = emptyMap()): List<String> {
-            return when {
-                System.getenv("DISPLAY") != null || commandEnv["DISPLAY"] != null -> listOf()
-                else ->
-                    //hint https://gist.github.com/tullmann/2d8d38444c5e81a41b6d
-                    listOf(
-                        xvfbRunTool,
-                        "--error-file=" + xvfbRunLog.toAbsolutePath().toString(),
-                        "--server-args=-ac -screen 0 ${DEFAULT_DISPLAY_RESOLUTION}x24",
-                        "--auto-servernum",
-                        "--server-num=$DEFAULT_DISPLAY_ID"
-                    )
-            }
-        }
+//        fun linuxCommandLine(xvfbRunLog: Path, commandEnv: Map<String, String> = emptyMap()): List<String> {
+//            return when {
+//                System.getenv("DISPLAY") != null || commandEnv["DISPLAY"] != null -> listOf()
+//                else ->
+//                    //hint https://gist.github.com/tullmann/2d8d38444c5e81a41b6d
+//                    listOf(
+//                        xvfbRunTool,
+//                        "--error-file=" + xvfbRunLog.toAbsolutePath().toString(),
+//                        "--server-args=-ac -screen 0 ${DEFAULT_DISPLAY_RESOLUTION}x24",
+//                        "--auto-servernum",
+//                        "--server-num=$DEFAULT_DISPLAY_ID"
+//                    )
+//            }
+//        }
 
         fun createXvfbRunLog(logsDir: Path): Path {
             val logTxt = logsDir.resolve("xvfb-log.txt")
@@ -79,6 +76,7 @@ class MyLinuxIdeDistribution : IdeDistribution() {
             override val vmOptions: VMOptions
                 get() = vmOptionsFinal
 
+            @Suppress("PathAnnotationInspection")
             override val patchedVMOptionsFile = appHome.parent.resolve("${appHome.fileName}.vmoptions")
 
             override fun startConfig(vmOptions: VMOptions, logsDir: Path): IDEStartConfig {
