@@ -17,10 +17,15 @@ import com.intellij.ide.starter.driver.engine.BackgroundRun
 import com.intellij.ide.starter.driver.engine.runIdeWithDriver
 import com.intellij.ide.starter.driver.execute
 import com.intellij.ide.starter.ide.IdeDistributionFactory
+import com.intellij.ide.starter.ide.IdeDownloader
 import com.intellij.ide.starter.ide.IdeProductProvider
 import com.intellij.ide.starter.ide.InstalledIde
+import com.intellij.ide.starter.ide.installer.ExistingIdeInstaller
+import com.intellij.ide.starter.ide.installer.IdeInstallerFactory
+import com.intellij.ide.starter.ide.installer.IdeInstallerFile
 import com.intellij.ide.starter.junit5.hyphenateWithClass
 import com.intellij.ide.starter.models.IDEStartResult
+import com.intellij.ide.starter.models.IdeInfo
 import com.intellij.ide.starter.models.TestCase
 import com.intellij.ide.starter.plugins.PluginConfigurator
 import com.intellij.ide.starter.project.NoProject
@@ -43,6 +48,7 @@ import org.kodein.di.bindSingleton
 import java.awt.event.KeyEvent
 import java.io.File
 import java.nio.file.Path
+import java.nio.file.Paths
 import kotlin.io.path.Path
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -79,7 +85,8 @@ class PluginTest {
                     }
                 }
             }
-            bindSingleton<IdeDistributionFactory>(overrides = true) { createDistributionFactory() }
+            bindSingleton<IdeInstallerFactory>(overrides = true) { createInstallerFactory() }
+//            bindSingleton<IdeDistributionFactory>(overrides = true) { createDistributionFactory() }
             bindSingleton<ConfigurationStorage>(overrides = true) {
                 ConfigurationStorage(
                     this,
@@ -90,11 +97,25 @@ class PluginTest {
         }
     }
 
+    private val PLATFORM_PATH: String = System.getProperty("path.to.platform")
+
     private fun createDistributionFactory() = object : IdeDistributionFactory {
         override fun installIDE(unpackDir: File, executableFileName: String): InstalledIde {
             return MyLinuxIdeDistribution().installIde(unpackDir.toPath(), executableFileName)
         }
 
+    }
+
+    private fun createInstallerFactory() = object : IdeInstallerFactory() {
+        override fun createInstaller(ideInfo: IdeInfo, downloader: IdeDownloader) =
+            ExistingIdeInstaller(Paths.get(PLATFORM_PATH))
+    }
+
+    // This helpers are required to run locally installed IDE instead of downloading one
+    class IdeNotDownloader(private val installer: Path) : IdeDownloader {
+        override fun downloadIdeInstaller(ideInfo: IdeInfo, installerDirectory: Path): IdeInstallerFile {
+            return IdeInstallerFile(installer, "locally-installed-ide")
+        }
     }
 
     companion object {
@@ -111,7 +132,7 @@ class PluginTest {
         Starter.newContext(
             CurrentTestMethod.hyphenateWithClass(),
             TestCase(IdeProductProvider.IC, projectInfo = NoProject)
-                .withVersion("2025.2.1")
+//                .withVersion("2025.2.1")
         ).applyVMOptionsPatch {
             withEnv("MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
             addSystemProperty("idea.system.path", "/king/.config/JetBrains/IC/system")

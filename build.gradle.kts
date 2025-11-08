@@ -261,7 +261,8 @@ val testIntegration = tasks.register<Test>("testIntegration") {
     testClassesDirs = integrationTestSourceSet.output.classesDirs
     classpath = integrationTestSourceSet.runtimeClasspath
     systemProperty("path.to.build.plugin", tasks.prepareSandbox.get().pluginDirectory.get().asFile)
-    systemProperty("path.to.platform", tasks.prepareSandbox.get().platformPath)
+//    val platformPath = tasks.prepareSandbox.get().platformPath.toFile()
+    systemProperty("path.to.platform", tasks.prepareSandbox.get().platformPath.toFile())
     environment("MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
     environment("ENV_MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
     useJUnitPlatform()
