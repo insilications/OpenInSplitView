@@ -27,6 +27,8 @@ import com.intellij.ide.starter.project.NoProject
 import com.intellij.ide.starter.runner.CurrentTestMethod
 import com.intellij.ide.starter.runner.IDEHandle
 import com.intellij.ide.starter.runner.Starter
+import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.diagnostic.fileLogger
 import com.intellij.tools.ide.performanceTesting.commands.CommandChain
 import com.intellij.tools.ide.performanceTesting.commands.waitForSmartMode
 import com.intellij.tools.ide.util.common.logError
@@ -96,6 +98,7 @@ class PluginTest {
     }
 
     companion object {
+        private val LOG: Logger get() = fileLogger()
         private const val EDITOR_COMPONENT_IMPL: String = "EditorComponentImpl"
         private const val EDITOR_FOR_GOTODECLARATION: String = "Editor for GotoDeclarationOrUsageHandler2Split.kt"
         private const val GO_TO_DECLARATION_ACTION: String = "GotoDeclarationActionSplit"
@@ -156,7 +159,7 @@ class PluginTest {
             .withKotlinPluginK2()
             .executeDuringIndexing(false).apply {
                 val pathToPlugin: String = System.getProperty("path.to.build.plugin")
-                println("Path to plugin: $pathToPlugin")
+                LOG.info("Path to plugin: $pathToPlugin")
                 PluginConfigurator(this).installPluginFromDir(Path(pathToPlugin))
             }
             .runIdeWithDriver().apply {
@@ -173,8 +176,8 @@ class PluginTest {
                             }.list()
                                 .first()
                             var showUsagesTableRowCount = 0
+
                             firstEditor.apply {
-//                                waitFound()
                                 goToPosition(68, 22)
                             }
                             invokeAction(GO_TO_DECLARATION_ACTION)
@@ -183,7 +186,7 @@ class PluginTest {
                                     this.rowCount() > 0
                                 }
                                 showUsagesTableRowCount = this.rowCount() - 1
-                                println("Row count: ${this.rowCount()}")
+                                LOG.info("Row count: ${this.rowCount()}")
                                 clickCell(showUsagesTableRowCount, 0)
                                 showUsagesTableRowCount -= 1
                             }
