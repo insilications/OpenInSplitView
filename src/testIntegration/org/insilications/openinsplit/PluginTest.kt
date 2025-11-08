@@ -1,6 +1,12 @@
 package org.insilications.openinsplit
 
 import com.intellij.driver.client.Driver
+import com.intellij.driver.sdk.invokeAction
+import com.intellij.driver.sdk.ui.components.UiComponent.Companion.waitFound
+import com.intellij.driver.sdk.ui.components.common.JEditorUiComponent
+import com.intellij.driver.sdk.ui.components.common.codeEditorForFile
+import com.intellij.driver.sdk.ui.components.common.ideFrame
+import com.intellij.driver.sdk.ui.components.elements.table
 import com.intellij.driver.sdk.waitFor
 import com.intellij.driver.sdk.waitForIndicators
 import com.intellij.ide.starter.ci.CIServer
@@ -10,6 +16,7 @@ import com.intellij.ide.starter.config.starterConfigurationStorageDefaults
 import com.intellij.ide.starter.di.di
 import com.intellij.ide.starter.driver.engine.BackgroundRun
 import com.intellij.ide.starter.driver.engine.runIdeWithDriver
+import com.intellij.ide.starter.driver.execute
 import com.intellij.ide.starter.ide.IdeDistributionFactory
 import com.intellij.ide.starter.ide.IdeProductProvider
 import com.intellij.ide.starter.ide.InstalledIde
@@ -21,6 +28,8 @@ import com.intellij.ide.starter.project.NoProject
 import com.intellij.ide.starter.runner.CurrentTestMethod
 import com.intellij.ide.starter.runner.IDEHandle
 import com.intellij.ide.starter.runner.Starter
+import com.intellij.tools.ide.performanceTesting.commands.CommandChain
+import com.intellij.tools.ide.performanceTesting.commands.waitForSmartMode
 import com.intellij.tools.ide.util.common.logError
 import com.intellij.tools.ide.util.common.logOutput
 import kotlinx.coroutines.runBlocking
@@ -29,10 +38,12 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.fail
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
+import java.awt.event.KeyEvent
 import java.io.File
 import java.nio.file.Path
 import kotlin.io.path.Path
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
@@ -145,6 +156,73 @@ class PluginTest {
                 try {
                     driver.withContext {
                         waitForIndicators(3.minutes)
+                        execute(CommandChain().waitForSmartMode())
+
+                        ideFrame {
+                            var showUsagesTableRowCount = 0
+//                            codeEditorForFile("GotoDeclarationOrUsageHandler2Split.kt").click()
+                            val firstEditor: JEditorUiComponent = codeEditorForFile("GotoDeclarationOrUsageHandler2Split.kt")
+                            firstEditor.apply {
+                                waitFound()
+                                goToPosition(68, 22)
+                            }
+                            invokeAction("GotoDeclarationActionSplit")
+                            // //div[@class='ShowUsagesTable']
+                            table("//div[@class='ShowUsagesTable']").apply {
+                                waitFor("Usages table is populated", 2.minutes, 5.seconds) {
+                                    this.rowCount() > 0
+                                }
+                                showUsagesTableRowCount = this.rowCount() - 1
+                                println("Row count: ${this.rowCount()}")
+                                clickCell(showUsagesTableRowCount, 0)
+                                showUsagesTableRowCount -= 1
+                            }
+
+                            firstEditor.apply {
+                                click()
+                                goToPosition(68, 22)
+                            }
+                            invokeAction("GotoDeclarationActionSplit")
+
+                            table("//div[@class='ShowUsagesTable']").apply {
+                                waitFor("Usages table is populated", 2.minutes, 500.milliseconds) {
+                                    this.rowCount() > 0
+                                }
+                                clickCell(showUsagesTableRowCount, 0)
+                                showUsagesTableRowCount -= 1
+                            }
+
+                            firstEditor.apply {
+                                click()
+                                goToPosition(68, 22)
+                            }
+                            invokeAction("GotoDeclarationActionSplit")
+
+                            table("//div[@class='ShowUsagesTable']").apply {
+                                waitFor("Usages table is populated", 1.minutes, 500.milliseconds) {
+                                    this.rowCount() > 0
+                                }
+                                clickCell(showUsagesTableRowCount, 0)
+                                showUsagesTableRowCount -= 1
+                            }
+
+                            firstEditor.apply {
+                                click()
+                                goToPosition(68, 22)
+                            }
+                            invokeAction("GotoDeclarationActionSplit")
+
+                            table("//div[@class='ShowUsagesTable']").apply {
+                                waitFor("Usages table is populated", 1.minutes, 500.milliseconds) {
+                                    this.rowCount() > 0
+                                }
+                                keyboard {
+                                    key(KeyEvent.VK_DOWN)
+                                    key(KeyEvent.VK_ENTER)
+                                }
+                            }
+
+                        }
                         Thread.sleep(30.minutes.inWholeMilliseconds)
                         // event=wall,interval=100000ns,jstackdepth=36384,jfrsync=profile
 //                        val commands =
