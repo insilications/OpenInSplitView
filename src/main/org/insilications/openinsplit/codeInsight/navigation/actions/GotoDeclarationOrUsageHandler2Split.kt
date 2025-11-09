@@ -384,10 +384,6 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
         targetVariants: List<Any>,
     ) {
 
-//        stableScopeSuppliers.forEachIndexed { index, supplier ->
-//            LOG.debug { "$index: ${supplier(project).displayName}" }
-//        }
-
         // Build DataContext for scope resolution
         val dataContext: DataContext = SimpleDataContext.builder().add(CommonDataKeys.PSI_FILE, file).add(CommonDataKeys.EDITOR, editor)
             .add(PlatformCoreDataKeys.CONTEXT_COMPONENT, editor.contentComponent).build()
@@ -395,18 +391,6 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
         try {
             val popupPosition: RelativePoint = JBPopupFactory.getInstance().guessBestPopupLocation(editor)
             val defaultScopeName: String? = FindUsagesSettings.getInstance().defaultScopeName
-            // Prefer a cache-backed path for invariant scopes; fall back to the full enumeration when the name is unknown.
-//            val searchScope: SearchScope = when (val stable: SearchScope? = resolveStableSearchScope(project, defaultScopeName)) {
-//                null -> {
-//                    LOG.debug { "Stable scope not found. Falling back to dynamic scope: $defaultScopeName" }
-//                    FindUsagesOptions.findScopeByName(project, dataContext, defaultScopeName)
-//                }
-//
-//                else -> {
-//                    LOG.debug { "Using stable cached scope: ${stable.displayName}" }
-//                    stable
-//                }
-//            }
 
             val searchScope: SearchScope = resolveStableSearchScope(project, defaultScopeName)
                 ?: FindUsagesOptions.findScopeByName(
