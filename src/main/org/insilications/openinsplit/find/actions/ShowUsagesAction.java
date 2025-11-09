@@ -31,7 +31,6 @@ import com.intellij.openapi.actionSystem.ex.CustomComponentAction;
 import com.intellij.openapi.actionSystem.impl.ActionButton;
 import com.intellij.openapi.actionSystem.impl.ActionToolbarImpl;
 import com.intellij.openapi.actionSystem.toolbarLayout.ToolbarLayoutStrategy;
-import com.intellij.openapi.application.AccessToken;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.application.ReadAction;
@@ -376,10 +375,9 @@ public final class ShowUsagesAction {
         AtomicBoolean manuallyResized = new AtomicBoolean();
         Ref<UsageNode> preselectedRow = new Ref<>();
 
-        Predicate<? super Usage> originUsageCheck;
-        try (AccessToken ignore = SlowOperations.knownIssue("IJPL-162330")) {
-            originUsageCheck = originUsageCheck(parameters.editor);
-        }
+//        try (AccessToken ignore = SlowOperations.knownIssue("IJPL-162330")) {
+        Predicate<? super Usage> originUsageCheck = ShowUsagesAction.originUsageCheck(parameters.editor);
+//        }
         ShowUsagesTableCellRenderer renderer = new ShowUsagesTableCellRenderer(originUsageCheck, outOfScopeUsages, searchScope);
         ShowUsagesTable table = new ShowUsagesTable(renderer, usageView);
 
@@ -817,10 +815,9 @@ public final class ShowUsagesAction {
         toolbarComponent.setOpaque(false);
         northPanel.add(toolbarComponent, gc.next());
 
-        SearchScope maximalScope;
-        try (AccessToken ignore = SlowOperations.knownIssue("IDEA-349679, EA-891094")) {
-            maximalScope = actionHandler.getMaximalScope();
-        }
+//        try (AccessToken ignore = SlowOperations.knownIssue("IDEA-349679, EA-891094")) {
+        SearchScope maximalScope = actionHandler.getMaximalScope();
+//        }
         if (!(maximalScope instanceof LocalSearchScope)) {
             DefaultActionGroup scopeChooserGroup = new DefaultActionGroup(createScopeChooser(project, contentDisposable, showUsagesPopupData));
             ActionToolbar scopeChooserToolbar = actionManager.createActionToolbar(ActionPlaces.SHOW_USAGES_POPUP_TOOLBAR, scopeChooserGroup, true);
