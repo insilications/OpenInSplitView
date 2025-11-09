@@ -74,7 +74,7 @@ dependencies {
 
         pluginVerifier()
 
-        testFramework(TestFrameworkType.Starter, version = "253.28294-EAP-CANDIDATE-SNAPSHOT", configurationName = testIntegrationImplementation.name)
+        testFramework(TestFrameworkType.Starter, version = "latest", configurationName = testIntegrationImplementation.name)
     }
 
     testIntegrationImplementation(libs.kodein.di.jvm)
@@ -96,7 +96,6 @@ intellijPlatform {
     intellijPlatform.caching.ides.enabled = true
 
     println("Sandbox container set to: ${sandboxContainer.get().asFile}")
-    println("platformPath: $platformPath")
 
     pluginConfiguration {
         id = pluginGroup
