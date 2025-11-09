@@ -15,7 +15,7 @@
     </extensions>
 
     <extensionPoints>
-        <extensionPoint name="gotoSuperActionSplit" interface="org.insilications.openinsplit.bridge.GotoSuperActionSplitBridge"/>
+        <extensionPoint name="gotoSuperActionSplit" interface="org.insilications.openinsplit.bridge.GotoSuperActionSplitBridge" dynamic="false"/>
     </extensionPoints>
 
     <extensions defaultExtensionNs="com.intellij">

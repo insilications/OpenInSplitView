@@ -25,7 +25,7 @@ import org.jetbrains.annotations.ApiStatus
 
 
 /**
- * Opens the declaration of a method that the current method overrides or implements in the split view immediately to the right of your active tab's split view.
+ * Opens the declaration that the current method overrides or implements in the split view immediately to the right of your active tab's split view.
  * If there isn't one, a new one is created.
  * If there are multiple overrides, a popup will appear, allowing you to select one.
  */
@@ -64,7 +64,7 @@ class GotoSuperActionSplit : PresentableActionHandlerBasedAction(), CodeInsightA
             event.presentation.setEnabledAndVisible(false)
             return
         }
-        // since previous handled may have changed the presentation, we need to restore it; otherwise it will stick.
+        // Since previous handled may have changed the presentation, we need to restore it; otherwise it will stick.
         event.presentation.copyFrom(getTemplatePresentation())
         applyTextOverride(event)
 
@@ -94,22 +94,22 @@ class GotoSuperActionSplit : PresentableActionHandlerBasedAction(), CodeInsightA
             }
 
             val languageId: String = PsiUtilCore.getLanguageAtOffset(psiFile, editor.caretModel.offset).id
-            LOG.debug { "GotoSuperActionSplit - update for language: $languageId" }
+//            LOG.debug { "GotoSuperActionSplit - update for language: $languageId" }
 
             val gotoSuperActionSplit: GotoSuperActionSplitBridge? = gotoSuperActionSplitExtensions.find { it.goToSuperActionSplitLanguage == languageId }
             if (gotoSuperActionSplit != null) {
-                LOG.debug { "GotoSuperActionSplit - update for language found: $languageId" }
+//                LOG.debug { "GotoSuperActionSplit - update for language found: $languageId" }
                 presentation.setEnabled(true)
                 if (presentation.isVisible) {
                     gotoSuperActionSplit.update(editor, psiFile, presentation, event.isFromMainMenu, event.isFromContextMenu)
                 }
             } else {
                 presentation.setEnabled(false)
-                LOG.debug { "GotoSuperActionSplit - update for language NOT found: $languageId" }
+//                LOG.debug { "GotoSuperActionSplit - update for language NOT found: $languageId" }
             }
         }
 
-        // for Undo to show the correct action name, we remember it here to return from getCommandName(), which lack context of AnActionEvent
+        // For Undo to show the correct action name, we remember it here to return from getCommandName(), which lack context of AnActionEvent
         myCurrentActionName = event.presentation.text
     }
 
@@ -119,7 +119,7 @@ class GotoSuperActionSplit : PresentableActionHandlerBasedAction(), CodeInsightA
         psiFile: PsiFile,
     ): Boolean {
         val languageId: String = PsiUtilCore.getLanguageAtOffset(psiFile, editor.caretModel.offset).id
-        LOG.debug { "GotoSuperActionSplit - isValidForFile for language: $languageId" }
+//        LOG.debug { "GotoSuperActionSplit - isValidForFile for language: $languageId" }
         return GotoSuperActionSplitBridge.EP_NAME.extensions.find { it.goToSuperActionSplitLanguage == languageId } != null
     }
 

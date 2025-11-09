@@ -102,11 +102,11 @@ class KotlinFqnDeclarativeInlayActionHandlerSplit : InlayActionHandler {
                         getAdjacentSplitView(project) {
                             getVirtualFileFromNavigatable(navigatable)
                         }
-                        LOG.debug { "1 KotlinFqnDeclarativeInlayActionHandler - handleClick" }
+//                        LOG.debug { "1 KotlinFqnDeclarativeInlayActionHandler - handleClick" }
                     }
 
                     navigatable.navigate(true)
-                    LOG.debug { "2 KotlinFqnDeclarativeInlayActionHandler - handleClick" }
+//                    LOG.debug { "2 KotlinFqnDeclarativeInlayActionHandler - handleClick" }
                 }
             }
         }

@@ -13,7 +13,7 @@ import com.intellij.openapi.actionSystem.AnActionEvent
  * 1. It **MUST** be a `Mouse Shortcut`.
  * 2. It **MUST** include `Ctrl` (`Cmd` on macOS) + `Left Click`.
  *
- * This happens because the low level inlay rendering system and its mouse click event system hardcodes these requirements.
+ * This because the low level inlay rendering system and its mouse click event system hardcodes these requirements.
  */
 class InlayNavigationActionSplit : AnAction() {
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
