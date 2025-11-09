@@ -19,12 +19,7 @@ import org.jetbrains.annotations.ApiStatus
 import org.jetbrains.kotlin.idea.base.resources.KotlinBundle
 import org.jetbrains.kotlin.idea.codeInsight.SuperDeclaration
 import org.jetbrains.kotlin.idea.codeInsight.SuperDeclarationProvider
-import org.jetbrains.kotlin.psi.KtClassOrObject
-import org.jetbrains.kotlin.psi.KtDeclaration
-import org.jetbrains.kotlin.psi.KtFile
-import org.jetbrains.kotlin.psi.KtFunction
-import org.jetbrains.kotlin.psi.KtParameter
-import org.jetbrains.kotlin.psi.KtProperty
+import org.jetbrains.kotlin.psi.*
 
 internal class KotlinGoToSuperDeclarationsHandlerSplit : GotoSuperActionSplitBridge {
     @Suppress("CompanionObjectInExtension")
@@ -93,7 +88,6 @@ internal class KotlinGoToSuperDeclarationsHandlerSplit : GotoSuperActionSplitBri
     }
 
     override val goToSuperActionSplitLanguage: String = "kotlin"
-
 
     override fun invoke(project: Project, editor: Editor, file: PsiFile) {
         LOG.debug { "KotlinGoToSuperDeclarationsHandlerSplit - invoke" }

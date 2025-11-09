@@ -57,7 +57,7 @@ class GotoSuperActionSplit : PresentableActionHandlerBasedAction(), CodeInsightA
     }
 
     override fun update(event: AnActionEvent) {
-        LOG.debug { "GotoSuperActionSplit - update" }
+//        LOG.debug { "GotoSuperActionSplit - update" }
         val gotoSuperActionSplitExtensions: Array<GotoSuperActionSplitBridge> = GotoSuperActionSplitBridge.EP_NAME.extensions
 
         if (gotoSuperActionSplitExtensions.isEmpty()) {
