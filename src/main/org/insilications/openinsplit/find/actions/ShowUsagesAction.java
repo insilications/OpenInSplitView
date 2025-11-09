@@ -198,8 +198,8 @@ public final class ShowUsagesAction {
     }
 
     public static void startFindUsages(@NotNull PsiElement element, @NotNull RelativePoint popupPosition, @Nullable Editor editor) {
-        ReadAction.nonBlocking(() -> getUsagesTitle(element)).expireWhen(() -> editor != null && editor.isDisposed())
-                .finishOnUiThread(ModalityState.nonModal(), title -> startFindUsagesWithResult(element, popupPosition, editor, title))
+        ReadAction.nonBlocking(() -> ShowUsagesAction.getUsagesTitle(element)).expireWhen(() -> null != editor && editor.isDisposed())
+                .finishOnUiThread(ModalityState.nonModal(), title -> ShowUsagesAction.startFindUsagesWithResult(element, popupPosition, editor, title))
                 .submit(AppExecutorUtil.getAppExecutorService());
     }
 

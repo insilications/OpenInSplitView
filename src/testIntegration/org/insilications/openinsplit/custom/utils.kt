@@ -12,7 +12,6 @@ fun waitForIt(
     message: String? = null,
     timeout: Duration = 5.seconds,
     interval: Duration = 1.seconds,
-    errorMessage: (() -> String)? = null,
     condition: () -> Boolean,
 ) {
     waitForIt2(

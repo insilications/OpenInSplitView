@@ -1,7 +1,7 @@
 <repository_guidelines>
 # Project Structure & Module Organization
 - Project Source Code: `src/main/`
-- The `intellij-community/` symbolic link folder contains the IntelliJ Platform API Java/Kotlin source code that is currently in use. Use it to augment your knowledge of the API
+- The `intellij-community/` folder contains the IntelliJ Platform API Java/Kotlin source code that is currently in use. Use it to augment your knowledge of the API
 - Documentation: `README.md`
 - Changelog: `CHANGELOG.md`
 
