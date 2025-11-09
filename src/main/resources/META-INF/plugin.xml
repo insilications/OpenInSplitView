@@ -19,6 +19,10 @@
     </extensionPoints>
 
     <extensions defaultExtensionNs="com.intellij">
+        <codeInsight.inlayActionHandler handlerId="psi.pointer.navigation.handler"
+                                        implementationClass="org.insilications.openinsplit.codeInsight.hints.PsiPointerInlayActionNavigationHandlerSplit"
+                                        order="first"/>
+
         <postStartupActivity implementation="org.insilications.openinsplit.OverrideIdeOptions"/>
     </extensions>
 

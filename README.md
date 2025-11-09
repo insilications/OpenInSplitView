@@ -30,7 +30,7 @@ this functionality.** This plugin brings that essential feature to all JetBrains
     - Triggering navigation from a tab in `Split 1` will always open the target in `Split 2`.
     - Triggering navigation from a tab in `Split 2` will always open the target in `Split 3`.
     - Triggering navigation from a tab in `Split 3` will always wrap around and open the target in `Split 1`.
-- Kotlin Inlay Hint Navigation: Opens inlay hint targets (e.g., parameter names, type hints).
+- Inlay Hint Navigation: Opens inlay hint targets in an adjacent split view (e.g., references, parameter names, type hints).
 
 ## Configuration
 
