@@ -25,9 +25,9 @@ import org.jetbrains.annotations.ApiStatus
 
 
 /**
- * Opens the declaration that the current method overrides or implements in the split view immediately to the right of your active tab's split view.
+ * Opens the declaration that the current target overrides/implements/inherits from in the split view immediately to the right of your active tab's split view.
  * If there isn't one, a new one is created.
- * If there are multiple overrides, a popup will appear, allowing you to select one.
+ * If there are multiple, a popup will appear, allowing you to select one.
  */
 @Suppress("CompanionObjectInExtension")
 @ApiStatus.Internal

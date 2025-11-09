@@ -31,6 +31,7 @@ this functionality.** This plugin brings that essential feature to all JetBrains
     - Triggering navigation from a tab in `Split 2` will always open the target in `Split 3`.
     - Triggering navigation from a tab in `Split 3` will always wrap around and open the target in `Split 1`.
 - Inlay Hint Navigation: Opens inlay hint targets in an adjacent split view (e.g., references, parameter names, type hints).
+- Super Navigation: Opens the declaration that the current target overrides/implements/inherits from.
 
 ## Configuration
 
@@ -38,11 +39,12 @@ Configure shortcuts in `Settings / Preferences → Keymap`.
 
 <div align="center">
 
-|              Action               |      Default Shortcut       |             Description              |
-| :-------------------------------: | :-------------------------: | :----------------------------------: |
-| **Declaration or Usages (Split)** |  `Ctrl + Alt + Left Click`  | Opens symbol's declaration or usages |
-|   **Implementation(s) (Split)**   | `Ctrl + Shift + Left Click` |   Opens symbol's implementation(s)   |
-|   **Inlay Navigation (Split)**    |  `Ctrl + Alt + Left Click`  |      Opens inlay hint's target       |
+|              Action               |         Default Shortcut          |                                   Description                                    |
+| :-------------------------------: | :-------------------------------: | :------------------------------------------------------------------------------: |
+| **Declaration or Usages (Split)** |     `Ctrl + Alt + Left Click`     |                       Opens symbol's declaration or usages                       |
+|   **Implementation(s) (Split)**   |    `Ctrl + Shift + Left Click`    |                         Opens symbol's implementation(s)                         |
+|   **Inlay Navigation (Split)**    |     `Ctrl + Alt + Left Click`     |                            Opens inlay hint's target                             |
+|   **Super Navigation (Split)**    | `Ctrl + Alt + Shift + Left Click` | Opens the declaration that the current target overrides/implements/inherits from |
 
 *Need help with keymap configuration? See
 [JetBrains Documentation](https://www.jetbrains.com/help/idea/configuring-keyboard-and-mouse-shortcuts.html)*
