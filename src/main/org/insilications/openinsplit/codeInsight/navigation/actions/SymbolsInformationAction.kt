@@ -18,6 +18,7 @@ import org.insilications.openinsplit.debug
 import org.jetbrains.kotlin.idea.k2.codeinsight.structureView.KotlinFirStructureViewElement
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.containingClassOrObject
+import kotlin.reflect.full.allSupertypes
 
 class SymbolsInformationAction : DumbAwareAction() {
     companion object {
@@ -61,11 +62,17 @@ class SymbolsInformationAction : DumbAwareAction() {
             return
         }
 
-        LOG.info("actionPerformed - targetElement: ${targetElement.text}")
+//        LOG.info("actionPerformed - targetElement: ${targetElement.text}")
+        LOG.info("actionPerformed - targetElement: ${targetElement::class.simpleName}")
+        LOG.info("actionPerformed - targetElement: ${targetElement::class.allSupertypes}")
+        if (targetElement is KtDeclarationWithBody) {
+            LOG.info("actionPerformed - targetElement is KtFunction - name: ${targetElement.name}")
+        }
         val project: Project = targetElement.project
         runWithModalProgressBlocking(project, GETTING_SYMBOL_INFO) {
             runReadAction {
-                val targetElementStructure: Collection<StructureViewTreeElement> = file.getStructureViewChildren {
+//                val targetElementStructure: Collection<StructureViewTreeElement> = file.getStructureViewChildren {
+                val targetElementStructure: Collection<StructureViewTreeElement> = targetElement.getStructureViewChildren {
                     KotlinFirStructureViewElement(it, it, isInherited = false)
                 }
                 LOG.debug { "actionPerformed - targetElementStructure size: ${targetElementStructure.size}" }

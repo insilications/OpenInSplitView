@@ -84,6 +84,7 @@ dependencies {
     testIntegrationRuntimeOnly(libs.junit.platform.launcher)
 
     compileOnly(libs.jetbrains.annotations)
+    compileOnly(libs.kotlin.reflect)
 
     listOf(
         libs.kotlin.compiler.common,

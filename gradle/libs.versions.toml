@@ -17,6 +17,7 @@ junit5-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "ju
 kotlin-coroutines-jvm = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm", version.ref = "kotlinCoroutines" }
 kodein-di-jvm = { module = "org.kodein.di:kodein-di-jvm", version.ref = "kodeinDiJvm" }
 ###### K2 analysis ######
+kotlin-reflect = { module = "org.jetbrains.kotlin:kotlin-reflect", version.ref = "kotlin" }
 #kotlin-compiler-k2 = { module = "org.jetbrains.kotlin:kotlin-compiler", version.ref = "kotlin" }
 kotlin-compiler-common = { module = "org.jetbrains.kotlin:kotlin-compiler-common-for-ide", version.ref = "kotlin" }
 #kotlin-analysis-api-api = { module = "org.jetbrains.kotlin:analysis-api-for-ide", version.ref = "kotlin" }
