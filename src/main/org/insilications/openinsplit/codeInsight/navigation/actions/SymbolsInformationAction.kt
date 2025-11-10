@@ -14,7 +14,6 @@ import com.intellij.openapi.project.Project
 import com.intellij.platform.ide.progress.runWithModalProgressBlocking
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
-import org.insilications.openinsplit.codeInsight.navigation.impl.PROGRESS_TITLE_PREPARING_NAVIGATION
 import org.insilications.openinsplit.debug
 import org.jetbrains.kotlin.idea.k2.codeinsight.structureView.KotlinFirStructureViewElement
 import org.jetbrains.kotlin.psi.*
@@ -23,6 +22,7 @@ import org.jetbrains.kotlin.psi.psiUtil.containingClassOrObject
 class SymbolsInformationAction : DumbAwareAction() {
     companion object {
         private val LOG: Logger = Logger.getInstance("org.insilications.openinsplit")
+        private const val GETTING_SYMBOL_INFO = "Getting symbols information..."
     }
 
     override fun getActionUpdateThread(): ActionUpdateThread {
@@ -63,7 +63,7 @@ class SymbolsInformationAction : DumbAwareAction() {
 
         LOG.info("actionPerformed - targetElement: ${targetElement.text}")
         val project: Project = targetElement.project
-        runWithModalProgressBlocking(project, PROGRESS_TITLE_PREPARING_NAVIGATION) {
+        runWithModalProgressBlocking(project, GETTING_SYMBOL_INFO) {
             runReadAction {
                 val targetElementStructure: Collection<StructureViewTreeElement> = file.getStructureViewChildren {
                     KotlinFirStructureViewElement(it, it, isInherited = false)
