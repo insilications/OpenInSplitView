@@ -69,7 +69,6 @@ class SymbolsInformationAction : DumbAwareAction() {
             if (targetElement is KtDeclarationWithBody) {
                 val targetElementPresentableText: String? = targetElement.presentation?.presentableText ?: targetElement.name
                 LOG.info("actionPerformed - targetElement.name: $targetElementPresentableText")
-
             }
         }
         runWithModalProgressBlocking(project, GETTING_SYMBOL_INFO) {
@@ -121,7 +120,7 @@ fun PsiElement.getStructureViewChildren(factory: (KtDeclaration) -> StructureVie
 }
 
 private fun PsiElement.collectLocalDeclarations(): List<KtDeclaration> {
-    val result: MutableList<KtDeclaration> = mutableListOf<KtDeclaration>()
+    val result: MutableList<KtDeclaration> = mutableListOf()
 
     acceptChildren(object : KtTreeVisitorVoid() {
         override fun visitClassOrObject(classOrObject: KtClassOrObject) {
