@@ -6,12 +6,15 @@ import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.actionSystem.DataContext
+import com.intellij.openapi.application.runReadAction
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
+import com.intellij.platform.ide.progress.runWithModalProgressBlocking
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
+import org.insilications.openinsplit.codeInsight.navigation.impl.PROGRESS_TITLE_PREPARING_NAVIGATION
 import org.insilications.openinsplit.debug
 import org.jetbrains.kotlin.idea.k2.codeinsight.structureView.KotlinFirStructureViewElement
 import org.jetbrains.kotlin.psi.*
@@ -60,13 +63,16 @@ class ActionTree : DumbAwareAction() {
 
         LOG.info("actionPerformed - targetElement: ${targetElement.text}")
         val project: Project = targetElement.project
-
-        val targetElementStructureViewTreeElementList: Collection<StructureViewTreeElement> = file.getStructureViewChildren {
-            KotlinFirStructureViewElement(it, it, isInherited = false)
-        }
-        LOG.debug { "ActionTree - actionPerformed - targetElementStructureViewTreeElementList size: ${targetElementStructureViewTreeElementList.size}" }
-        for (element in targetElementStructureViewTreeElementList) {
-            LOG.info("actionPerformed - targetElementStructureViewTreeElement: ${element.presentation.presentableText}")
+        runWithModalProgressBlocking(project, PROGRESS_TITLE_PREPARING_NAVIGATION) {
+            runReadAction {
+                val targetElementStructure: Collection<StructureViewTreeElement> = file.getStructureViewChildren {
+                    KotlinFirStructureViewElement(it, it, isInherited = false)
+                }
+                LOG.debug { "ActionTree - actionPerformed - targetElementStructureViewTreeElementList size: ${targetElementStructure.size}" }
+                for (element in targetElementStructure) {
+                    LOG.info("actionPerformed - targetElementStructureViewTreeElement: ${element.presentation.presentableText}")
+                }
+            }
         }
 //        val targetElementStructureViewTreeElementList: Collection<StructureViewTreeElement> = targetElement.getStructureViewChildren { decl ->
 //            KotlinStructureViewElement(decl, isInherited = false)
@@ -89,9 +95,10 @@ private val KtDeclaration.topLevelDeclaration: Boolean
     get() = parent is PsiFile || parent is KtBlockExpression && parent.parent is KtScript
 
 fun PsiElement.getStructureViewChildren(factory: (KtDeclaration) -> StructureViewTreeElement): Collection<StructureViewTreeElement> {
-    val children = when (val element = this) {
-        is KtCommonFile -> {
-            val declarations = element.declarations
+    val children: List<KtDeclaration> = when (val element = this) {
+        is KtFile -> {
+//        is KtCommonFile -> {
+            val declarations: List<KtDeclaration> = element.declarations
             if (element.isScript()) {
                 (declarations.singleOrNull() as? KtScript) ?: element
             } else {
