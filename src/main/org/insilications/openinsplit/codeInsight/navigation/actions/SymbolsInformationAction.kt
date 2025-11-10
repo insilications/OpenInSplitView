@@ -16,6 +16,7 @@ import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import org.insilications.openinsplit.debug
 import org.jetbrains.kotlin.idea.k2.codeinsight.structureView.KotlinFirStructureViewElement
+import org.jetbrains.kotlin.idea.refactoring.project
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.containingClassOrObject
 
@@ -37,7 +38,7 @@ class SymbolsInformationAction : DumbAwareAction() {
         LOG.debug { "actionPerformed" }
 
         val dataContext: DataContext = e.dataContext
-//        val project: Project = dataContext.project
+        val project: Project = dataContext.project
         val editor: Editor? = CommonDataKeys.EDITOR.getData(dataContext)
         val file: PsiFile? = CommonDataKeys.PSI_FILE.getData(dataContext)
 
@@ -50,25 +51,25 @@ class SymbolsInformationAction : DumbAwareAction() {
         val targetElementUtilInstance: TargetElementUtil = TargetElementUtil.getInstance()
         val targetElementUtilAllAccepted: Int = targetElementUtilInstance.allAccepted
         // Find the semantic target element at the caret `offset`
-        val targetElement: PsiElement? = targetElementUtilInstance.findTargetElement(editor, targetElementUtilAllAccepted, offset)
+        var targetElement: PsiElement? = targetElementUtilInstance.findTargetElement(editor, targetElementUtilAllAccepted, offset)
 
         if (targetElement == null) {
-            e.presentation.isEnabled = false
             LOG.info("actionPerformed - targetElement == null")
-            return
-        }
+            targetElement = file
+            if (targetElement is KtCommonFile) {
+                LOG.debug("actionPerformed - targetElement file name: ${targetElement.name}")
+            }
+        } else {
+//            LOG.info("actionPerformed - targetElement: ${targetElement.text}")
+            LOG.info("actionPerformed - targetElement::class.simpleName: ${targetElement::class.simpleName}")
+            LOG.info("actionPerformed - targetElement::class.qualifiedName: ${targetElement::class.qualifiedName}")
 
-//        LOG.info("actionPerformed - targetElement: ${targetElement.text}")
-        LOG.info("actionPerformed - targetElement::class.simpleName: ${targetElement::class.simpleName}")
-        LOG.info("actionPerformed - targetElement::class.qualifiedName: ${targetElement::class.qualifiedName}")
-//        LOG.info("actionPerformed - targetElement: ${targetElement::class.allSupertypes}")
-        if (targetElement is KtDeclarationWithBody) {
-            LOG.info("actionPerformed - targetElement.name: ${targetElement.name}")
+            if (targetElement is KtDeclarationWithBody) {
+                LOG.info("actionPerformed - targetElement.name: ${targetElement.name}")
+            }
         }
-        val project: Project = targetElement.project
         runWithModalProgressBlocking(project, GETTING_SYMBOL_INFO) {
             runReadAction {
-//                val targetElementStructure: Collection<StructureViewTreeElement> = file.getStructureViewChildren {
                 val targetElementStructure: Collection<StructureViewTreeElement> = targetElement.getStructureViewChildren {
                     KotlinFirStructureViewElement(it, it, isInherited = false)
                 }
