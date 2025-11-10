@@ -56,6 +56,7 @@ class SymbolsInformationAction : DumbAwareAction() {
         if (targetElement == null) {
             LOG.info("actionPerformed - targetElement == null")
             targetElement = file
+            @Suppress("DEPRECATION")
             if (targetElement is KtCommonFile) {
                 LOG.debug("actionPerformed - targetElement file name: ${targetElement.name}")
             }
@@ -65,7 +66,9 @@ class SymbolsInformationAction : DumbAwareAction() {
             LOG.info("actionPerformed - targetElement::class.qualifiedName: ${targetElement::class.qualifiedName}")
 
             if (targetElement is KtDeclarationWithBody) {
-                LOG.info("actionPerformed - targetElement.name: ${targetElement.name}")
+                val targetElementPresentableText: String? = targetElement.presentation?.presentableText ?: targetElement.name
+                LOG.info("actionPerformed - targetElement.name: $targetElementPresentableText")
+
             }
         }
         runWithModalProgressBlocking(project, GETTING_SYMBOL_INFO) {
