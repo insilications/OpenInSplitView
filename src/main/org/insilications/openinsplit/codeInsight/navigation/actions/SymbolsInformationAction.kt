@@ -18,7 +18,6 @@ import org.insilications.openinsplit.debug
 import org.jetbrains.kotlin.idea.k2.codeinsight.structureView.KotlinFirStructureViewElement
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.containingClassOrObject
-import kotlin.reflect.full.allSupertypes
 
 class SymbolsInformationAction : DumbAwareAction() {
     companion object {
@@ -48,9 +47,6 @@ class SymbolsInformationAction : DumbAwareAction() {
         }
 
         val offset: Int = editor.caretModel.offset
-
-        LOG.debug { "actionPerformed - offset: $offset" }
-
         val targetElementUtilInstance: TargetElementUtil = TargetElementUtil.getInstance()
         val targetElementUtilAllAccepted: Int = targetElementUtilInstance.allAccepted
         // Find the semantic target element at the caret `offset`
@@ -63,10 +59,11 @@ class SymbolsInformationAction : DumbAwareAction() {
         }
 
 //        LOG.info("actionPerformed - targetElement: ${targetElement.text}")
-        LOG.info("actionPerformed - targetElement: ${targetElement::class.simpleName}")
-        LOG.info("actionPerformed - targetElement: ${targetElement::class.allSupertypes}")
+        LOG.info("actionPerformed - targetElement::class.simpleName: ${targetElement::class.simpleName}")
+        LOG.info("actionPerformed - targetElement::class.qualifiedName: ${targetElement::class.qualifiedName}")
+//        LOG.info("actionPerformed - targetElement: ${targetElement::class.allSupertypes}")
         if (targetElement is KtDeclarationWithBody) {
-            LOG.info("actionPerformed - targetElement is KtFunction - name: ${targetElement.name}")
+            LOG.info("actionPerformed - targetElement.name: ${targetElement.name}")
         }
         val project: Project = targetElement.project
         runWithModalProgressBlocking(project, GETTING_SYMBOL_INFO) {
