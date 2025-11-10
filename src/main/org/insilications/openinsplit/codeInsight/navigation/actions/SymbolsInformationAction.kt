@@ -10,6 +10,7 @@ import com.intellij.openapi.application.runReadAction
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.DumbAwareAction
+import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
 import com.intellij.platform.ide.progress.runWithModalProgressBlocking
 import com.intellij.psi.PsiElement
@@ -54,7 +55,7 @@ class SymbolsInformationAction : DumbAwareAction() {
         var targetElement: PsiElement? = targetElementUtilInstance.findTargetElement(editor, targetElementUtilAllAccepted, offset)
 
         if (targetElement == null) {
-            LOG.info("actionPerformed - targetElement == null")
+            LOG.info("actionPerformed - targetElement == null, defaulting to file")
             targetElement = file
             @Suppress("DEPRECATION")
             if (targetElement is KtCommonFile) {
@@ -73,6 +74,9 @@ class SymbolsInformationAction : DumbAwareAction() {
         }
         runWithModalProgressBlocking(project, GETTING_SYMBOL_INFO) {
             runReadAction {
+                if (DumbService.isDumb(project)) {
+                    LOG.warn("Indexing (dumb mode) is active; analysis-powered info will be limited.")
+                }
                 val targetElementStructure: Collection<StructureViewTreeElement> = targetElement.getStructureViewChildren {
                     KotlinFirStructureViewElement(it, it, isInherited = false)
                 }
