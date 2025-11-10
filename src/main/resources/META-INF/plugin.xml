@@ -59,5 +59,13 @@
             <!-- macOS -->
             <mouse-shortcut keymap="Mac OS X" keystroke="meta alt shift button1"/>
         </action>
+        <action class="org.insilications.openinsplit.codeInsight.navigation.actions.ActionTree"
+                description="Action tree"
+                id="ActionTree" text="Action Tree">
+            <add-to-group anchor="last" group-id="EditorPopupMenu.GoTo"/>
+
+            <!-- Windows/Linux -->
+            <mouse-shortcut keymap="$default" keystroke="shift alt button1"/>
+        </action>
     </actions>
 </idea-plugin>
