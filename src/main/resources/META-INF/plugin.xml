@@ -59,9 +59,9 @@
             <!-- macOS -->
             <mouse-shortcut keymap="Mac OS X" keystroke="meta alt shift button1"/>
         </action>
-        <action class="org.insilications.openinsplit.codeInsight.navigation.actions.ActionTree"
+        <action class="org.insilications.openinsplit.codeInsight.navigation.actions.SymbolsInformationAction"
                 description="Action tree"
-                id="ActionTree" text="Action Tree">
+                id="SymbolsInformationAction" text="Symbols InformationAction">
             <add-to-group anchor="last" group-id="EditorPopupMenu.GoTo"/>
 
             <!-- Windows/Linux -->

@@ -20,7 +20,7 @@ import org.jetbrains.kotlin.idea.k2.codeinsight.structureView.KotlinFirStructure
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.containingClassOrObject
 
-class ActionTree : DumbAwareAction() {
+class SymbolsInformationAction : DumbAwareAction() {
     companion object {
         private val LOG: Logger = Logger.getInstance("org.insilications.openinsplit")
     }
@@ -34,7 +34,7 @@ class ActionTree : DumbAwareAction() {
     }
 
     override fun actionPerformed(e: AnActionEvent) {
-        LOG.debug { "ActionTree - actionPerformed" }
+        LOG.debug { "actionPerformed" }
 
         val dataContext: DataContext = e.dataContext
 //        val project: Project = dataContext.project
@@ -48,7 +48,7 @@ class ActionTree : DumbAwareAction() {
 
         val offset: Int = editor.caretModel.offset
 
-        LOG.debug { "ActionTree - actionPerformed - offset: $offset" }
+        LOG.debug { "actionPerformed - offset: $offset" }
 
         val targetElementUtilInstance: TargetElementUtil = TargetElementUtil.getInstance()
         val targetElementUtilAllAccepted: Int = targetElementUtilInstance.allAccepted
@@ -68,19 +68,12 @@ class ActionTree : DumbAwareAction() {
                 val targetElementStructure: Collection<StructureViewTreeElement> = file.getStructureViewChildren {
                     KotlinFirStructureViewElement(it, it, isInherited = false)
                 }
-                LOG.debug { "ActionTree - actionPerformed - targetElementStructureViewTreeElementList size: ${targetElementStructure.size}" }
+                LOG.debug { "actionPerformed - targetElementStructure size: ${targetElementStructure.size}" }
                 for (element in targetElementStructure) {
-                    LOG.info("actionPerformed - targetElementStructureViewTreeElement: ${element.presentation.presentableText}")
+                    LOG.info("actionPerformed - targetElementStructure: ${element.presentation.presentableText}")
                 }
             }
         }
-//        val targetElementStructureViewTreeElementList: Collection<StructureViewTreeElement> = targetElement.getStructureViewChildren { decl ->
-//            KotlinStructureViewElement(decl, isInherited = false)
-//        }
-//        LOG.debug { "ActionTree - actionPerformed - targetElementStructureViewTreeElementList size: ${targetElementStructureViewTreeElementList.size}" }
-//        for (element in targetElementStructureViewTreeElementList) {
-//            LOG.info("actionPerformed - targetElementStructureViewTreeElement: ${element.presentation.presentableText}")
-//        }
     }
 }
 
