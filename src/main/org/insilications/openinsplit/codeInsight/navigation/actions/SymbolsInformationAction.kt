@@ -74,7 +74,7 @@ class SymbolsInformationAction : DumbAwareAction() {
                     KotlinFirStructureViewElement(it, it, isInherited = false)
                 }
                 LOG.debug { "actionPerformed - targetElementStructure size: ${targetElementStructure.size}" }
-                for (element in targetElementStructure) {
+                for (element: StructureViewTreeElement in targetElementStructure) {
                     LOG.info("actionPerformed - targetElementStructure: ${element.presentation.presentableText}")
                 }
             }
@@ -94,7 +94,7 @@ private val KtDeclaration.topLevelDeclaration: Boolean
 
 fun PsiElement.getStructureViewChildren(factory: (KtDeclaration) -> StructureViewTreeElement): Collection<StructureViewTreeElement> {
     @Suppress("DEPRECATION")
-    val children: List<KtDeclaration> = when (val element = this) {
+    val children: List<KtDeclaration> = when (val element: PsiElement = this) {
         is KtCommonFile -> {
             val declarations: List<KtDeclaration> = element.declarations
             if (element.isScript()) {
@@ -114,7 +114,7 @@ fun PsiElement.getStructureViewChildren(factory: (KtDeclaration) -> StructureVie
 }
 
 private fun PsiElement.collectLocalDeclarations(): List<KtDeclaration> {
-    val result = mutableListOf<KtDeclaration>()
+    val result: MutableList<KtDeclaration> = mutableListOf<KtDeclaration>()
 
     acceptChildren(object : KtTreeVisitorVoid() {
         override fun visitClassOrObject(classOrObject: KtClassOrObject) {
