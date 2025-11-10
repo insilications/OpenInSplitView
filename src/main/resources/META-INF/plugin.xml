@@ -61,7 +61,7 @@
         </action>
         <action class="org.insilications.openinsplit.codeInsight.navigation.actions.SymbolsInformationAction"
                 description="Action tree"
-                id="SymbolsInformationAction" text="Symbols InformationAction">
+                id="SymbolsInformationAction" text="Symbols Information">
             <add-to-group anchor="last" group-id="EditorPopupMenu.GoTo"/>
 
             <!-- Windows/Linux -->
