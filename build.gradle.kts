@@ -84,6 +84,14 @@ dependencies {
     testIntegrationRuntimeOnly(libs.junit.platform.launcher)
 
     compileOnly(libs.jetbrains.annotations)
+
+    listOf(
+        libs.kotlin.compiler.common,
+    ).forEach {
+        compileOnly(it) {
+            isTransitive = false // see KTIJ-19820
+        }
+    }
 }
 
 // Configure IntelliJ Platform Gradle Plugin: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-extension.html

@@ -88,9 +88,9 @@ private val KtDeclaration.topLevelDeclaration: Boolean
     get() = parent is PsiFile || parent is KtBlockExpression && parent.parent is KtScript
 
 fun PsiElement.getStructureViewChildren(factory: (KtDeclaration) -> StructureViewTreeElement): Collection<StructureViewTreeElement> {
+    @Suppress("DEPRECATION")
     val children: List<KtDeclaration> = when (val element = this) {
-        is KtFile -> {
-//        is KtCommonFile -> {
+        is KtCommonFile -> {
             val declarations: List<KtDeclaration> = element.declarations
             if (element.isScript()) {
                 (declarations.singleOrNull() as? KtScript) ?: element
