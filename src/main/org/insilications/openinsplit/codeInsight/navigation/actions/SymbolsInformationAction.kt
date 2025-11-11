@@ -14,6 +14,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.platform.ide.progress.runWithModalProgressBlocking
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
+import com.intellij.psi.PsiReference
 import com.intellij.psi.tree.IElementType
 import com.intellij.psi.util.PsiTreeUtil
 import org.insilications.openinsplit.debug
@@ -82,22 +83,24 @@ class SymbolsInformationAction : DumbAwareAction() {
 
             val decl: KtDeclaration = target as? KtDeclaration ?: return@runWithModalProgressBlocking
 
-            val usages: List<ResolvedUsage> = runReadAction {
+            runReadAction {
                 analyze(decl) {
-                    collectResolvedUsagesInDeclaration(decl, maxRefs = 2000)
+                    val usages: List<ResolvedUsage> = collectResolvedUsagesInDeclaration(decl, maxRefs = 2000)
+
+                    LOG.info("Resolved usages count: ${usages.size}")
+
+                    usages.forEach { usage: ResolvedUsage ->
+                        val presentable: String = when (val sym = usage.symbol) {
+                            is KaNamedSymbol -> sym.name.asString()
+                            else -> sym.toString()
+                        }
+                        LOG.info(
+                            "Usage: kind=${usage.usageKind} symbol=$presentable siteRange=${usage.site.textRange}"
+                        )
+                    }
                 }
             }
 
-            LOG.info("Resolved usages count: ${usages.size}")
-            usages.forEach { usage: ResolvedUsage ->
-                val presentable: String = when (val sym = usage.symbol) {
-                    is KaNamedSymbol -> sym.name.asString()
-                    else -> sym.toString()
-                }
-                LOG.info(
-                    "Usage: kind=${usage.usageKind} symbol=$presentable siteRange=${usage.site.textRange}"
-                )
-            }
         }
     }
 }
@@ -269,9 +272,9 @@ private fun KaSession.resolveReferenceReadWrite(
     preferWrite: Boolean
 ) {
     // Resolve K2 references, not FE1.0
-    val k2Refs: Array<KtReference> = expr.references as Array<KtReference>
+    val k2Refs: Array<PsiReference> = expr.references
     val syms: List<KaSymbol> = buildList {
-        for (psiRef: KtReference in k2Refs) {
+        for (psiRef: PsiReference in k2Refs) {
             val k2Ref: KtReference = psiRef as? KtReference ?: continue
             addAll(runCatching { k2Ref.resolveToSymbols() }.getOrElse { emptyList() })
         }
@@ -317,10 +320,10 @@ private fun KaSession.resolveSuperTypeEntry(
     // If this is a super type call (constructor call), try to record constructor usage
     if (entry is KtSuperTypeCallEntry) {
         val type: KaType = typeRef.type
-        val classSymbol = (type as? KaClassType)?.symbol as? KaClassSymbol ?: return
+        val classSymbol: KaClassSymbol = (type as? KaClassType)?.symbol as? KaClassSymbol ?: return
         // Heuristic: if there's a super constructor call syntax, record a constructor call usage
         // (Picking the primary constructor is acceptable here; refine by parameter count if needed)
-        val ctorSym: KaConstructorSymbol? = classSymbol.constructors.firstOrNull()
+        val ctorSym: KaConstructorSymbol? = classSymbol.memberScope.constructors.firstOrNull()
         if (ctorSym != null) {
             out += ResolvedUsage(
                 symbol = ctorSym,
@@ -338,7 +341,7 @@ private fun KaSession.resolveAnnotation(
 ) {
     val typeRef: KtTypeReference = annotationEntry.typeReference ?: return
     val type: KaType = typeRef.type
-    val classSymbol = (type as? KaClassType)?.symbol as? KaClassSymbol ?: return
+    val classSymbol: KaClassSymbol = (type as? KaClassType)?.symbol as? KaClassSymbol ?: return
 
     // Record the annotation class as a type reference
     out += ResolvedUsage(
@@ -350,7 +353,7 @@ private fun KaSession.resolveAnnotation(
 
     // If it has arguments, it effectively calls a constructor
     if (annotationEntry.valueArgumentList != null) {
-        val ctor: KaConstructorSymbol? = classSymbol.constructors.firstOrNull()
+        val ctor: KaConstructorSymbol? = classSymbol.memberScope.constructors.firstOrNull()
         if (ctor != null) {
             out += ResolvedUsage(
                 symbol = ctor,
