@@ -28,6 +28,7 @@ import org.jetbrains.kotlin.analysis.api.symbols.markers.KaNamedSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.pointers.KaSymbolPointer
 import org.jetbrains.kotlin.analysis.api.types.KaClassType
 import org.jetbrains.kotlin.analysis.api.types.KaType
+import org.jetbrains.kotlin.idea.base.psi.kotlinFqName
 import org.jetbrains.kotlin.idea.refactoring.project
 import org.jetbrains.kotlin.idea.references.KtReference
 import org.jetbrains.kotlin.lexer.KtTokens
@@ -60,7 +61,7 @@ class SymbolsInformationAction : DumbAwareAction() {
         }
 
         val offset: Int = editor.caretModel.offset
-        val targetElementUtil = TargetElementUtil.getInstance()
+        val targetElementUtil: TargetElementUtil = TargetElementUtil.getInstance()
         val flags: Int = targetElementUtil.allAccepted
         val target: PsiElement? = targetElementUtil.findTargetElement(editor, flags, offset)
 
@@ -95,7 +96,10 @@ class SymbolsInformationAction : DumbAwareAction() {
                             else -> sym.toString()
                         }
                         LOG.info(
-                            "Usage: kind=${usage.usageKind} symbol=$presentable siteRange=${usage.site.textRange}"
+                            "\n"
+                        )
+                        LOG.info(
+                            "Usage: kind=${usage.usageKind} symbol=$presentable siteText=${usage.site.text} sitekotlinFqName=${usage.site.kotlinFqName} siteRange=${usage.site.textRange}"
                         )
                     }
                 }
