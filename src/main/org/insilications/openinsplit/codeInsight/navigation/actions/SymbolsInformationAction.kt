@@ -1,3 +1,5 @@
+@file:Suppress("NOTHING_TO_INLINE")
+
 package org.insilications.openinsplit.codeInsight.navigation.actions
 
 import com.intellij.codeInsight.TargetElementUtil
@@ -5,7 +7,7 @@ import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.actionSystem.DataContext
-import com.intellij.openapi.application.runReadAction
+import com.intellij.openapi.application.readAction
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.DumbAwareAction
@@ -28,11 +30,11 @@ import org.jetbrains.kotlin.analysis.api.symbols.markers.KaNamedSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.pointers.KaSymbolPointer
 import org.jetbrains.kotlin.analysis.api.types.KaClassType
 import org.jetbrains.kotlin.analysis.api.types.KaType
-import org.jetbrains.kotlin.idea.base.psi.kotlinFqName
 import org.jetbrains.kotlin.idea.refactoring.project
 import org.jetbrains.kotlin.idea.references.KtReference
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.psi.*
+import org.jetbrains.kotlin.psi.debugText.getDebugText
 import kotlin.reflect.KCallable
 
 class SymbolsInformationAction : DumbAwareAction() {
@@ -70,11 +72,15 @@ class SymbolsInformationAction : DumbAwareAction() {
             return
         }
 
-        LOG.info("Target PSI: ${target::class.qualifiedName}")
+        val outputSb = StringBuilder()
+//        outputSb.append("\n    Target PSI type: ${target::class.qualifiedName}")
+//        if (target is KtDeclarationWithBody) {
+//            LOG.info("Target name: ${target.presentation?.presentableText ?: target.name}")
+//        }
 
-        if (target is KtDeclarationWithBody) {
-            LOG.info("Target name: ${target.presentation?.presentableText ?: target.name}")
-        }
+        val targetDeclarationFullText: String = target.text
+        outputSb.append("\n    ============ Target PSI type: ${target::class.qualifiedName} ============\n")
+        outputSb.append("${targetDeclarationFullText}\n")
 
         runWithModalProgressBlocking(project, GETTING_SYMBOL_INFO) {
             if (DumbService.isDumb(project)) {
@@ -83,25 +89,44 @@ class SymbolsInformationAction : DumbAwareAction() {
             }
 
             val decl: KtDeclaration = target as? KtDeclaration ?: return@runWithModalProgressBlocking
-
-            runReadAction {
+//            val kk = decl.text
+            readAction {
+                // Executes the given action in an analysis session context.
+                // The project will be analyzed from the perspective of `decl`'s module, also called the use-site module.
+                // Neither the analysis session nor any other lifetime owners may be leaked outside the analyze block.
+                // Please consult the documentation of `KaSession` for important information about lifetime management.
                 analyze(decl) {
                     val usages: List<ResolvedUsage> = collectResolvedUsagesInDeclaration(decl, maxRefs = 2000)
 
-                    LOG.info("Resolved usages count: ${usages.size}")
+                    outputSb.append("\n\n    ============ Resolved Dependencies: ${usages.size} ============\n")
 
                     usages.forEach { usage: ResolvedUsage ->
-                        val presentable: String = when (val sym = usage.symbol) {
+                        val presentable: String = when (val sym: KaSymbol = usage.symbol) {
                             is KaNamedSymbol -> sym.name.asString()
                             else -> sym.toString()
                         }
-                        LOG.info(
-                            "\n"
-                        )
-                        LOG.info(
-                            "Usage: kind=${usage.usageKind} symbol=$presentable siteText=${usage.site.text} sitekotlinFqName=${usage.site.kotlinFqName} siteRange=${usage.site.textRange}"
-                        )
+
+                        // Returns the symbol's `PsiElement` if its type is `PSI` and `KaSymbol.origin` is
+                        // `KaSymbolOrigin.SOURCE` or `KaSymbolOrigin.JAVA_SOURCE`, and null otherwise.
+                        val psiSafeSymbol: KtElement? = usage.symbol.sourcePsiSafe<KtElement>()
+                        if (psiSafeSymbol == null) {
+//                            outputSb.append("\n    kind=${usage.usageKind} symbol=$presentable siteRange=${usage.site.textRange}\n    siteText:\n${usage.site.text}\n\n    (No PSI available for symbol)\n\n")
+                            outputSb.append("\n        ========== kind=${usage.usageKind} symbol=$presentable site.textRange=${usage.site.textRange} ==========\n")
+                            outputSb.append("        ========== site.text ==========\n${usage.site.text}\n")
+                            outputSb.append("\n        ========== symbol.getDebugText() ==========\n(No PSI available for symbol)\n\n\n")
+
+//                            LOG.info("kind=${usage.usageKind} symbol=$presentable siteRange=${usage.site.textRange}\n    siteText:\n${usage.site.text}\n\n    (No PSI available for symbol)\n\n")
+                        } else {
+//                            LOG.info(
+//                                "kind=${usage.usageKind} symbol=$presentable siteRange=${usage.site.textRange}\n    siteText:\n${usage.site.text}\n\n    Symbol getDebugText():\n${psiSafeSymbol.getDebugText()}\n\n"
+//                            )
+//                            outputSb.append("\n    kind=${usage.usageKind} symbol=$presentable siteRange=${usage.site.textRange}\n    siteText:\n${usage.site.text}\n\n    Symbol getDebugText():\n${psiSafeSymbol.getDebugText()}\n\n")
+                            outputSb.append("\n        ========== kind=${usage.usageKind} symbol=$presentable site.textRange=${usage.site.textRange} ==========\n")
+                            outputSb.append("        ========== site.text ==========\n${usage.site.text}\n")
+                            outputSb.append("\n        ========== symbol.getDebugText() ==========\n${psiSafeSymbol.getDebugText()}\n\n\n")
+                        }
                     }
+                    LOG.info(outputSb.toString())
                 }
             }
 
@@ -304,7 +329,7 @@ private fun KaSession.resolveTypeReference(
 ) {
     // Use typeProvider from the session
     val type: KaType = typeRef.type
-    val classSymbol = (type as? KaClassType)?.symbol as? KaClassSymbol ?: return
+    val classSymbol: KaClassSymbol = (type as? KaClassType)?.symbol as? KaClassSymbol ?: return
     out += ResolvedUsage(
         symbol = classSymbol,
         pointer = classSymbol.createPointer(),
@@ -436,4 +461,22 @@ private fun KaVariableAccessCall.isSetAccessOrNull(): Boolean? = try {
     (m.call(this) as? Boolean)
 } catch (_: Throwable) {
     null
+}
+
+private inline fun buildText(body: StringBuilder.() -> Unit): String? {
+    val sb = StringBuilder()
+    sb.body()
+    return sb.toString()
+}
+
+private inline fun StringBuilder.appendInn(target: Any?, prefix: String = "", suffix: String = "") {
+    if (target == null) return
+    append(prefix)
+    append(
+        when (target) {
+            is KtElement -> target.getDebugText()
+            else -> target.toString()
+        }
+    )
+    append(suffix)
 }

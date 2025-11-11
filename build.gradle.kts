@@ -186,11 +186,11 @@ tasks {
 
 
         // Resolve the source directory during the configuration phase.
-        val sourceConfigDir = project.file("sandbox-config")
+        val sourceConfigDir: File = project.file("sandbox-config")
 
         doLast {
             // Resolve the DirectoryProperty to a concrete File at execution time.
-            val destinationDir = sandboxDirectory.get().asFile
+            val destinationDir: File = sandboxDirectory.get().asFile
 
             if (sourceConfigDir.exists() && sourceConfigDir.isDirectory) {
                 println("Copying custom IDE configuration from '${sourceConfigDir.path}' to sandbox.")
@@ -199,6 +199,16 @@ tasks {
                 sourceConfigDir.copyRecursively(destinationDir, overwrite = true)
             } else {
                 println("Skipping custom IDE configuration copy: '${sourceConfigDir.path}' does not exist.")
+            }
+
+            // --- Start: Truncate idea.log ---
+            val ideaLogFile: File = destinationDir.resolve("log/idea.log")
+
+            if (ideaLogFile.exists()) {
+                println("Truncating log file: ${ideaLogFile.path}")
+                ideaLogFile.writeText("") // Overwrites the file with an empty string.
+            } else {
+                println("Log file not found, skipping truncation: ${ideaLogFile.path}")
             }
         }
     }
@@ -260,16 +270,15 @@ tasks.named<DependencyUpdatesTask>("dependencyUpdates").configure {
     reportfileName = "report"
 }
 
-val testIntegration = tasks.register<Test>("testIntegration") {
+val testIntegration: TaskProvider<Test> = tasks.register<Test>("testIntegration") {
 //    outputs.upToDateWhen { false }
     dependsOn(tasks.buildPlugin)
     dependsOn(tasks.prepareSandbox)
 
-    val integrationTestSourceSet = sourceSets.getByName("testIntegration")
+    val integrationTestSourceSet: SourceSet = sourceSets.getByName("testIntegration")
     testClassesDirs = integrationTestSourceSet.output.classesDirs
     classpath = integrationTestSourceSet.runtimeClasspath
     systemProperty("path.to.build.plugin", tasks.prepareSandbox.get().pluginDirectory.get().asFile)
-//    val platformPath = tasks.prepareSandbox.get().platformPath.toFile()
     systemProperty("path.to.platform", tasks.prepareSandbox.get().platformPath.toFile())
     environment("MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
     environment("ENV_MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
@@ -278,9 +287,9 @@ val testIntegration = tasks.register<Test>("testIntegration") {
 }
 
 fun isStable(version: String): Boolean {
-    val stableKeyword = listOf("RELEASE", "FINAL", "GA").any { version.uppercase().contains(it) }
-    val latestKeyword = listOf("SNAPSHOT").any { version.uppercase().contains(it) }
-    val regex = "^[\\d,.v-]+(-r)?$".toRegex()
-    val isStable = stableKeyword || regex.matches(version)
+    val stableKeyword: Boolean = listOf("RELEASE", "FINAL", "GA").any { version.uppercase().contains(it) }
+    val latestKeyword: Boolean = listOf("SNAPSHOT").any { version.uppercase().contains(it) }
+    val regex: Regex = "^[\\d,.v-]+(-r)?$".toRegex()
+    val isStable: Boolean = stableKeyword || regex.matches(version)
     return isStable || latestKeyword
 }
