@@ -88,6 +88,11 @@ dependencies {
 
     listOf(
         libs.kotlin.compiler.common,
+        libs.kotlin.analysis.api.api,
+        libs.kotlin.analysis.api.impl,
+        libs.kotlin.analysis.api.platform,
+        libs.kotlin.analysis.api.fir,
+        libs.kotlin.symbol.light.classes,
     ).forEach {
         compileOnly(it) {
             isTransitive = false // see KTIJ-19820
