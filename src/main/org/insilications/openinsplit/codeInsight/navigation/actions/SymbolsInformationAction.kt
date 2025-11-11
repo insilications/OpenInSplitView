@@ -20,9 +20,8 @@ import org.insilications.openinsplit.debug
 import org.jetbrains.kotlin.analysis.api.KaExperimentalApi
 import org.jetbrains.kotlin.analysis.api.KaSession
 import org.jetbrains.kotlin.analysis.api.analyze
-import org.jetbrains.kotlin.analysis.api.calls.KaErrorCall
-import org.jetbrains.kotlin.analysis.api.references.KtReference
 import org.jetbrains.kotlin.analysis.api.resolution.*
+import org.jetbrains.kotlin.analysis.api.signatures.KaCallableSignature
 import org.jetbrains.kotlin.analysis.api.symbols.*
 import org.jetbrains.kotlin.analysis.api.symbols.markers.KaNamedSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.pointers.KaSymbolPointer
@@ -215,16 +214,16 @@ private fun KaSession.handleCallLike(
     out: MutableList<ResolvedUsage>,
     asDelegated: Boolean = false
 ) {
-    // Use the session's callResolver explicitly
-//    val call = expression.resolveToCall() as? KaSuccessCallInfo?.call ?: return
     val call: KaCall = (expression.resolveToCall() as? KaSuccessCallInfo)?.call ?: return
-//    val call: KaCall = callResolver.resolveCall(expression) ?: return
     when (call) {
-        is KaFunctionCall -> {
+        is KaFunctionCall<*> -> {
             val sym: KaFunctionSymbol = call.symbol
             val ptr: KaSymbolPointer<KaFunctionSymbol> = sym.createPointer()
-            val isOperator = sym.isOperator
-            val usageKind = when {
+            var isOperator: Boolean = false
+            if (sym is KaNamedFunctionSymbol) {
+                isOperator = sym.isOperator
+            }
+            val usageKind: UsageKind = when {
                 isOperator -> UsageKind.OPERATOR_CALL
                 asDelegated -> UsageKind.DELEGATED_PROPERTY
                 sym is KaConstructorSymbol -> UsageKind.CONSTRUCTOR_CALL
@@ -241,9 +240,9 @@ private fun KaSession.handleCallLike(
         }
 
         is KaVariableAccessCall -> {
-            val sym = call.symbol
-            val ptr = sym.createPointer()
-            val accessKind = classifyVariableAccess(call)
+            val sym: KaVariableSymbol = call.symbol
+            val ptr: KaSymbolPointer<KaVariableSymbol> = sym.createPointer()
+            val accessKind: UsageKind = classifyVariableAccess(call)
             out += ResolvedUsage(
                 symbol = sym,
                 pointer = ptr,
@@ -254,8 +253,12 @@ private fun KaSession.handleCallLike(
             recordExtensionReceiverIfAny(call, expression, out)
         }
 
-        is KaErrorCall -> {
-            // Ignore or log
+        is KaCompoundArrayAccessCall -> LOG.debug {
+            "Unhandled KaCompoundArrayAccessCall in handleCallLike at ${expression.textRange}"
+        }
+
+        is KaCompoundVariableAccessCall -> LOG.debug {
+            "Unhandled KaCompoundVariableAccessCall in handleCallLike at ${expression.textRange}"
         }
     }
 }
@@ -266,10 +269,10 @@ private fun KaSession.resolveReferenceReadWrite(
     preferWrite: Boolean
 ) {
     // Resolve K2 references, not FE1.0
-    val k2Refs: Array<org.jetbrains.kotlin.psi.KtReference> = expr.references
-    val syms = buildList {
-        for (psiRef in k2Refs) {
-            val k2Ref = psiRef as? KtReference ?: continue
+    val k2Refs: Array<KtReference> = expr.references as Array<KtReference>
+    val syms: List<KaSymbol> = buildList {
+        for (psiRef: KtReference in k2Refs) {
+            val k2Ref: KtReference = psiRef as? KtReference ?: continue
             addAll(runCatching { k2Ref.resolveToSymbols() }.getOrElse { emptyList() })
         }
     }
@@ -293,7 +296,7 @@ private fun KaSession.resolveTypeReference(
     out: MutableList<ResolvedUsage>
 ) {
     // Use typeProvider from the session
-    val type: KaType = typeProvider.getType(typeRef) ?: return
+    val type: KaType = typeRef.type
     val classSymbol = (type as? KaClassType)?.symbol as? KaClassSymbol ?: return
     out += ResolvedUsage(
         symbol = classSymbol,
@@ -313,7 +316,7 @@ private fun KaSession.resolveSuperTypeEntry(
 
     // If this is a super type call (constructor call), try to record constructor usage
     if (entry is KtSuperTypeCallEntry) {
-        val type: KaType = typeProvider.getType(typeRef) ?: return
+        val type: KaType = typeRef.type
         val classSymbol = (type as? KaClassType)?.symbol as? KaClassSymbol ?: return
         // Heuristic: if there's a super constructor call syntax, record a constructor call usage
         // (Picking the primary constructor is acceptable here; refine by parameter count if needed)
@@ -334,7 +337,7 @@ private fun KaSession.resolveAnnotation(
     out: MutableList<ResolvedUsage>
 ) {
     val typeRef: KtTypeReference = annotationEntry.typeReference ?: return
-    val type: KaType = typeProvider.getType(typeRef) ?: return
+    val type: KaType = typeRef.type
     val classSymbol = (type as? KaClassType)?.symbol as? KaClassSymbol ?: return
 
     // Record the annotation class as a type reference
@@ -364,10 +367,22 @@ private fun KaSession.recordExtensionReceiverIfAny(
     site: PsiElement,
     out: MutableList<ResolvedUsage>
 ) {
-    val par = when (call) {
+    val par: KaPartiallyAppliedSymbol<KaCallableSymbol, KaCallableSignature<KaCallableSymbol>> = when (call) {
         is KaFunctionCall<*> -> call.partiallyAppliedSymbol
         is KaVariableAccessCall -> call.partiallyAppliedSymbol
-        is KaErrorCall -> null
+        is KaCompoundArrayAccessCall -> {
+            LOG.debug {
+                "Unhandled KaCompoundArrayAccessCall in handleCallLike at ${site.textRange}"
+            }
+            null
+        }
+
+        is KaCompoundVariableAccessCall -> {
+            LOG.debug {
+                "Unhandled KaCompoundVariableAccessCall in handleCallLike at ${site.textRange}"
+            }
+            null
+        }
     } ?: return
 
     if (par.extensionReceiver == null) return
@@ -375,8 +390,20 @@ private fun KaSession.recordExtensionReceiverIfAny(
     val sym: KaCallableSymbol = when (call) {
         is KaFunctionCall<*> -> call.symbol
         is KaVariableAccessCall -> call.symbol
-        is KaErrorCall -> return
-    }
+        is KaCompoundArrayAccessCall -> {
+            LOG.debug {
+                "Unhandled KaCompoundArrayAccessCall in handleCallLike at ${site.textRange}"
+            }
+            null
+        }
+
+        is KaCompoundVariableAccessCall -> {
+            LOG.debug {
+                "Unhandled KaCompoundVariableAccessCall in handleCallLike at ${site.textRange}"
+            }
+            null
+        }
+    } ?: return
     out += ResolvedUsage(
         symbol = sym,
         pointer = sym.createPointer(),
