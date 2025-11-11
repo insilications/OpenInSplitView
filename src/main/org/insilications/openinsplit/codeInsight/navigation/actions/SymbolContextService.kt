@@ -2,27 +2,38 @@ package org.insilications.openinsplit.codeInsight.navigation.actions
 
 import com.intellij.openapi.application.runReadAction
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.editor.Document
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.TextRange
+import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiFile
 import org.jetbrains.kotlin.analysis.api.KaExperimentalApi
+import org.jetbrains.kotlin.analysis.api.KaImplementationDetail
+import org.jetbrains.kotlin.analysis.api.KaSession
 import org.jetbrains.kotlin.analysis.api.analyze
-import org.jetbrains.kotlin.analysis.api.calls.*
+import org.jetbrains.kotlin.analysis.api.renderer.declarations.KaDeclarationRenderer
 import org.jetbrains.kotlin.analysis.api.renderer.declarations.impl.KaDeclarationRendererForSource
 import org.jetbrains.kotlin.analysis.api.resolution.KaErrorCallInfo
 import org.jetbrains.kotlin.analysis.api.resolution.KaFunctionCall
 import org.jetbrains.kotlin.analysis.api.resolution.KaVariableAccessCall
+import org.jetbrains.kotlin.analysis.api.resolution.symbol
 import org.jetbrains.kotlin.analysis.api.symbols.*
 import org.jetbrains.kotlin.analysis.api.symbols.markers.KaNamedSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.pointers.KaSymbolPointer
+import org.jetbrains.kotlin.idea.references.KtReference
 import org.jetbrains.kotlin.psi.*
+
 
 @OptIn(KaExperimentalApi::class)
 class SymbolContextService(private val project: Project) {
+    companion object {
+        private val LOG: Logger = Logger.getInstance("org.insilications.openinsplit")
+    }
 
-    private val LOG = Logger.getInstance(SymbolContextService::class.java)
-
-    private val renderer = KaDeclarationRendererForSource.WITH_SHORT_NAMES
+    private val renderer: KaDeclarationRenderer = KaDeclarationRendererForSource.WITH_SHORT_NAMES
     private val maxReferences = 500
 
     fun buildContext(request: SymbolRequestConfig): SymbolContext {
@@ -45,8 +56,8 @@ class SymbolContextService(private val project: Project) {
 
         return runReadAction {
             analyze(rootDecl) {
-                val rootSymbol = (rootDecl as? KtDeclaration)?.symbol
-                val rootDeclarationDto = symbolToDeclaration(rootDecl, rootSymbol)
+                val rootSymbol: KaDeclarationSymbol? = (rootDecl as? KtDeclaration)?.symbol
+                val rootDeclarationDto: SymbolDeclaration = symbolToDeclaration(rootDecl, rootSymbol)
 
                 val usageAggregator = UsageAggregator()
 
@@ -55,7 +66,7 @@ class SymbolContextService(private val project: Project) {
                     override fun visitCallExpression(expression: KtCallExpression) {
                         if (usageAggregator.sizeExceeded(maxReferences)) return
                         val call = expression.resolveCall()
-                        val callableSym = when (call) {
+                        val callableSym: KaCallableSymbol? = when (call) {
                             is KaFunctionCall<*> -> call.symbol
                             is KaVariableAccessCall -> call.symbol
                             is KaErrorCallInfo -> null
@@ -88,9 +99,8 @@ class SymbolContextService(private val project: Project) {
 
                     override fun visitTypeReference(typeReference: KtTypeReference) {
                         if (usageAggregator.sizeExceeded(maxReferences)) return
-//                        val type = typeReference.getType()
                         val type: KtTypeElement? = typeReference.typeElement
-                        val classifierSymbol = type?.expandedSymbol
+                        val classifierSymbol: KaClassLikeSymbol? = type?.expandedSymbol as? KaClassLikeSymbol
                         classifierSymbol?.let {
                             usageAggregator.recordUsage(it, UsageKind.TYPE_REFERENCE, typeReference)
                         }
@@ -98,9 +108,12 @@ class SymbolContextService(private val project: Project) {
                     }
 
                     override fun visitSuperTypeListEntry(entry: KtSuperTypeListEntry) {
-                        if (usageAggregator.sizeExceeded(maxReferences)) return
-                        entry.typeReference?.getType()?.expandedClassSymbol?.let {
-                            usageAggregator.recordUsage(it, UsageKind.SUPER_TYPE, entry)
+                        if (usageAggregator.sizeExceeded(maxReferences)) {
+                            return
+                        }
+                        val type: KtTypeElement? = entry.typeReference?.typeElement
+                        entry.typeReference?.typeElement?.expandedSymbol?.let {
+                            usageAggregator.recordUsage(it as KaClassLikeSymbol, UsageKind.SUPER_TYPE, entry)
                         }
                         super.visitSuperTypeListEntry(entry)
                     }
@@ -126,10 +139,10 @@ class SymbolContextService(private val project: Project) {
         }
     }
 
-    private fun tryResolveSymbol(ref: org.jetbrains.kotlin.psi.KtReference, expr: KtReferenceExpression): List<KaSymbol> =
+    private fun tryResolveSymbol(ref: KtReference, expr: KtReferenceExpression): List<KaSymbol> =
         analyze(expr) {
             // Fallback strategy: For K2 references
-            val symbol = (expr as? KtDeclaration)?.symbol
+            val symbol: KaDeclarationSymbol? = (expr as? KtDeclaration)?.symbol
             symbol?.let { listOf(it) } ?: emptyList()
         }
 
@@ -141,15 +154,15 @@ class SymbolContextService(private val project: Project) {
         }
 
     private fun symbolToDeclaration(psi: PsiElement, symbol: KaSymbol?): SymbolDeclaration {
-        val file = psi.containingFile
-        val vFile = file?.virtualFile
-        val doc = file?.let { PsiDocumentManager.getInstance(project).getDocument(it) }
+        val file: PsiFile? = psi.containingFile
+        val vFile: VirtualFile? = file?.virtualFile
+        val doc: Document? = file?.let { PsiDocumentManager.getInstance(project).getDocument(it) }
 
-        val range = psi.textRange
-        val startLine = doc?.getLineNumber(range.startOffset)
-        val endLine = doc?.getLineNumber(range.endOffset)
+        val range: TextRange = psi.textRange
+        val startLine: Int? = doc?.getLineNumber(range.startOffset)
+        val endLine: Int? = doc?.getLineNumber(range.endOffset)
 
-        val rendered = if (symbol is KaDeclarationSymbol) {
+        val rendered: String? = if (symbol is KaDeclarationSymbol) {
             symbol.render(renderer)
         } else psi.text.split('\n').firstOrNull()
 
@@ -226,29 +239,32 @@ class SymbolContextService(private val project: Project) {
 
 class UsageAggregator {
     private val map = LinkedHashMap<KaSymbolPointer<*>, MutableUsedSymbolBuilder>()
-    private val warningsList = mutableListOf<String>()
+    private val warningsList: MutableList<String> = mutableListOf<String>()
     private var count = 0
 
     fun sizeExceeded(limit: Int): Boolean {
-        if (count > limit) return true
+        if (count > limit) {
+            return true
+        }
         return false
     }
 
     fun recordUsage(symbol: KaSymbol, usageKind: UsageKind, psi: PsiElement) {
-        val ptr = symbol.createPointer()
-        val builder = map.getOrPut(ptr) { MutableUsedSymbolBuilder(symbol, usageKind) }
+        val ptr: KaSymbolPointer<KaSymbol> = symbol.createPointer()
+        val builder: MutableUsedSymbolBuilder = map.getOrPut(ptr) { MutableUsedSymbolBuilder(symbol, usageKind) }
         builder.addOccurrence(psi)
         count++
     }
 
+    @OptIn(KaImplementationDetail::class)
     fun buildDtos(
         session: KaSession, root: PsiElement,
         declBuilder: (PsiElement, KaSymbol?) -> SymbolDeclaration
     ): List<UsedSymbol> =
-        map.entries.map { (ptr, b) ->
-            val restored = ptr.restoreSymbol()
-            val declPsi = restored?.psi
-            val decl = if (declPsi is KtDeclaration) declBuilder(declPsi, restored) else null
+        map.entries.map { (ptr: KaSymbolPointer<*>, b: MutableUsedSymbolBuilder) ->
+            val restored: KaSymbol? = ptr.restoreSymbol()
+            val declPsi: PsiElement? = restored?.psi
+            val decl: SymbolDeclaration? = if (declPsi is KtDeclaration) declBuilder(declPsi, restored) else null
             b.toDto(decl, ptr)
         }
 
@@ -267,11 +283,11 @@ private class MutableUsedSymbolBuilder(
 
     fun toDto(declaration: SymbolDeclaration?, pointer: KaSymbolPointer<*>): UsedSymbol {
         val usageOccurrences = occurrences.map { occ ->
-            val file = occ.containingFile
-            val doc = PsiDocumentManager.getInstance(file.project).getDocument(file)
-            val range = occ.textRange
-            val startLine = doc?.getLineNumber(range.startOffset)
-            val endLine = doc?.getLineNumber(range.endOffset)
+            val file: PsiFile = occ.containingFile
+            val doc: Document? = PsiDocumentManager.getInstance(file.project).getDocument(file)
+            val range: TextRange = occ.textRange
+            val startLine: Int? = doc?.getLineNumber(range.startOffset)
+            val endLine: Int? = doc?.getLineNumber(range.endOffset)
             UsageOccurrence(
                 inRootOffsetStart = range.startOffset,
                 inRootOffsetEnd = range.endOffset,
@@ -294,7 +310,7 @@ data class SymbolRequestConfig(
     val rawInput: String?,
     val psiElement: PsiElement?
 ) {
-    fun toRequestMeta() = SymbolRequest(
+    fun toRequestMeta(): SymbolRequest = SymbolRequest(
         rawInput = rawInput ?: "",
         resolutionKind = if (psiElement != null) ResolutionKind.PSI_DIRECT else ResolutionKind.FQN,
         fqName = rawInput,

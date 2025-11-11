@@ -88,10 +88,12 @@ dependencies {
 
     listOf(
         libs.kotlin.compiler.common,
+        libs.kotlin.analysis.api.standalone,
         libs.kotlin.analysis.api.api,
         libs.kotlin.analysis.api.impl,
         libs.kotlin.analysis.api.platform,
         libs.kotlin.analysis.api.fir,
+        libs.kotlin.low.level.api.fir,
         libs.kotlin.symbol.light.classes,
     ).forEach {
         compileOnly(it) {
