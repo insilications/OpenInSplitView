@@ -65,14 +65,14 @@ class SymbolsInformationAction : DumbAwareAction() {
         val offset: Int = editor.caretModel.offset
         val targetElementUtil: TargetElementUtil = TargetElementUtil.getInstance()
         val flags: Int = targetElementUtil.allAccepted
-        val target: PsiElement? = targetElementUtil.findTargetElement(editor, flags, offset)
+        val targetSymbol: PsiElement? = targetElementUtil.findTargetElement(editor, flags, offset)
 
-        if (target == null) {
+        if (targetSymbol == null) {
             LOG.info("No target element at caret")
             return
         }
 
-        val targetDeclarationFullText: String = target.text
+        val targetDeclarationFullText: String = targetSymbol.text
         val outputSb = StringBuilder()
 
         runWithModalProgressBlocking(project, GETTING_SYMBOL_INFO) {
@@ -81,7 +81,7 @@ class SymbolsInformationAction : DumbAwareAction() {
                 return@runWithModalProgressBlocking
             }
 
-            val decl: KtDeclaration = target as? KtDeclaration ?: return@runWithModalProgressBlocking
+            val decl: KtDeclaration = targetSymbol as? KtDeclaration ?: return@runWithModalProgressBlocking
 
             readAction {
                 // Executes the given action in an analysis session context.
@@ -91,7 +91,7 @@ class SymbolsInformationAction : DumbAwareAction() {
                 analyze(decl) {
                     val usages: List<ResolvedUsage> = collectResolvedUsagesInDeclaration(decl, maxRefs = 2000)
 
-                    outputSb.append("\n    ============ Target PSI type: ${target::class.qualifiedName} - Resolved Dependencies: ${usages.size} ============\n")
+                    outputSb.append("\n    ============ Target PSI type: ${targetSymbol::class.qualifiedName} - Resolved Dependencies: ${usages.size} ============\n")
                     outputSb.append("${targetDeclarationFullText}\n\n\n\n\n")
 
                     usages.forEach { usage: ResolvedUsage ->
