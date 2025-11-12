@@ -104,17 +104,10 @@ class SymbolsInformationAction : DumbAwareAction() {
                         // `KaSymbolOrigin.SOURCE` or `KaSymbolOrigin.JAVA_SOURCE`, and null otherwise.
                         val psiSafeSymbol: KtElement? = usage.symbol.sourcePsiSafe<KtElement>()
                         if (psiSafeSymbol == null) {
-//                            outputSb.append("\n    kind=${usage.usageKind} symbol=$presentable siteRange=${usage.site.textRange}\n    siteText:\n${usage.site.text}\n\n    (No PSI available for symbol)\n\n")
                             outputSb.append("\n        ========== kind=${usage.usageKind} - symbol=$presentable - site.textRange=${usage.site.textRange} ==========\n")
                             outputSb.append("        ========== site.text ==========\n${usage.site.text}\n\n")
                             outputSb.append("\n        ========== symbol.getDebugText() ==========\n(No PSI available for symbol)\n\n\n\n\n")
-
-//                            LOG.info("kind=${usage.usageKind} symbol=$presentable siteRange=${usage.site.textRange}\n    siteText:\n${usage.site.text}\n\n    (No PSI available for symbol)\n\n")
                         } else {
-//                            LOG.info(
-//                                "kind=${usage.usageKind} symbol=$presentable siteRange=${usage.site.textRange}\n    siteText:\n${usage.site.text}\n\n    Symbol getDebugText():\n${psiSafeSymbol.getDebugText()}\n\n"
-//                            )
-//                            outputSb.append("\n    kind=${usage.usageKind} symbol=$presentable siteRange=${usage.site.textRange}\n    siteText:\n${usage.site.text}\n\n    Symbol getDebugText():\n${psiSafeSymbol.getDebugText()}\n\n")
                             outputSb.append("\n        ========== kind=${usage.usageKind} symbol=$presentable site.textRange=${usage.site.textRange} ==========\n")
                             outputSb.append("        ========== site.text ==========\n${usage.site.text}\n\n")
                             outputSb.append("\n        ========== symbol.getDebugText() ==========\n${psiSafeSymbol.getDebugText()}\n\n\n\n\n")
@@ -455,22 +448,4 @@ private fun KaVariableAccessCall.isSetAccessOrNull(): Boolean? = try {
     (m.call(this) as? Boolean)
 } catch (_: Throwable) {
     null
-}
-
-private inline fun buildText(body: StringBuilder.() -> Unit): String? {
-    val sb = StringBuilder()
-    sb.body()
-    return sb.toString()
-}
-
-private inline fun StringBuilder.appendInn(target: Any?, prefix: String = "", suffix: String = "") {
-    if (target == null) return
-    append(prefix)
-    append(
-        when (target) {
-            is KtElement -> target.getDebugText()
-            else -> target.toString()
-        }
-    )
-    append(suffix)
 }
