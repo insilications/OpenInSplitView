@@ -7,57 +7,28 @@ import com.intellij.ide.IdeBundle;
 import com.intellij.openapi.editor.colors.EditorColorsManager;
 import com.intellij.openapi.util.NlsSafe;
 import com.intellij.psi.search.SearchScope;
-import com.intellij.ui.ColorUtil;
-import com.intellij.ui.DirtyUI;
-import com.intellij.ui.ExperimentalUI;
-import com.intellij.ui.PathTextClipping;
-import com.intellij.ui.SimpleColoredComponent;
-import com.intellij.ui.SimpleTextAttributes;
+import com.intellij.ui.*;
 import com.intellij.ui.popup.list.SelectablePanel;
 import com.intellij.ui.scale.JBUIScale;
 import com.intellij.ui.speedSearch.SpeedSearchUtil;
-import com.intellij.usages.TextChunk;
-import com.intellij.usages.Usage;
-import com.intellij.usages.UsageGroup;
-import com.intellij.usages.UsageNodePresentation;
-import com.intellij.usages.UsagePresentation;
+import com.intellij.usages.*;
 import com.intellij.usages.impl.GroupNode;
 import com.intellij.usages.impl.UsageNode;
 import com.intellij.usages.impl.UsageViewManagerImpl;
-import com.intellij.util.ui.EmptyIcon;
-import com.intellij.util.ui.GraphicsUtil;
-import com.intellij.util.ui.JBFont;
-import com.intellij.util.ui.JBInsets;
-import com.intellij.util.ui.JBUI;
-import com.intellij.util.ui.NamedColorUtil;
-import com.intellij.util.ui.UIUtil;
+import com.intellij.util.ui.*;
 
 import org.intellij.lang.annotations.MagicConstant;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.awt.BorderLayout;
-import java.awt.Color;
-import java.awt.Component;
-import java.awt.Container;
-import java.awt.Dimension;
-import java.awt.FontMetrics;
-import java.awt.Graphics2D;
-import java.awt.Insets;
-import java.awt.LayoutManager;
-import java.awt.Rectangle;
+import java.awt.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
 
 import javax.accessibility.Accessible;
 import javax.accessibility.AccessibleContext;
 import javax.accessibility.AccessibleTable;
-import javax.swing.BoxLayout;
-import javax.swing.Icon;
-import javax.swing.JComponent;
-import javax.swing.JLabel;
-import javax.swing.JPanel;
-import javax.swing.JTable;
+import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.TableCellRenderer;
 import javax.swing.table.TableColumnModel;
@@ -185,7 +156,10 @@ final class ShowUsagesTableCellRenderer implements TableCellRenderer {
                 SpeedSearchUtil.applySpeedSearchHighlighting(list, textChunks, false, isSelected);
 
                 panel.add(textChunks);
-                panel.getAccessibleContext().setAccessibleName(IdeBundle.message("ShowUsagesTableCellRenderer.accessible.LINE_NUMBER_COL", textChunks.getAccessibleContext().getAccessibleName()));
+                panel.getAccessibleContext().setAccessibleName(IdeBundle.message(
+                        "ShowUsagesTableCellRenderer.accessible.LINE_NUMBER_COL",
+                        textChunks.getAccessibleContext().getAccessibleName()
+                ));
             }
             case USAGE_TEXT_COL -> {
                 SimpleColoredComponent textChunks = new SimpleColoredComponent();
@@ -201,7 +175,10 @@ final class ShowUsagesTableCellRenderer implements TableCellRenderer {
                 SpeedSearchUtil.applySpeedSearchHighlighting(list, textChunks, false, isSelected);
 
                 panel.add(textChunks);
-                panel.getAccessibleContext().setAccessibleName(IdeBundle.message("ShowUsagesTableCellRenderer.accessible.USAGE_TEXT_COL", textChunks.getAccessibleContext().getAccessibleName()));
+                panel.getAccessibleContext().setAccessibleName(IdeBundle.message(
+                        "ShowUsagesTableCellRenderer.accessible.USAGE_TEXT_COL",
+                        textChunks.getAccessibleContext().getAccessibleName()
+                ));
 
                 if (isOriginUsage) {
                     SimpleColoredComponent origin;
@@ -224,7 +201,8 @@ final class ShowUsagesTableCellRenderer implements TableCellRenderer {
                         origin.appendTextPadding(JBUIScale.scale(45));
                     }
                     panel.add(origin, BorderLayout.EAST);
-                    panel.getAccessibleContext().setAccessibleName(panel.getAccessibleContext().getAccessibleName() + ", " + origin.getAccessibleContext().getAccessibleName());
+                    panel.getAccessibleContext()
+                            .setAccessibleName(panel.getAccessibleContext().getAccessibleName() + ", " + origin.getAccessibleContext().getAccessibleName());
                 }
             }
             default -> throw new IllegalStateException("unknown column: " + column);
@@ -264,16 +242,32 @@ final class ShowUsagesTableCellRenderer implements TableCellRenderer {
             return null;
         }
 
-        return EditorColorsManager.getInstance().isDarkEditor() ? ColorUtil.brighter(back, 3) : // dunno, under the dark theme the "brighter,1" doesn't look bright enough so we use 3
+        return EditorColorsManager.getInstance().isDarkEditor() ? ColorUtil.brighter(
+                back,
+                3
+        ) : // dunno, under the dark theme the "brighter,1" doesn't look bright enough so we use 3
                 ColorUtil.hackBrightness(back, 1, 1 / 1.05f); // Olga insisted on very-pale almost invisible gray. oh well
     }
 
-    private static @NotNull SimpleTextAttributes getAttributes(boolean isSelected, Color fileBgColor, Color selectionBg, Color selectionFg, @NotNull TextChunk chunk) {
+    private static @NotNull SimpleTextAttributes getAttributes(
+            boolean isSelected,
+            Color fileBgColor,
+            Color selectionBg,
+            Color selectionFg,
+            @NotNull TextChunk chunk
+    ) {
         SimpleTextAttributes background = chunk.getSimpleAttributesIgnoreBackground();
         return isSelected ? new SimpleTextAttributes(selectionBg, selectionFg, null, background.getStyle()) : deriveBgColor(background, fileBgColor);
     }
 
-    private static @NotNull JComponent textComponentSpanningWholeRow(@NotNull SimpleColoredComponent chunks, Color rowBackground, Color rowSelectionBackground, Color rowForeground, final int column, final @NotNull JTable table) {
+    private static @NotNull JComponent textComponentSpanningWholeRow(
+            @NotNull SimpleColoredComponent chunks,
+            Color rowBackground,
+            Color rowSelectionBackground,
+            Color rowForeground,
+            final int column,
+            final @NotNull JTable table
+    ) {
         final SimpleColoredComponent component = new SimpleColoredComponent() {
             @Override
             protected void doPaint(Graphics2D g) {
@@ -350,7 +344,10 @@ final class ShowUsagesTableCellRenderer implements TableCellRenderer {
         SpeedSearchUtil.applySpeedSearchHighlighting(table, renderer, false, isSelected);
         renderer.setMaximumSize(renderer.getPreferredSize());
         panel.add(renderer);
-        panel.getAccessibleContext().setAccessibleName(IdeBundle.message("ShowUsagesTableCellRenderer.accessible.FILE_GROUP_COL", renderer.getAccessibleContext().getAccessibleName()));
+        panel.getAccessibleContext().setAccessibleName(IdeBundle.message(
+                "ShowUsagesTableCellRenderer.accessible.FILE_GROUP_COL",
+                renderer.getAccessibleContext().getAccessibleName()
+        ));
     }
 
     private static boolean isPath(String text) {

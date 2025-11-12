@@ -9,11 +9,14 @@ import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.actionSystem.DataContext
 import com.intellij.openapi.application.readAction
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.editor.Document
 import com.intellij.openapi.editor.Editor
+import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
 import com.intellij.platform.ide.progress.runWithModalProgressBlocking
+import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiReference
@@ -26,7 +29,6 @@ import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.analysis.api.resolution.*
 import org.jetbrains.kotlin.analysis.api.signatures.KaCallableSignature
 import org.jetbrains.kotlin.analysis.api.symbols.*
-import org.jetbrains.kotlin.analysis.api.symbols.markers.KaNamedSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.pointers.KaSymbolPointer
 import org.jetbrains.kotlin.analysis.api.types.KaClassType
 import org.jetbrains.kotlin.analysis.api.types.KaType
@@ -34,7 +36,7 @@ import org.jetbrains.kotlin.idea.refactoring.project
 import org.jetbrains.kotlin.idea.references.KtReference
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.psi.*
-import org.jetbrains.kotlin.psi.debugText.getDebugText
+import org.jetbrains.kotlin.psi.psiUtil.getParentOfType
 import kotlin.reflect.KCallable
 
 class SymbolsInformationAction : DumbAwareAction() {
@@ -72,8 +74,10 @@ class SymbolsInformationAction : DumbAwareAction() {
             return
         }
 
-        val targetDeclarationFullText: String = targetSymbol.text
-        val outputSb = StringBuilder()
+        val psiReference: PsiReference? = file.findReferenceAt(offset)
+        LOG.debug { "psiReference: ${psiReference}" }
+        val resolvedReference: PsiElement? = psiReference?.resolve()
+        LOG.debug { "resolvedReference: $resolvedReference" }
 
         runWithModalProgressBlocking(project, GETTING_SYMBOL_INFO) {
             if (DumbService.isDumb(project)) {
@@ -84,40 +88,18 @@ class SymbolsInformationAction : DumbAwareAction() {
             val decl: KtDeclaration = targetSymbol as? KtDeclaration ?: return@runWithModalProgressBlocking
 
             readAction {
-                // Executes the given action in an analysis session context.
-                // The project will be analyzed from the perspective of `decl`'s module, also called the use-site module.
-                // Neither the analysis session nor any other lifetime owners may be leaked outside the analyze block.
-                // Please consult the documentation of `KaSession` for important information about lifetime management.
                 analyze(decl) {
-                    val usages: List<ResolvedUsage> = collectResolvedUsagesInDeclaration(decl, maxRefs = 2000)
-
-                    outputSb.append("\n    ============ Target PSI type: ${targetSymbol::class.qualifiedName} - Resolved Dependencies: ${usages.size} ============\n")
-                    outputSb.append("${targetDeclarationFullText}\n\n\n\n\n")
-
-                    usages.forEach { usage: ResolvedUsage ->
-                        val presentable: String = when (val sym: KaSymbol = usage.symbol) {
-                            is KaNamedSymbol -> sym.name.asString()
-                            else -> sym.toString()
-                        }
-
-                        // Returns the symbol's `PsiElement` if its type is `PSI` and `KaSymbol.origin` is
-                        // `KaSymbolOrigin.SOURCE` or `KaSymbolOrigin.JAVA_SOURCE`, and null otherwise.
-                        val psiSafeSymbol: KtElement? = usage.symbol.sourcePsiSafe<KtElement>()
-                        if (psiSafeSymbol == null) {
-                            outputSb.append("\n        ========== kind=${usage.usageKind} - symbol=$presentable - site.textRange=${usage.site.textRange} ==========\n")
-                            outputSb.append("        ========== site.text ==========\n${usage.site.text}\n\n")
-                            outputSb.append("\n        ========== symbol.getDebugText() ==========\n(No PSI available for symbol)\n\n\n\n\n")
-                        } else {
-                            outputSb.append("\n        ========== kind=${usage.usageKind} symbol=$presentable site.textRange=${usage.site.textRange} ==========\n")
-                            outputSb.append("        ========== site.text ==========\n${usage.site.text}\n\n")
-                            outputSb.append("\n        ========== symbol.getDebugText() ==========\n${psiSafeSymbol.getDebugText()}\n\n\n\n\n")
-                        }
-                    }
-                    LOG.info(outputSb.toString())
+                    val payload: SymbolContextPayload = buildSymbolContext(project, decl)
+                    deliverSymbolContext(targetSymbol, payload)
                 }
             }
 
         }
+    }
+
+    private fun deliverSymbolContext(targetSymbol: PsiElement, payload: SymbolContextPayload) {
+        val targetPsiType: String = targetSymbol::class.qualifiedName ?: targetSymbol.javaClass.name
+        LOG.info(payload.toLogString(targetPsiType))
     }
 }
 
@@ -142,6 +124,39 @@ data class ResolvedUsage(
     val usageKind: UsageKind,
     val site: PsiElement,
     val call: KaCall? = null
+)
+
+data class CaretLocation(
+    val offset: Int,
+    val line: Int,
+    val column: Int
+)
+
+data class DeclarationSlice(
+    val sourceCode: String,
+    val filePath: String,
+    val caret: CaretLocation
+)
+
+data class TargetSymbolContext(
+    val packageDirective: String?,
+    val imports: List<String>,
+    val declaration: DeclarationSlice
+)
+
+data class ReferencedSymbolContext(
+    val declaration: DeclarationSlice,
+    val usageClassifications: List<String>
+)
+
+data class SymbolContextPayload(
+    val target: TargetSymbolContext,
+    val referencedSymbols: List<ReferencedSymbolContext>
+)
+
+private data class MutableReferencedSymbolAggregation(
+    val declaration: DeclarationSlice,
+    val usageKinds: LinkedHashSet<String>
 )
 
 /* ============================= COLLECTION LOGIC ============================= */
@@ -224,6 +239,151 @@ fun KaSession.collectResolvedUsagesInDeclaration(
     })
 
     return out
+}
+
+/* ============================= CONTEXT BUILDERS ============================= */
+
+private fun KaSession.buildSymbolContext(
+    project: Project,
+    targetDeclaration: KtDeclaration,
+    maxRefs: Int = 2000
+): SymbolContextPayload {
+    val targetKtFile: KtFile = targetDeclaration.containingKtFile
+    val packageDirectiveText: String? = targetKtFile.packageDirective?.text
+    val importTexts: List<String> = targetKtFile.importList?.imports?.map { it.text } ?: emptyList()
+
+    val targetSlice: DeclarationSlice = targetDeclaration.toDeclarationSlice(project)
+    val targetContext = TargetSymbolContext(
+        packageDirective = packageDirectiveText,
+        imports = importTexts,
+        declaration = targetSlice
+    )
+
+    val usages: List<ResolvedUsage> = collectResolvedUsagesInDeclaration(targetDeclaration, maxRefs)
+    val referencedSymbols: List<ReferencedSymbolContext> = buildReferencedSymbolContexts(project, usages)
+
+    return SymbolContextPayload(
+        target = targetContext,
+        referencedSymbols = referencedSymbols
+    )
+}
+
+private fun KaSession.buildReferencedSymbolContexts(
+    project: Project,
+    usages: List<ResolvedUsage>
+): List<ReferencedSymbolContext> {
+    val aggregations = LinkedHashMap<KtDeclaration, MutableReferencedSymbolAggregation>()
+
+    for (usage: ResolvedUsage in usages) {
+        val symbol: KaSymbol = usage.symbol
+        if (!symbol.isProjectSourceSymbol()) continue
+
+        val declarationPsi: KtDeclaration = symbol.locateDeclarationPsi() ?: continue
+
+        val bucket: MutableReferencedSymbolAggregation = aggregations.getOrPut(declarationPsi) {
+            MutableReferencedSymbolAggregation(
+                declaration = declarationPsi.toDeclarationSlice(project),
+                usageKinds = LinkedHashSet()
+            )
+        }
+        bucket.usageKinds += usage.usageKind.toClassificationString()
+    }
+
+    return aggregations.values.map { aggregation ->
+        ReferencedSymbolContext(
+            declaration = aggregation.declaration,
+            usageClassifications = aggregation.usageKinds.toList()
+        )
+    }
+}
+
+private fun KaSymbol.isProjectSourceSymbol(): Boolean = when (origin) {
+    KaSymbolOrigin.SOURCE,
+    KaSymbolOrigin.SOURCE_MEMBER_GENERATED,
+    KaSymbolOrigin.JAVA_SOURCE -> true
+
+    else -> false
+}
+
+private fun KaSymbol.locateDeclarationPsi(): KtDeclaration? {
+    val sourcePsi: KtElement = sourcePsiSafe<KtElement>() ?: return null
+    return when (sourcePsi) {
+        is KtDeclaration -> sourcePsi
+        else -> sourcePsi.getParentOfType(strict = true)
+    }
+}
+
+private fun KtDeclaration.toDeclarationSlice(project: Project): DeclarationSlice {
+    val psiFile: PsiFile = containingFile
+    val filePath: String = psiFile.virtualFile?.path ?: psiFile.name
+    val caretLocation: CaretLocation = resolveCaretLocation(project, psiFile, textOffset)
+    return DeclarationSlice(
+        sourceCode = text,
+        filePath = filePath,
+        caret = caretLocation
+    )
+}
+
+private fun resolveCaretLocation(project: Project, psiFile: PsiFile, offset: Int): CaretLocation {
+    val document: Document? = PsiDocumentManager.getInstance(project).getDocument(psiFile)
+        ?: psiFile.virtualFile?.let { virtualFile ->
+            FileDocumentManager.getInstance().getDocument(virtualFile)
+        }
+
+    if (document != null && offset in 0..document.textLength) {
+        val lineIndex: Int = document.getLineNumber(offset)
+        val columnIndex: Int = offset - document.getLineStartOffset(lineIndex)
+        return CaretLocation(
+            offset = offset,
+            line = lineIndex + 1,
+            column = columnIndex + 1
+        )
+    }
+
+    return CaretLocation(offset = offset, line = -1, column = -1)
+}
+
+private fun UsageKind.toClassificationString(): String = when (this) {
+    UsageKind.CALL -> "call"
+    UsageKind.PROPERTY_ACCESS_GET -> "property_access_get"
+    UsageKind.PROPERTY_ACCESS_SET -> "property_access_set"
+    UsageKind.TYPE_REFERENCE -> "type_reference"
+    UsageKind.SUPER_TYPE -> "super_type"
+    UsageKind.CONSTRUCTOR_CALL -> "constructor_call"
+    UsageKind.ANNOTATION -> "annotation"
+    UsageKind.DELEGATED_PROPERTY -> "delegated_property"
+    UsageKind.OPERATOR_CALL -> "operator_call"
+    UsageKind.EXTENSION_RECEIVER -> "extension_receiver"
+}
+
+private fun SymbolContextPayload.toLogString(targetPsiType: String): String {
+    val sb = StringBuilder()
+    sb.appendLine()
+    sb.appendLine("============ Target PSI type: $targetPsiType - Referenced Symbols: ${referencedSymbols.size} ============")
+    sb.appendLine("Target file: ${target.declaration.filePath}")
+    sb.appendLine("Target caret: offset=${target.declaration.caret.offset}, line=${target.declaration.caret.line}, column=${target.declaration.caret.column}")
+    sb.appendLine("Package: ${target.packageDirective ?: "<none>"}")
+    if (target.imports.isNotEmpty()) {
+        sb.appendLine("Imports:")
+        target.imports.forEach { sb.appendLine("  $it") }
+    } else {
+        sb.appendLine("Imports: <none>")
+    }
+    sb.appendLine("Target declaration:")
+    sb.appendLine(target.declaration.sourceCode)
+
+    referencedSymbols.forEachIndexed { index, referenced ->
+        sb.appendLine()
+        sb.appendLine("---- Referenced symbol #${index + 1} ----")
+        sb.appendLine("File: ${referenced.declaration.filePath}")
+        sb.appendLine("Caret: offset=${referenced.declaration.caret.offset}, line=${referenced.declaration.caret.line}, column=${referenced.declaration.caret.column}")
+        sb.appendLine("Usage classifications: ${referenced.usageClassifications.joinToString()}")
+        sb.appendLine("Declaration:")
+        sb.appendLine(referenced.declaration.sourceCode)
+    }
+
+    sb.appendLine("==============================================================")
+    return sb.toString()
 }
 
 /* ============================= HELPERS (KaSession context) ============================= */
