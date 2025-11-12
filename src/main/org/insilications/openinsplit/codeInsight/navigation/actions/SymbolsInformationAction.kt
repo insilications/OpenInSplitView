@@ -16,10 +16,7 @@ import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
 import com.intellij.platform.ide.progress.runWithModalProgressBlocking
-import com.intellij.psi.PsiDocumentManager
-import com.intellij.psi.PsiElement
-import com.intellij.psi.PsiFile
-import com.intellij.psi.PsiReference
+import com.intellij.psi.*
 import com.intellij.psi.tree.IElementType
 import com.intellij.psi.util.PsiTreeUtil
 import org.insilications.openinsplit.debug
@@ -32,6 +29,7 @@ import org.jetbrains.kotlin.analysis.api.symbols.*
 import org.jetbrains.kotlin.analysis.api.symbols.pointers.KaSymbolPointer
 import org.jetbrains.kotlin.analysis.api.types.KaClassType
 import org.jetbrains.kotlin.analysis.api.types.KaType
+import org.jetbrains.kotlin.idea.base.psi.kotlinFqName
 import org.jetbrains.kotlin.idea.refactoring.project
 import org.jetbrains.kotlin.idea.references.KtReference
 import org.jetbrains.kotlin.lexer.KtTokens
@@ -65,15 +63,23 @@ class SymbolsInformationAction : DumbAwareAction() {
         }
 
         val offset: Int = editor.caretModel.offset
-        val targetElementUtil: TargetElementUtil = TargetElementUtil.getInstance()
-        val flags: Int = targetElementUtil.allAccepted
-        val targetSymbol: PsiElement? = targetElementUtil.findTargetElement(editor, flags, offset)
+        val targetSymbol: PsiElement? = TargetElementUtil.getInstance().findTargetElement(editor, TargetElementUtil.ELEMENT_NAME_ACCEPTED, offset)
 
         if (targetSymbol == null) {
             LOG.info("No target element at caret")
             return
         }
 
+//        LOG.debug { "psiReference: ${targetSymbol.getDebugText()}" }
+//        val presentable: String = when (val sym: KaSymbol = usage.symbol) {
+//            is KaNamedSymbol -> sym.name.asString()
+//            else -> sym.toString()
+//        }
+
+        LOG.debug { "targetSymbol.kotlinFqName: ${targetSymbol.kotlinFqName}" }
+        if (targetSymbol is PsiNamedElement) {
+            LOG.debug { "targetSymbol.name: ${targetSymbol.name}" }
+        }
         val psiReference: PsiReference? = file.findReferenceAt(offset)
         LOG.debug { "psiReference: ${psiReference}" }
         val resolvedReference: PsiElement? = psiReference?.resolve()
