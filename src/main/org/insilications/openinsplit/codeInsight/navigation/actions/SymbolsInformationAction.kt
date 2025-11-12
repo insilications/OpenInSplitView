@@ -72,15 +72,8 @@ class SymbolsInformationAction : DumbAwareAction() {
             return
         }
 
-        val outputSb = StringBuilder()
-//        outputSb.append("\n    Target PSI type: ${target::class.qualifiedName}")
-//        if (target is KtDeclarationWithBody) {
-//            LOG.info("Target name: ${target.presentation?.presentableText ?: target.name}")
-//        }
-
         val targetDeclarationFullText: String = target.text
-        outputSb.append("\n    ============ Target PSI type: ${target::class.qualifiedName} ============\n")
-        outputSb.append("${targetDeclarationFullText}\n")
+        val outputSb = StringBuilder()
 
         runWithModalProgressBlocking(project, GETTING_SYMBOL_INFO) {
             if (DumbService.isDumb(project)) {
@@ -89,7 +82,7 @@ class SymbolsInformationAction : DumbAwareAction() {
             }
 
             val decl: KtDeclaration = target as? KtDeclaration ?: return@runWithModalProgressBlocking
-//            val kk = decl.text
+
             readAction {
                 // Executes the given action in an analysis session context.
                 // The project will be analyzed from the perspective of `decl`'s module, also called the use-site module.
@@ -98,7 +91,8 @@ class SymbolsInformationAction : DumbAwareAction() {
                 analyze(decl) {
                     val usages: List<ResolvedUsage> = collectResolvedUsagesInDeclaration(decl, maxRefs = 2000)
 
-                    outputSb.append("\n\n    ============ Resolved Dependencies: ${usages.size} ============\n")
+                    outputSb.append("\n    ============ Target PSI type: ${target::class.qualifiedName} - Resolved Dependencies: ${usages.size} ============\n")
+                    outputSb.append("${targetDeclarationFullText}\n\n\n\n\n")
 
                     usages.forEach { usage: ResolvedUsage ->
                         val presentable: String = when (val sym: KaSymbol = usage.symbol) {
@@ -111,9 +105,9 @@ class SymbolsInformationAction : DumbAwareAction() {
                         val psiSafeSymbol: KtElement? = usage.symbol.sourcePsiSafe<KtElement>()
                         if (psiSafeSymbol == null) {
 //                            outputSb.append("\n    kind=${usage.usageKind} symbol=$presentable siteRange=${usage.site.textRange}\n    siteText:\n${usage.site.text}\n\n    (No PSI available for symbol)\n\n")
-                            outputSb.append("\n        ========== kind=${usage.usageKind} symbol=$presentable site.textRange=${usage.site.textRange} ==========\n")
-                            outputSb.append("        ========== site.text ==========\n${usage.site.text}\n")
-                            outputSb.append("\n        ========== symbol.getDebugText() ==========\n(No PSI available for symbol)\n\n\n")
+                            outputSb.append("\n        ========== kind=${usage.usageKind} - symbol=$presentable - site.textRange=${usage.site.textRange} ==========\n")
+                            outputSb.append("        ========== site.text ==========\n${usage.site.text}\n\n")
+                            outputSb.append("\n        ========== symbol.getDebugText() ==========\n(No PSI available for symbol)\n\n\n\n\n")
 
 //                            LOG.info("kind=${usage.usageKind} symbol=$presentable siteRange=${usage.site.textRange}\n    siteText:\n${usage.site.text}\n\n    (No PSI available for symbol)\n\n")
                         } else {
@@ -122,8 +116,8 @@ class SymbolsInformationAction : DumbAwareAction() {
 //                            )
 //                            outputSb.append("\n    kind=${usage.usageKind} symbol=$presentable siteRange=${usage.site.textRange}\n    siteText:\n${usage.site.text}\n\n    Symbol getDebugText():\n${psiSafeSymbol.getDebugText()}\n\n")
                             outputSb.append("\n        ========== kind=${usage.usageKind} symbol=$presentable site.textRange=${usage.site.textRange} ==========\n")
-                            outputSb.append("        ========== site.text ==========\n${usage.site.text}\n")
-                            outputSb.append("\n        ========== symbol.getDebugText() ==========\n${psiSafeSymbol.getDebugText()}\n\n\n")
+                            outputSb.append("        ========== site.text ==========\n${usage.site.text}\n\n")
+                            outputSb.append("\n        ========== symbol.getDebugText() ==========\n${psiSafeSymbol.getDebugText()}\n\n\n\n\n")
                         }
                     }
                     LOG.info(outputSb.toString())
