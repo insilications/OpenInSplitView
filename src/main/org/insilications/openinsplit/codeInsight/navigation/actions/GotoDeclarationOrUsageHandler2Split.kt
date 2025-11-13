@@ -7,6 +7,7 @@ import com.intellij.codeInsight.navigation.impl.LazyTargetWithPresentation
 import com.intellij.codeInsight.navigation.impl.NavigationActionResult
 import com.intellij.codeInsight.navigation.impl.NavigationActionResult.MultipleTargets
 import com.intellij.codeInsight.navigation.impl.NavigationActionResult.SingleTarget
+import com.intellij.codeInsight.navigation.impl.NavigationRequestor
 import com.intellij.find.FindBundle
 import com.intellij.find.FindUsagesSettings
 import com.intellij.find.findUsages.FindUsagesOptions
@@ -243,7 +244,7 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
                 when {
                     navMethod != null -> {
                         // Get the `navigationActionResult` property value of type `NavigationActionResult`
-                        val navigationActionResult = try {
+                        val navigationActionResult: NavigationActionResult = try {
                             navMethod.invoke(rawResult)
                         } catch (t: Throwable) {
                             LOG.warn("Failed to obtain navigationActionResult", t)
@@ -255,7 +256,7 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
                     tvMethod != null -> {
                         // Get the `targetVariants` property value, a `List<TargetVariant>`
                         @Suppress("UNCHECKED_CAST")
-                        val variants = try {
+                        val variants: List<Any?> = try {
                             tvMethod.invoke(rawResult) as? List<Any?>
                         } catch (t: Throwable) {
                             LOG.warn("Failed to obtain targetVariants", t)
@@ -267,7 +268,7 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
                         }
 
                         @Suppress("UNCHECKED_CAST")
-                        val nonNullVariants = variants as List<Any>
+                        val nonNullVariants: List<Any> = variants as List<Any>
 
                         GTDUActionResultMirror.SU(nonNullVariants) // non-empty
                     }
@@ -361,7 +362,7 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
                 val popup: JBPopup = createTargetPopup(
                     DECLARATION_NAVIGATION_TITLE,
                     actionResult.targets, LazyTargetWithPresentation::presentation,
-                ) { (requestor, _, _) ->
+                ) { (requestor: NavigationRequestor, _, _): LazyTargetWithPresentation ->
                     // We are inside the processor of the created popup. It is called when the user selects a navigatable target from the popup
                     // Trigger our custom navigation function for the selected navigatable target
                     navigateToRequestor(project, requestor, editor)

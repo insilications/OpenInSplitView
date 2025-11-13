@@ -62,6 +62,7 @@ class SymbolsInformationAction : DumbAwareAction() {
         val file: PsiFile? = CommonDataKeys.PSI_FILE.getData(dataContext)
 
         if (file == null || editor == null) {
+            LOG.debug { "No file or editor in context - File: $file - Editor: $editor" }
             e.presentation.isEnabled = false
             return
         }
@@ -74,12 +75,18 @@ class SymbolsInformationAction : DumbAwareAction() {
             return
         }
 
+        LOG.debug { "Target symbol: ${targetSymbol::class.qualifiedName} - kotlinFqName: ${targetSymbol.kotlinFqName}" }
+        if (targetSymbol is KtDeclaration) {
+            LOG.debug { "Target symbol is KtDeclaration: ${targetSymbol::class.qualifiedName} - kotlinFqName: ${targetSymbol.kotlinFqName}" }
+        }
+
         runWithModalProgressBlocking(project, GETTING_SYMBOL_INFO) {
             if (DumbService.isDumb(project)) {
                 LOG.warn("Dumb mode active; aborting semantic resolution.")
                 return@runWithModalProgressBlocking
             }
 
+            LOG.debug { "Analyzing..." }
             val decl: KtDeclaration = targetSymbol as? KtDeclaration ?: return@runWithModalProgressBlocking
 
             readAction {
@@ -169,8 +176,12 @@ fun KaSession.collectResolvedUsagesInDeclaration(
 
     root.accept(/* visitor = */ object : KtTreeVisitorVoid() {
         override fun visitDeclaration(dcl: KtDeclaration) {
-            LOG.debug { "Visiting declaration: ${dcl::class.simpleName} at ${dcl.textRange}" }
-            LOG.debug { "Visiting declaration: ${dcl::class.qualifiedName} at ${dcl.textRange}" }
+            val sb = StringBuilder()
+            sb.appendLine()
+            sb.appendLine("============ Visiting declaration: ${dcl::class.simpleName} - ${dcl::class.qualifiedName} - textRange: ${dcl.textRange} ============")
+            sb.appendLine(dcl.text)
+            sb.appendLine("==============================================================")
+            LOG.info(sb.toString())
             super.visitDeclaration(dcl)
         }
 
