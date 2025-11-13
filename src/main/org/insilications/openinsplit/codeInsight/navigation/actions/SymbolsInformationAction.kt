@@ -168,6 +168,11 @@ fun KaSession.collectResolvedUsagesInDeclaration(
     val out = ArrayList<ResolvedUsage>(256)
 
     root.accept(/* visitor = */ object : KtTreeVisitorVoid() {
+        override fun visitDeclaration(dcl: KtDeclaration) {
+            LOG.debug { "Visiting declaration: ${dcl::class.simpleName} at ${dcl.textRange}" }
+            LOG.debug { "Visiting declaration: ${dcl::class.qualifiedName} at ${dcl.textRange}" }
+            super.visitDeclaration(dcl)
+        }
 
         override fun visitCallExpression(expression: KtCallExpression) {
             if (out.size >= maxRefs) return
