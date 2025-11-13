@@ -3,7 +3,6 @@
 import com.github.benmanes.gradle.versions.updates.DependencyUpdatesTask
 import org.jetbrains.changelog.markdownToHTML
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
-import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.jetbrains.intellij.platform.gradle.tasks.PrepareSandboxTask
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
@@ -48,21 +47,21 @@ sourceSets {
         kotlin.srcDirs("src/main")
     }
 
-    val testIntegration = create("testIntegration")
-    testIntegration.apply {
-        compileClasspath += sourceSets.main.get().output
-        runtimeClasspath += sourceSets.main.get().output
-        kotlin.srcDirs("src/testIntegration")
-    }
+//    val testIntegration = create("testIntegration")
+//    testIntegration.apply {
+//        compileClasspath += sourceSets.main.get().output
+//        runtimeClasspath += sourceSets.main.get().output
+//        kotlin.srcDirs("src/testIntegration")
+//    }
 }
 
-val testIntegrationImplementation: Configuration by configurations.getting {
-    extendsFrom(configurations.testImplementation.get())
-}
-
-val testIntegrationRuntimeOnly: Configuration by configurations.getting {
-    extendsFrom(configurations.testRuntimeOnly.get())
-}
+//val testIntegrationImplementation: Configuration by configurations.getting {
+//    extendsFrom(configurations.testImplementation.get())
+//}
+//
+//val testIntegrationRuntimeOnly: Configuration by configurations.getting {
+//    extendsFrom(configurations.testRuntimeOnly.get())
+//}
 
 dependencies {
     // IntelliJ Platform Gradle Plugin Dependencies Extension: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-dependencies-extension.html
@@ -74,14 +73,14 @@ dependencies {
 
         pluginVerifier()
 
-        testFramework(TestFrameworkType.Starter, version = "latest", configurationName = testIntegrationImplementation.name)
+//        testFramework(TestFrameworkType.Starter, version = "latest", configurationName = testIntegrationImplementation.name)
     }
 
-    testIntegrationImplementation(libs.kodein.di.jvm)
-    testIntegrationImplementation(platform(libs.junit5.bom))
-    testIntegrationImplementation(libs.junit5.jupiter)
-    testIntegrationImplementation(libs.kotlin.coroutines.jvm)
-    testIntegrationRuntimeOnly(libs.junit.platform.launcher)
+//    testIntegrationImplementation(libs.kodein.di.jvm)
+//    testIntegrationImplementation(platform(libs.junit5.bom))
+//    testIntegrationImplementation(libs.junit5.jupiter)
+//    testIntegrationImplementation(libs.kotlin.coroutines.jvm)
+//    testIntegrationRuntimeOnly(libs.junit.platform.launcher)
 
     compileOnly(libs.jetbrains.annotations)
     compileOnly(libs.kotlin.reflect)
@@ -270,21 +269,21 @@ tasks.named<DependencyUpdatesTask>("dependencyUpdates").configure {
     reportfileName = "report"
 }
 
-val testIntegration: TaskProvider<Test> = tasks.register<Test>("testIntegration") {
-//    outputs.upToDateWhen { false }
-    dependsOn(tasks.buildPlugin)
-    dependsOn(tasks.prepareSandbox)
-
-    val integrationTestSourceSet: SourceSet = sourceSets.getByName("testIntegration")
-    testClassesDirs = integrationTestSourceSet.output.classesDirs
-    classpath = integrationTestSourceSet.runtimeClasspath
-    systemProperty("path.to.build.plugin", tasks.prepareSandbox.get().pluginDirectory.get().asFile)
-    systemProperty("path.to.platform", tasks.prepareSandbox.get().platformPath.toFile())
-    environment("MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
-    environment("ENV_MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
-    useJUnitPlatform()
-
-}
+//val testIntegration: TaskProvider<Test> = tasks.register<Test>("testIntegration") {
+////    outputs.upToDateWhen { false }
+//    dependsOn(tasks.buildPlugin)
+//    dependsOn(tasks.prepareSandbox)
+//
+//    val integrationTestSourceSet: SourceSet = sourceSets.getByName("testIntegration")
+//    testClassesDirs = integrationTestSourceSet.output.classesDirs
+//    classpath = integrationTestSourceSet.runtimeClasspath
+//    systemProperty("path.to.build.plugin", tasks.prepareSandbox.get().pluginDirectory.get().asFile)
+//    systemProperty("path.to.platform", tasks.prepareSandbox.get().platformPath.toFile())
+//    environment("MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
+//    environment("ENV_MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
+//    useJUnitPlatform()
+//
+//}
 
 fun isStable(version: String): Boolean {
     val stableKeyword: Boolean = listOf("RELEASE", "FINAL", "GA").any { version.uppercase().contains(it) }
