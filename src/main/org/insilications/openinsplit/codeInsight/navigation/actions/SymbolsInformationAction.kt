@@ -15,8 +15,12 @@ import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.platform.ide.progress.runWithModalProgressBlocking
-import com.intellij.psi.*
+import com.intellij.psi.PsiDocumentManager
+import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiFile
+import com.intellij.psi.PsiReference
 import com.intellij.psi.tree.IElementType
 import com.intellij.psi.util.PsiTreeUtil
 import org.insilications.openinsplit.debug
@@ -66,24 +70,9 @@ class SymbolsInformationAction : DumbAwareAction() {
         val targetSymbol: PsiElement? = TargetElementUtil.getInstance().findTargetElement(editor, TargetElementUtil.ELEMENT_NAME_ACCEPTED, offset)
 
         if (targetSymbol == null) {
-            LOG.info("No target element at caret")
+            LOG.info("No declaration element at caret")
             return
         }
-
-//        LOG.debug { "psiReference: ${targetSymbol.getDebugText()}" }
-//        val presentable: String = when (val sym: KaSymbol = usage.symbol) {
-//            is KaNamedSymbol -> sym.name.asString()
-//            else -> sym.toString()
-//        }
-
-        LOG.debug { "targetSymbol.kotlinFqName: ${targetSymbol.kotlinFqName}" }
-        if (targetSymbol is PsiNamedElement) {
-            LOG.debug { "targetSymbol.name: ${targetSymbol.name}" }
-        }
-        val psiReference: PsiReference? = file.findReferenceAt(offset)
-        LOG.debug { "psiReference: ${psiReference}" }
-        val resolvedReference: PsiElement? = psiReference?.resolve()
-        LOG.debug { "resolvedReference: $resolvedReference" }
 
         runWithModalProgressBlocking(project, GETTING_SYMBOL_INFO) {
             if (DumbService.isDumb(project)) {
@@ -141,7 +130,11 @@ data class CaretLocation(
 data class DeclarationSlice(
     val sourceCode: String,
     val filePath: String,
-    val caret: CaretLocation
+    val caret: CaretLocation,
+    val qualifiedName: String?,
+    val ktFqName: String?,
+    val presentableText: String?,
+    val ktNamedDeclName: String?
 )
 
 data class TargetSymbolContext(
@@ -174,7 +167,7 @@ fun KaSession.collectResolvedUsagesInDeclaration(
 ): List<ResolvedUsage> {
     val out = ArrayList<ResolvedUsage>(256)
 
-    root.accept(object : KtTreeVisitorVoid() {
+    root.accept(/* visitor = */ object : KtTreeVisitorVoid() {
 
         override fun visitCallExpression(expression: KtCallExpression) {
             if (out.size >= maxRefs) return
@@ -230,7 +223,7 @@ fun KaSession.collectResolvedUsagesInDeclaration(
             if (out.size >= maxRefs) return
             val delegateExpr: KtExpression? = property.delegate?.expression
             if (delegateExpr != null) {
-                PsiTreeUtil.processElements(delegateExpr) { e ->
+                PsiTreeUtil.processElements(delegateExpr) { e: PsiElement ->
                     if (out.size >= maxRefs) return@processElements false
                     when (e) {
                         is KtCallExpression,
@@ -295,7 +288,7 @@ private fun KaSession.buildReferencedSymbolContexts(
         bucket.usageKinds += usage.usageKind.toClassificationString()
     }
 
-    return aggregations.values.map { aggregation ->
+    return aggregations.values.map { aggregation: MutableReferencedSymbolAggregation ->
         ReferencedSymbolContext(
             declaration = aggregation.declaration,
             usageClassifications = aggregation.usageKinds.toList()
@@ -323,16 +316,41 @@ private fun KtDeclaration.toDeclarationSlice(project: Project): DeclarationSlice
     val psiFile: PsiFile = containingFile
     val filePath: String = psiFile.virtualFile?.path ?: psiFile.name
     val caretLocation: CaretLocation = resolveCaretLocation(project, psiFile, textOffset)
+    val qualifiedName: String? = computeQualifiedName()
+    val ktFqName: String? = computeKtFqName()
+    val presentableText: String? = computePresentableText()
+    val ktNamedDeclName: String? = computeKtNamedDeclName()
     return DeclarationSlice(
         sourceCode = text,
         filePath = filePath,
-        caret = caretLocation
+        caret = caretLocation,
+        qualifiedName = qualifiedName,
+        ktFqName = ktFqName,
+        presentableText = presentableText,
+        ktNamedDeclName = ktNamedDeclName
     )
+}
+
+private fun KtDeclaration.computeQualifiedName(): String? {
+//    return kotlinFqName?.asString() ?: (this as? KtNamedDeclaration)?.name
+    return kotlinFqName?.asString() ?: (this as? KtNamedDeclaration)?.presentation?.presentableText ?: (this as? KtNamedDeclaration)?.name
+}
+
+private fun KtDeclaration.computeKtFqName(): String? {
+    return kotlinFqName?.asString()
+}
+
+private fun KtDeclaration.computePresentableText(): String? {
+    return (this as? KtNamedDeclaration)?.presentation?.presentableText
+}
+
+private fun KtDeclaration.computeKtNamedDeclName(): String? {
+    return (this as? KtNamedDeclaration)?.name
 }
 
 private fun resolveCaretLocation(project: Project, psiFile: PsiFile, offset: Int): CaretLocation {
     val document: Document? = PsiDocumentManager.getInstance(project).getDocument(psiFile)
-        ?: psiFile.virtualFile?.let { virtualFile ->
+        ?: psiFile.virtualFile?.let { virtualFile: VirtualFile ->
             FileDocumentManager.getInstance().getDocument(virtualFile)
         }
 
@@ -367,6 +385,10 @@ private fun SymbolContextPayload.toLogString(targetPsiType: String): String {
     sb.appendLine()
     sb.appendLine("============ Target PSI type: $targetPsiType - Referenced Symbols: ${referencedSymbols.size} ============")
     sb.appendLine("Target file: ${target.declaration.filePath}")
+    sb.appendLine("Target qualified name: ${target.declaration.qualifiedName ?: "<anonymous>"}")
+    sb.appendLine("Target ktFqName name: ${target.declaration.ktFqName ?: "<anonymous>"}")
+    sb.appendLine("Target presentableText name: ${target.declaration.presentableText ?: "<anonymous>"}")
+    sb.appendLine("Target ktNamedDeclName name: ${target.declaration.ktNamedDeclName ?: "<anonymous>"}")
     sb.appendLine("Target caret: offset=${target.declaration.caret.offset}, line=${target.declaration.caret.line}, column=${target.declaration.caret.column}")
     sb.appendLine("Package: ${target.packageDirective ?: "<none>"}")
     if (target.imports.isNotEmpty()) {
@@ -378,10 +400,14 @@ private fun SymbolContextPayload.toLogString(targetPsiType: String): String {
     sb.appendLine("Target declaration:")
     sb.appendLine(target.declaration.sourceCode)
 
-    referencedSymbols.forEachIndexed { index, referenced ->
+    referencedSymbols.forEachIndexed { index: Int, referenced: ReferencedSymbolContext ->
         sb.appendLine()
         sb.appendLine("---- Referenced symbol #${index + 1} ----")
         sb.appendLine("File: ${referenced.declaration.filePath}")
+        sb.appendLine("Qualified name: ${referenced.declaration.qualifiedName ?: "<anonymous>"}")
+        sb.appendLine("ktFqName name: ${referenced.declaration.ktFqName ?: "<anonymous>"}")
+        sb.appendLine("presentableText name: ${referenced.declaration.presentableText ?: "<anonymous>"}")
+        sb.appendLine("ktNamedDeclName name: ${referenced.declaration.ktNamedDeclName ?: "<anonymous>"}")
         sb.appendLine("Caret: offset=${referenced.declaration.caret.offset}, line=${referenced.declaration.caret.line}, column=${referenced.declaration.caret.column}")
         sb.appendLine("Usage classifications: ${referenced.usageClassifications.joinToString()}")
         sb.appendLine("Declaration:")
@@ -453,12 +479,12 @@ private fun KaSession.resolveReferenceReadWrite(
     out: MutableList<ResolvedUsage>,
     preferWrite: Boolean
 ) {
-    // Resolve K2 references, not FE1.0
+    // Resolve K2 references
     val k2Refs: Array<PsiReference> = expr.references
     val syms: List<KaSymbol> = buildList {
         for (psiRef: PsiReference in k2Refs) {
             val k2Ref: KtReference = psiRef as? KtReference ?: continue
-            addAll(runCatching { k2Ref.resolveToSymbols() }.getOrElse { emptyList() })
+            addAll(runCatching<MutableList<KaSymbol>, Collection<KaSymbol>> { k2Ref.resolveToSymbols() }.getOrElse { emptyList() })
         }
     }
     if (syms.isEmpty()) return
