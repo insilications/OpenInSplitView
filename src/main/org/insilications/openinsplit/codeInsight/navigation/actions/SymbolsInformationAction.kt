@@ -38,9 +38,12 @@ import org.jetbrains.kotlin.idea.refactoring.project
 import org.jetbrains.kotlin.idea.references.KtReference
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.name.FqName
+import org.jetbrains.kotlin.name.FqNameUnsafe
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.psi.*
+import org.jetbrains.kotlin.psi.psiUtil.containingClassOrObject
 import org.jetbrains.kotlin.psi.psiUtil.getParentOfType
+import org.jetbrains.kotlin.psi.psiUtil.getStrictParentOfType
 import kotlin.reflect.KCallable
 
 class SymbolsInformationAction : DumbAwareAction() {
@@ -83,11 +86,15 @@ class SymbolsInformationAction : DumbAwareAction() {
                         return@readAction null
                     }
 
+                if (targetSymbol is KtNamedDeclaration) {
+                    LOG.debug { "Target symbol is KtNamedDeclaration - targetSymbol.fqName: ${targetSymbol.fqName()}" }
+                }
                 if (targetSymbol is KtDeclaration) {
                     LOG.debug { "Target symbol is KtDeclaration: ${targetSymbol::class.qualifiedName} - kotlinFqName: ${targetSymbol.kotlinFqName}" }
                     val kotlinFqName: FqName? = targetSymbol.kotlinFqName
                     if (kotlinFqName != null) {
-                        LOG.debug { "kotlinFqName.shortName: ${kotlinFqName.shortName()}" }
+                        LOG.debug { "FqName.ROOT: ${FqName.ROOT}" }
+                        LOG.debug { "kotlinFqName.isRoot: ${kotlinFqName.isRoot}" }
                         LOG.debug { "kotlinFqName.shortName: ${kotlinFqName.shortName()}" }
                         LOG.debug { "kotlinFqName.shortNameOrSpecial: ${kotlinFqName.shortNameOrSpecial()}" }
                         LOG.debug { "kotlinFqName.parent: ${kotlinFqName.parent()}" }
@@ -123,6 +130,35 @@ class SymbolsInformationAction : DumbAwareAction() {
     private fun deliverSymbolContext(targetSymbol: PsiElement, payload: SymbolContextPayload) {
         val targetPsiType: String = targetSymbol::class.qualifiedName ?: targetSymbol.javaClass.name
         LOG.info(payload.toLogString(targetPsiType))
+    }
+
+
+    private tailrec fun KtNamedDeclaration.parentForFqName(): KtNamedDeclaration? {
+        val parent = getStrictParentOfType<KtNamedDeclaration>() ?: return null
+        if (parent is KtProperty && parent.isLocal) return parent.parentForFqName()
+        return parent
+    }
+
+    private fun KtNamedDeclaration.name() = nameAsName ?: Name.special("<no name provided>")
+
+    private fun KtNamedDeclaration.fqName(): FqNameUnsafe {
+        containingClassOrObject?.let {
+            if (it is KtObjectDeclaration && it.isCompanion()) {
+                LOG.debug { "PORRA1" }
+                return it.fqName().child(name())
+            }
+            LOG.debug { "PORRA2" }
+            return FqNameUnsafe("${it.name()}.${name()}")
+        }
+
+        val internalSegments = generateSequence(this) { it.parentForFqName() }
+            .filterIsInstance<KtNamedDeclaration>()
+            .map { it.name ?: "<no name provided>" }
+            .toList()
+            .asReversed()
+        val packageSegments = containingKtFile.packageFqName.pathSegments()
+        LOG.debug { "PORRA3" }
+        return FqNameUnsafe((packageSegments + internalSegments).joinToString("."))
     }
 }
 
