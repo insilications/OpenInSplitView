@@ -37,6 +37,8 @@ import org.jetbrains.kotlin.idea.base.psi.kotlinFqName
 import org.jetbrains.kotlin.idea.refactoring.project
 import org.jetbrains.kotlin.idea.references.KtReference
 import org.jetbrains.kotlin.lexer.KtTokens
+import org.jetbrains.kotlin.name.FqName
+import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.getParentOfType
 import kotlin.reflect.KCallable
@@ -83,6 +85,17 @@ class SymbolsInformationAction : DumbAwareAction() {
 
                 if (targetSymbol is KtDeclaration) {
                     LOG.debug { "Target symbol is KtDeclaration: ${targetSymbol::class.qualifiedName} - kotlinFqName: ${targetSymbol.kotlinFqName}" }
+                    val kotlinFqName: FqName? = targetSymbol.kotlinFqName
+                    if (kotlinFqName != null) {
+                        LOG.debug { "kotlinFqName.shortName: ${kotlinFqName.shortName()}" }
+                        LOG.debug { "kotlinFqName.shortName: ${kotlinFqName.shortName()}" }
+                        LOG.debug { "kotlinFqName.shortNameOrSpecial: ${kotlinFqName.shortNameOrSpecial()}" }
+                        LOG.debug { "kotlinFqName.parent: ${kotlinFqName.parent()}" }
+                        val segments: List<Name> = kotlinFqName.pathSegments()
+                        for (child: Name in segments) {
+                            LOG.debug { "  Child: ${child::class.qualifiedName} - child.asString: ${child.asString()}" }
+                        }
+                    }
                 } else {
                     LOG.debug { "Target symbol is not KtDeclaration: ${targetSymbol::class.qualifiedName} - kotlinFqName: ${targetSymbol.kotlinFqName}" }
                 }
