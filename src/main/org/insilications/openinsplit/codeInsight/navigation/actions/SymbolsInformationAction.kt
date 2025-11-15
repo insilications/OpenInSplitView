@@ -67,22 +67,30 @@ class SymbolsInformationAction : DumbAwareAction() {
             return
         }
 
-        val offset: Int = editor.caretModel.offset
-        val targetSymbol: PsiElement? = TargetElementUtil.getInstance().findTargetElement(editor, TargetElementUtil.ELEMENT_NAME_ACCEPTED, offset)
-
-        if (targetSymbol == null) {
-            LOG.info("No declaration element at caret")
-            return
-        }
-
-        LOG.debug { "Target symbol: ${targetSymbol::class.qualifiedName} - kotlinFqName: ${targetSymbol.kotlinFqName}" }
-        if (targetSymbol is KtDeclaration) {
-            LOG.debug { "Target symbol is KtDeclaration: ${targetSymbol::class.qualifiedName} - kotlinFqName: ${targetSymbol.kotlinFqName}" }
-        }
-
         runWithModalProgressBlocking(project, GETTING_SYMBOL_INFO) {
             if (DumbService.isDumb(project)) {
                 LOG.warn("Dumb mode active; aborting semantic resolution.")
+                return@runWithModalProgressBlocking
+            }
+
+            val targetSymbol: PsiElement? = readAction {
+                val offset: Int = editor.caretModel.offset
+                val targetSymbol: PsiElement =
+                    TargetElementUtil.getInstance().findTargetElement(editor, TargetElementUtil.ELEMENT_NAME_ACCEPTED, offset) ?: run {
+                        LOG.info("No declaration element at caret")
+                        return@readAction null
+                    }
+
+                if (targetSymbol is KtDeclaration) {
+                    LOG.debug { "Target symbol is KtDeclaration: ${targetSymbol::class.qualifiedName} - kotlinFqName: ${targetSymbol.kotlinFqName}" }
+                } else {
+                    LOG.debug { "Target symbol is not KtDeclaration: ${targetSymbol::class.qualifiedName} - kotlinFqName: ${targetSymbol.kotlinFqName}" }
+                }
+
+                return@readAction targetSymbol
+            }
+
+            if (targetSymbol == null) {
                 return@runWithModalProgressBlocking
             }
 
