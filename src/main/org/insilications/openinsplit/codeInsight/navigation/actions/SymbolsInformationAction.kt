@@ -51,7 +51,7 @@ import kotlin.reflect.KCallable
 class SymbolsInformationAction : DumbAwareAction() {
     companion object {
         private val LOG: Logger = Logger.getInstance("org.insilications.openinsplit")
-        private const val GETTING_SYMBOL_INFO = "Getting symbols information..."
+        private const val GETTING_SYMBOL_INFO = "Getting symbol information..."
     }
 
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
@@ -91,6 +91,15 @@ class SymbolsInformationAction : DumbAwareAction() {
                 val targetSymbol: PsiElement =
                     TargetElementUtil.getInstance().findTargetElement(editor, TargetElementUtil.ELEMENT_NAME_ACCEPTED, offset) ?: run {
                         LOG.info("No declaration element at caret")
+
+                        val targetSymbolRef: PsiReference? =
+                            TargetElementUtil.getInstance().findTargetElement(editor, TargetElementUtil.REFERENCED_ELEMENT_ACCEPTED, offset) as? PsiReference
+
+                        val resolvedTargetSymbolRef: PsiElement? = targetSymbolRef?.resolve()
+                        val navigationElement: PsiElement = resolvedTargetSymbolRef?.navigationElement ?: return@readAction null
+
+                        LOG.debug { "navigationElement.file: ${navigationElement.containingFile?.virtualFile?.path}" }
+
                         return@readAction null
                     }
 
@@ -128,14 +137,15 @@ class SymbolsInformationAction : DumbAwareAction() {
             readAction {
                 analyze(decl) {
                     val payload: SymbolContextPayload = buildSymbolContext(project, decl)
-                    deliverSymbolContext(targetSymbol, payload)
+                    deliverSymbolContext(payload)
+//                    deliverSymbolContext(targetSymbol, payload)
                 }
             }
 
         }
     }
 
-    private fun deliverSymbolContext(targetSymbol: PsiElement, payload: SymbolContextPayload) {
+    private fun deliverSymbolContext(payload: SymbolContextPayload) {
 //        val targetPsiType: String = targetSymbol::class.qualifiedName ?: targetSymbol.javaClass.name
 //        LOG.info(payload.toLogString(targetPsiType))
         LOG.info(payload.toLogString())
