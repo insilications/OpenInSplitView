@@ -15,6 +15,7 @@ import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.NlsSafe
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.platform.ide.progress.runWithModalProgressBlocking
 import com.intellij.psi.PsiDocumentManager
@@ -40,6 +41,7 @@ import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.FqNameUnsafe
 import org.jetbrains.kotlin.name.Name
+import org.jetbrains.kotlin.name.tail
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.containingClassOrObject
 import org.jetbrains.kotlin.psi.psiUtil.getParentOfType
@@ -134,15 +136,15 @@ class SymbolsInformationAction : DumbAwareAction() {
 
 
     private tailrec fun KtNamedDeclaration.parentForFqName(): KtNamedDeclaration? {
-        val parent = getStrictParentOfType<KtNamedDeclaration>() ?: return null
+        val parent: KtNamedDeclaration = getStrictParentOfType<KtNamedDeclaration>() ?: return null
         if (parent is KtProperty && parent.isLocal) return parent.parentForFqName()
         return parent
     }
 
-    private fun KtNamedDeclaration.name() = nameAsName ?: Name.special("<no name provided>")
+    private fun KtNamedDeclaration.name(): Name = nameAsName ?: Name.special("<no name provided>")
 
     private fun KtNamedDeclaration.fqName(): FqNameUnsafe {
-        containingClassOrObject?.let {
+        containingClassOrObject?.let { it: KtClassOrObject ->
             if (it is KtObjectDeclaration && it.isCompanion()) {
                 LOG.debug { "PORRA1" }
                 return it.fqName().child(name())
@@ -151,9 +153,9 @@ class SymbolsInformationAction : DumbAwareAction() {
             return FqNameUnsafe("${it.name()}.${name()}")
         }
 
-        val internalSegments = generateSequence(this) { it.parentForFqName() }
+        val internalSegments: List<@NlsSafe String> = generateSequence(this) { it.parentForFqName() }
             .filterIsInstance<KtNamedDeclaration>()
-            .map { it.name ?: "<no name provided>" }
+            .map { it: KtNamedDeclaration -> it.name ?: "<no name provided>" }
             .toList()
             .asReversed()
         val packageSegments = containingKtFile.packageFqName.pathSegments()
@@ -198,7 +200,8 @@ data class DeclarationSlice(
     val qualifiedName: String?,
     val ktFqName: String?,
     val presentableText: String?,
-    val ktNamedDeclName: String?
+    val ktNamedDeclName: String?,
+    val ktFqNameRelativeString: String?
 )
 
 data class TargetSymbolContext(
@@ -321,10 +324,11 @@ private fun KaSession.buildSymbolContext(
     maxRefs: Int = 2000
 ): SymbolContextPayload {
     val targetKtFile: KtFile = targetDeclaration.containingKtFile
+    val packageFqName: FqName = targetKtFile.packageFqName
     val packageDirectiveText: String? = targetKtFile.packageDirective?.text
     val importTexts: List<String> = targetKtFile.importList?.imports?.map { it.text } ?: emptyList()
 
-    val targetSlice: DeclarationSlice = targetDeclaration.toDeclarationSlice(project)
+    val targetSlice: DeclarationSlice = targetDeclaration.toDeclarationSlice(project, packageFqName)
     val targetContext = TargetSymbolContext(
         packageDirective = packageDirectiveText,
         imports = importTexts,
@@ -385,12 +389,15 @@ private fun KaSymbol.locateDeclarationPsi(): KtDeclaration? {
     }
 }
 
-private fun KtDeclaration.toDeclarationSlice(project: Project): DeclarationSlice {
+private fun KtDeclaration.toDeclarationSlice(project: Project, packageFqName: FqName): DeclarationSlice {
+    val ktFile: KtFile = containingKtFile
     val psiFile: PsiFile = containingFile
     val filePath: String = psiFile.virtualFile?.path ?: psiFile.name
     val caretLocation: CaretLocation = resolveCaretLocation(project, psiFile, textOffset)
     val qualifiedName: String? = computeQualifiedName()
-    val ktFqName: String? = computeKtFqName()
+    val kqFqName: FqName? = kotlinFqName
+    val ktFqNameRelativeString: String? = kqFqName?.tail(packageFqName)?.asString()
+    val ktFqNameString: String? = kqFqName?.asString()
     val presentableText: String? = computePresentableText()
     val ktNamedDeclName: String? = computeKtNamedDeclName()
     return DeclarationSlice(
@@ -398,19 +405,16 @@ private fun KtDeclaration.toDeclarationSlice(project: Project): DeclarationSlice
         filePath = filePath,
         caret = caretLocation,
         qualifiedName = qualifiedName,
-        ktFqName = ktFqName,
+        ktFqName = ktFqNameString,
         presentableText = presentableText,
-        ktNamedDeclName = ktNamedDeclName
+        ktNamedDeclName = ktNamedDeclName,
+        ktFqNameRelativeString = ktFqNameRelativeString
     )
 }
 
 private fun KtDeclaration.computeQualifiedName(): String? {
 //    return kotlinFqName?.asString() ?: (this as? KtNamedDeclaration)?.name
     return kotlinFqName?.asString() ?: (this as? KtNamedDeclaration)?.presentation?.presentableText ?: (this as? KtNamedDeclaration)?.name
-}
-
-private fun KtDeclaration.computeKtFqName(): String? {
-    return kotlinFqName?.asString()
 }
 
 private fun KtDeclaration.computePresentableText(): String? {
@@ -459,6 +463,7 @@ private fun SymbolContextPayload.toLogString(targetPsiType: String): String {
     sb.appendLine("============ Target PSI type: $targetPsiType - Referenced Symbols: ${referencedSymbols.size} ============")
     sb.appendLine("Target file: ${target.declaration.filePath}")
     sb.appendLine("Target qualified name: ${target.declaration.qualifiedName ?: "<anonymous>"}")
+    sb.appendLine("Target ktFqNameRelativeString: ${target.declaration.ktFqNameRelativeString ?: "<anonymous>"}")
     sb.appendLine("Target ktFqName name: ${target.declaration.ktFqName ?: "<anonymous>"}")
     sb.appendLine("Target presentableText name: ${target.declaration.presentableText ?: "<anonymous>"}")
     sb.appendLine("Target ktNamedDeclName name: ${target.declaration.ktNamedDeclName ?: "<anonymous>"}")
@@ -478,6 +483,7 @@ private fun SymbolContextPayload.toLogString(targetPsiType: String): String {
         sb.appendLine("---- Referenced symbol #${index + 1} ----")
         sb.appendLine("File: ${referenced.declaration.filePath}")
         sb.appendLine("Qualified name: ${referenced.declaration.qualifiedName ?: "<anonymous>"}")
+        sb.appendLine("ktFqNameRelativeString: ${referenced.declaration.ktFqNameRelativeString ?: "<anonymous>"}")
         sb.appendLine("ktFqName name: ${referenced.declaration.ktFqName ?: "<anonymous>"}")
         sb.appendLine("presentableText name: ${referenced.declaration.presentableText ?: "<anonymous>"}")
         sb.appendLine("ktNamedDeclName name: ${referenced.declaration.ktNamedDeclName ?: "<anonymous>"}")
