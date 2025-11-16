@@ -201,17 +201,18 @@ data class DeclarationSlice(
     val ktFqName: String?,
     val presentableText: String?,
     val ktNamedDeclName: String?,
-    val ktFqNameRelativeString: String?
+    val ktFqNameRelativeString: String?,
+    val symbolOriginString: String
 )
 
 data class TargetSymbolContext(
     val packageDirective: String?,
     val imports: List<String>,
-    val declaration: DeclarationSlice
+    val declarationSlice: DeclarationSlice
 )
 
 data class ReferencedSymbolContext(
-    val declaration: DeclarationSlice,
+    val declarationSlice: DeclarationSlice,
     val usageClassifications: List<String>
 )
 
@@ -221,7 +222,7 @@ data class SymbolContextPayload(
 )
 
 private data class MutableReferencedSymbolAggregation(
-    val declaration: DeclarationSlice,
+    val declarationSlice: DeclarationSlice,
     val usageKinds: LinkedHashSet<String>
 )
 
@@ -324,15 +325,15 @@ private fun KaSession.buildSymbolContext(
     maxRefs: Int = 2000
 ): SymbolContextPayload {
     val targetKtFile: KtFile = targetDeclaration.containingKtFile
-    val packageFqName: FqName = targetKtFile.packageFqName
     val packageDirectiveText: String? = targetKtFile.packageDirective?.text
     val importTexts: List<String> = targetKtFile.importList?.imports?.map { it.text } ?: emptyList()
+    val symbolOrigin: KaSymbolOrigin = targetDeclaration.symbol.origin
 
-    val targetSlice: DeclarationSlice = targetDeclaration.toDeclarationSlice(project, packageFqName)
+    val targetSlice: DeclarationSlice = targetDeclaration.toDeclarationSlice(project, symbolOrigin)
     val targetContext = TargetSymbolContext(
         packageDirective = packageDirectiveText,
         imports = importTexts,
-        declaration = targetSlice
+        declarationSlice = targetSlice
     )
 
     val usages: List<ResolvedUsage> = collectResolvedUsagesInDeclaration(targetDeclaration, maxRefs)
@@ -352,13 +353,16 @@ private fun KaSession.buildReferencedSymbolContexts(
 
     for (usage: ResolvedUsage in usages) {
         val symbol: KaSymbol = usage.symbol
-        if (!symbol.isProjectSourceSymbol()) continue
+        val symbolOrigin: KaSymbolOrigin = symbol.origin
+
 
         val declarationPsi: KtDeclaration = symbol.locateDeclarationPsi() ?: continue
-
+        val declarationSlice: DeclarationSlice = declarationPsi.toDeclarationSlice(project, symbolOrigin)
+        LOG.info("Processing referenced symbol - declarationSlice: ${declarationSlice.toLogString()}")
+        if (!symbol.isProjectSourceSymbol()) continue
         val bucket: MutableReferencedSymbolAggregation = aggregations.getOrPut(declarationPsi) {
             MutableReferencedSymbolAggregation(
-                declaration = declarationPsi.toDeclarationSlice(project),
+                declarationSlice = declarationSlice,
                 usageKinds = LinkedHashSet()
             )
         }
@@ -367,7 +371,7 @@ private fun KaSession.buildReferencedSymbolContexts(
 
     return aggregations.values.map { aggregation: MutableReferencedSymbolAggregation ->
         ReferencedSymbolContext(
-            declaration = aggregation.declaration,
+            declarationSlice = aggregation.declarationSlice,
             usageClassifications = aggregation.usageKinds.toList()
         )
     }
@@ -389,8 +393,9 @@ private fun KaSymbol.locateDeclarationPsi(): KtDeclaration? {
     }
 }
 
-private fun KtDeclaration.toDeclarationSlice(project: Project, packageFqName: FqName): DeclarationSlice {
+private fun KtDeclaration.toDeclarationSlice(project: Project, symbolOrigin: KaSymbolOrigin): DeclarationSlice {
     val ktFile: KtFile = containingKtFile
+    val packageFqName: FqName = ktFile.packageFqName
     val psiFile: PsiFile = containingFile
     val filePath: String = psiFile.virtualFile?.path ?: psiFile.name
     val caretLocation: CaretLocation = resolveCaretLocation(project, psiFile, textOffset)
@@ -400,6 +405,23 @@ private fun KtDeclaration.toDeclarationSlice(project: Project, packageFqName: Fq
     val ktFqNameString: String? = kqFqName?.asString()
     val presentableText: String? = computePresentableText()
     val ktNamedDeclName: String? = computeKtNamedDeclName()
+    val symbolOriginString: String = when (symbolOrigin) {
+        KaSymbolOrigin.SOURCE -> "SOURCE"
+        KaSymbolOrigin.SOURCE_MEMBER_GENERATED -> "SOURCE_MEMBER_GENERATED"
+        KaSymbolOrigin.LIBRARY -> "LIBRARY"
+        KaSymbolOrigin.JAVA_SOURCE -> "JAVA_SOURCE"
+        KaSymbolOrigin.JAVA_LIBRARY -> "JAVA_LIBRARY"
+        KaSymbolOrigin.SAM_CONSTRUCTOR -> "SAM_CONSTRUCTOR"
+        KaSymbolOrigin.TYPEALIASED_CONSTRUCTOR -> "TYPEALIASED_CONSTRUCTOR"
+        KaSymbolOrigin.INTERSECTION_OVERRIDE -> "INTERSECTION_OVERRIDE"
+        KaSymbolOrigin.SUBSTITUTION_OVERRIDE -> "SUBSTITUTION_OVERRIDE"
+        KaSymbolOrigin.DELEGATED -> "DELEGATED"
+        KaSymbolOrigin.JAVA_SYNTHETIC_PROPERTY -> "JAVA_SYNTHETIC_PROPERTY"
+        KaSymbolOrigin.PROPERTY_BACKING_FIELD -> "PROPERTY_BACKING_FIELD"
+        KaSymbolOrigin.PLUGIN -> "PLUGIN"
+        KaSymbolOrigin.JS_DYNAMIC -> "JS_DYNAMIC"
+        KaSymbolOrigin.NATIVE_FORWARD_DECLARATION -> "NATIVE_FORWARD_DECLARATION"
+    }
     return DeclarationSlice(
         sourceCode = text,
         filePath = filePath,
@@ -408,7 +430,8 @@ private fun KtDeclaration.toDeclarationSlice(project: Project, packageFqName: Fq
         ktFqName = ktFqNameString,
         presentableText = presentableText,
         ktNamedDeclName = ktNamedDeclName,
-        ktFqNameRelativeString = ktFqNameRelativeString
+        ktFqNameRelativeString = ktFqNameRelativeString,
+        symbolOriginString = symbolOriginString
     )
 }
 
@@ -457,17 +480,33 @@ private fun UsageKind.toClassificationString(): String = when (this) {
     UsageKind.EXTENSION_RECEIVER -> "extension_receiver"
 }
 
+private fun DeclarationSlice.toLogString(): String {
+    val sb = StringBuilder()
+    sb.appendLine()
+    sb.appendLine("File: $filePath")
+    sb.appendLine("Qualified name: ${qualifiedName ?: "<anonymous>"}")
+    sb.appendLine("symbolOriginString: $symbolOriginString")
+    sb.appendLine("ktFqNameRelativeString: ${ktFqNameRelativeString ?: "<anonymous>"}")
+    sb.appendLine("ktFqName name: ${ktFqName ?: "<anonymous>"}")
+    sb.appendLine("presentableText name: ${presentableText ?: "<anonymous>"}")
+    sb.appendLine("ktNamedDeclName name: ${ktNamedDeclName ?: "<anonymous>"}")
+    sb.appendLine("Caret: offset=${caret.offset}, line=${caret.line}, column=${caret.column}")
+    sb.appendLine(sourceCode)
+    return sb.toString()
+}
+
 private fun SymbolContextPayload.toLogString(targetPsiType: String): String {
     val sb = StringBuilder()
     sb.appendLine()
     sb.appendLine("============ Target PSI type: $targetPsiType - Referenced Symbols: ${referencedSymbols.size} ============")
-    sb.appendLine("Target file: ${target.declaration.filePath}")
-    sb.appendLine("Target qualified name: ${target.declaration.qualifiedName ?: "<anonymous>"}")
-    sb.appendLine("Target ktFqNameRelativeString: ${target.declaration.ktFqNameRelativeString ?: "<anonymous>"}")
-    sb.appendLine("Target ktFqName name: ${target.declaration.ktFqName ?: "<anonymous>"}")
-    sb.appendLine("Target presentableText name: ${target.declaration.presentableText ?: "<anonymous>"}")
-    sb.appendLine("Target ktNamedDeclName name: ${target.declaration.ktNamedDeclName ?: "<anonymous>"}")
-    sb.appendLine("Target caret: offset=${target.declaration.caret.offset}, line=${target.declaration.caret.line}, column=${target.declaration.caret.column}")
+    sb.appendLine("Target file: ${target.declarationSlice.filePath}")
+    sb.appendLine("Target qualified name: ${target.declarationSlice.qualifiedName ?: "<anonymous>"}")
+    sb.appendLine("Target symbolOriginString: ${target.declarationSlice.symbolOriginString}")
+    sb.appendLine("Target ktFqNameRelativeString: ${target.declarationSlice.ktFqNameRelativeString ?: "<anonymous>"}")
+    sb.appendLine("Target ktFqName name: ${target.declarationSlice.ktFqName ?: "<anonymous>"}")
+    sb.appendLine("Target presentableText name: ${target.declarationSlice.presentableText ?: "<anonymous>"}")
+    sb.appendLine("Target ktNamedDeclName name: ${target.declarationSlice.ktNamedDeclName ?: "<anonymous>"}")
+    sb.appendLine("Target caret: offset=${target.declarationSlice.caret.offset}, line=${target.declarationSlice.caret.line}, column=${target.declarationSlice.caret.column}")
     sb.appendLine("Package: ${target.packageDirective ?: "<none>"}")
     if (target.imports.isNotEmpty()) {
         sb.appendLine("Imports:")
@@ -476,21 +515,22 @@ private fun SymbolContextPayload.toLogString(targetPsiType: String): String {
         sb.appendLine("Imports: <none>")
     }
     sb.appendLine("Target declaration:")
-    sb.appendLine(target.declaration.sourceCode)
+    sb.appendLine(target.declarationSlice.sourceCode)
 
     referencedSymbols.forEachIndexed { index: Int, referenced: ReferencedSymbolContext ->
         sb.appendLine()
         sb.appendLine("---- Referenced symbol #${index + 1} ----")
-        sb.appendLine("File: ${referenced.declaration.filePath}")
-        sb.appendLine("Qualified name: ${referenced.declaration.qualifiedName ?: "<anonymous>"}")
-        sb.appendLine("ktFqNameRelativeString: ${referenced.declaration.ktFqNameRelativeString ?: "<anonymous>"}")
-        sb.appendLine("ktFqName name: ${referenced.declaration.ktFqName ?: "<anonymous>"}")
-        sb.appendLine("presentableText name: ${referenced.declaration.presentableText ?: "<anonymous>"}")
-        sb.appendLine("ktNamedDeclName name: ${referenced.declaration.ktNamedDeclName ?: "<anonymous>"}")
-        sb.appendLine("Caret: offset=${referenced.declaration.caret.offset}, line=${referenced.declaration.caret.line}, column=${referenced.declaration.caret.column}")
+        sb.appendLine("File: ${referenced.declarationSlice.filePath}")
+        sb.appendLine("Qualified name: ${referenced.declarationSlice.qualifiedName ?: "<anonymous>"}")
+        sb.appendLine("symbolOriginString: ${referenced.declarationSlice.symbolOriginString}")
+        sb.appendLine("ktFqNameRelativeString: ${referenced.declarationSlice.ktFqNameRelativeString ?: "<anonymous>"}")
+        sb.appendLine("ktFqName name: ${referenced.declarationSlice.ktFqName ?: "<anonymous>"}")
+        sb.appendLine("presentableText name: ${referenced.declarationSlice.presentableText ?: "<anonymous>"}")
+        sb.appendLine("ktNamedDeclName name: ${referenced.declarationSlice.ktNamedDeclName ?: "<anonymous>"}")
+        sb.appendLine("Caret: offset=${referenced.declarationSlice.caret.offset}, line=${referenced.declarationSlice.caret.line}, column=${referenced.declarationSlice.caret.column}")
         sb.appendLine("Usage classifications: ${referenced.usageClassifications.joinToString()}")
         sb.appendLine("Declaration:")
-        sb.appendLine(referenced.declaration.sourceCode)
+        sb.appendLine(referenced.declarationSlice.sourceCode)
     }
 
     sb.appendLine("==============================================================")
