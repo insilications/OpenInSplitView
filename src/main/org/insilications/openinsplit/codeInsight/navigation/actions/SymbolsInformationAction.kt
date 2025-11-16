@@ -358,8 +358,10 @@ private fun KaSession.buildReferencedSymbolContexts(
 
         val declarationPsi: KtDeclaration = symbol.locateDeclarationPsi() ?: continue
         val declarationSlice: DeclarationSlice = declarationPsi.toDeclarationSlice(project, symbolOrigin)
-        LOG.info("Processing referenced symbol - declarationSlice: ${declarationSlice.toLogString()}")
-        if (!symbol.isProjectSourceSymbol()) continue
+        if (!symbol.isProjectSourceSymbol()) {
+            LOG.info(declarationSlice.toLogString())
+            continue
+        }
         val bucket: MutableReferencedSymbolAggregation = aggregations.getOrPut(declarationPsi) {
             MutableReferencedSymbolAggregation(
                 declarationSlice = declarationSlice,
@@ -386,6 +388,7 @@ private fun KaSymbol.isProjectSourceSymbol(): Boolean = when (origin) {
 }
 
 private fun KaSymbol.locateDeclarationPsi(): KtDeclaration? {
+    // Returns the symbol's PsiElement if its type is PSI and KaSymbol.origin is KaSymbolOrigin.SOURCE or KaSymbolOrigin.JAVA_SOURCE, and null otherwise.
     val sourcePsi: KtElement = sourcePsiSafe<KtElement>() ?: return null
     return when (sourcePsi) {
         is KtDeclaration -> sourcePsi
@@ -483,6 +486,7 @@ private fun UsageKind.toClassificationString(): String = when (this) {
 private fun DeclarationSlice.toLogString(): String {
     val sb = StringBuilder()
     sb.appendLine()
+    sb.appendLine("---- Referenced symbol NOT ADDED ----")
     sb.appendLine("File: $filePath")
     sb.appendLine("Qualified name: ${qualifiedName ?: "<anonymous>"}")
     sb.appendLine("symbolOriginString: $symbolOriginString")
