@@ -83,49 +83,11 @@ class SymbolsInformationAction : DumbAwareAction() {
             val targetSymbol: PsiElement? = readAction {
                 val offset: Int = editor.caretModel.offset
 
-//                val psiReference: PsiReference? = psiFile.findReferenceAt(offset)
-//                val resolvedReference: PsiElement? = psiReference?.resolve()
-//
-//                LOG.debug { "Target symbol resolvedReference: $resolvedReference" }
-
                 val targetSymbol: PsiElement =
                     TargetElementUtil.getInstance().findTargetElement(editor, TargetElementUtil.ELEMENT_NAME_ACCEPTED, offset) ?: run {
-                        LOG.info("No declaration element at caret")
-
-//                        val targetSymbolRef: PsiReference? =
-//                            TargetElementUtil.getInstance().findTargetElement(editor, TargetElementUtil.REFERENCED_ELEMENT_ACCEPTED, offset) as? PsiReference
-                        val targetSymbolRef: PsiReference? = psiFile.findReferenceAt(offset)
-
-                        val resolvedTargetSymbolRef: PsiElement? = targetSymbolRef?.resolve()
-                        LOG.debug { "resolvedTargetSymbolRef resolvedReference: $resolvedTargetSymbolRef" }
-                        val navigationElement: PsiElement = resolvedTargetSymbolRef?.navigationElement ?: return@readAction null
-
-                        LOG.debug { "navigationElement.file: ${navigationElement.containingFile?.virtualFile?.path}" }
-
+                        LOG.info("No declaration element found at caret")
                         return@readAction null
                     }
-
-                if (targetSymbol is KtNamedDeclaration) {
-                    LOG.debug { "Target symbol is KtNamedDeclaration - targetSymbol.fqName: ${targetSymbol.fqName()}" }
-                }
-                if (targetSymbol is KtDeclaration) {
-                    LOG.debug { "Target symbol is KtDeclaration: ${targetSymbol::class.qualifiedName} - kotlinFqName: ${targetSymbol.kotlinFqName}" }
-                    val kotlinFqName: FqName? = targetSymbol.kotlinFqName
-                    if (kotlinFqName != null) {
-                        LOG.debug { "FqName.ROOT: ${FqName.ROOT}" }
-                        LOG.debug { "kotlinFqName.isRoot: ${kotlinFqName.isRoot}" }
-                        LOG.debug { "kotlinFqName.shortName: ${kotlinFqName.shortName()}" }
-                        LOG.debug { "kotlinFqName.shortNameOrSpecial: ${kotlinFqName.shortNameOrSpecial()}" }
-                        LOG.debug { "kotlinFqName.parent: ${kotlinFqName.parent()}" }
-                        val segments: List<Name> = kotlinFqName.pathSegments()
-                        for (child: Name in segments) {
-                            LOG.debug { "  Child: ${child::class.qualifiedName} - child.asString: ${child.asString()}" }
-                        }
-                    }
-                } else {
-                    LOG.debug { "Target symbol is not KtDeclaration: ${targetSymbol::class.qualifiedName} - kotlinFqName: ${targetSymbol.kotlinFqName}" }
-                }
-
                 return@readAction targetSymbol
             }
 
@@ -134,13 +96,16 @@ class SymbolsInformationAction : DumbAwareAction() {
             }
 
             LOG.debug { "Analyzing..." }
-            val decl: KtDeclaration = targetSymbol as? KtDeclaration ?: return@runWithModalProgressBlocking
+            val decl: KtDeclaration = targetSymbol as? KtDeclaration ?: run {
+                LOG.debug { "Target symbol is not KtDeclaration - Type: ${targetSymbol::class.qualifiedName} - kotlinFqName: ${targetSymbol.kotlinFqName}" }
+                return@runWithModalProgressBlocking
+            }
 
             readAction {
                 analyze(decl) {
+                    // KaSession context
                     val payload: SymbolContextPayload = buildSymbolContext(project, decl)
                     deliverSymbolContext(payload)
-//                    deliverSymbolContext(targetSymbol, payload)
                 }
             }
 
@@ -148,8 +113,6 @@ class SymbolsInformationAction : DumbAwareAction() {
     }
 
     private fun deliverSymbolContext(payload: SymbolContextPayload) {
-//        val targetPsiType: String = targetSymbol::class.qualifiedName ?: targetSymbol.javaClass.name
-//        LOG.info(payload.toLogString(targetPsiType))
         LOG.info(payload.toLogString())
     }
 
