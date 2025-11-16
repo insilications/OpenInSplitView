@@ -66,10 +66,10 @@ class SymbolsInformationAction : DumbAwareAction() {
         val dataContext: DataContext = e.dataContext
         val project: Project = dataContext.project
         val editor: Editor? = CommonDataKeys.EDITOR.getData(dataContext)
-        val file: PsiFile? = CommonDataKeys.PSI_FILE.getData(dataContext)
+        val psiFile: PsiFile? = CommonDataKeys.PSI_FILE.getData(dataContext)
 
-        if (file == null || editor == null) {
-            LOG.debug { "No file or editor in context - File: $file - Editor: $editor" }
+        if (psiFile == null || editor == null) {
+            LOG.debug { "No file or editor in context - File: $psiFile - Editor: $editor" }
             e.presentation.isEnabled = false
             return
         }
@@ -82,6 +82,12 @@ class SymbolsInformationAction : DumbAwareAction() {
 
             val targetSymbol: PsiElement? = readAction {
                 val offset: Int = editor.caretModel.offset
+
+                val psiReference: PsiReference? = psiFile.findReferenceAt(offset)
+                val resolvedReference: PsiElement? = psiReference?.resolve()
+
+                LOG.debug { "Target symbol resolvedReference: $resolvedReference" }
+
                 val targetSymbol: PsiElement =
                     TargetElementUtil.getInstance().findTargetElement(editor, TargetElementUtil.ELEMENT_NAME_ACCEPTED, offset) ?: run {
                         LOG.info("No declaration element at caret")
