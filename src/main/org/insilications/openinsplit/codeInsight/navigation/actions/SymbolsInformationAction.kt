@@ -15,7 +15,6 @@ import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.util.NlsSafe
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.platform.ide.progress.runWithModalProgressBlocking
 import com.intellij.psi.PsiDocumentManager
@@ -39,13 +38,9 @@ import org.jetbrains.kotlin.idea.refactoring.project
 import org.jetbrains.kotlin.idea.references.KtReference
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.name.FqName
-import org.jetbrains.kotlin.name.FqNameUnsafe
-import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.name.tail
 import org.jetbrains.kotlin.psi.*
-import org.jetbrains.kotlin.psi.psiUtil.containingClassOrObject
 import org.jetbrains.kotlin.psi.psiUtil.getParentOfType
-import org.jetbrains.kotlin.psi.psiUtil.getStrictParentOfType
 import kotlin.reflect.KCallable
 
 class SymbolsInformationAction : DumbAwareAction() {
@@ -95,16 +90,16 @@ class SymbolsInformationAction : DumbAwareAction() {
                 return@runWithModalProgressBlocking
             }
 
-            LOG.debug { "Analyzing..." }
-            val decl: KtDeclaration = targetSymbol as? KtDeclaration ?: run {
-                LOG.debug { "Target symbol is not KtDeclaration - Type: ${targetSymbol::class.qualifiedName} - kotlinFqName: ${targetSymbol.kotlinFqName}" }
+            LOG.info("Analyzing...")
+            val targetKtDeclaration: KtDeclaration = targetSymbol as? KtDeclaration ?: run {
+                LOG.info("Target symbol is not KtDeclaration - Type: ${targetSymbol::class.qualifiedName} - kotlinFqName: ${targetSymbol.kotlinFqName}")
                 return@runWithModalProgressBlocking
             }
 
             readAction {
-                analyze(decl) {
+                analyze(targetKtDeclaration) {
                     // KaSession context
-                    val payload: SymbolContextPayload = buildSymbolContext(project, decl)
+                    val payload: SymbolContextPayload = buildSymbolContext(project, targetKtDeclaration)
                     deliverSymbolContext(payload)
                 }
             }
@@ -114,35 +109,6 @@ class SymbolsInformationAction : DumbAwareAction() {
 
     private fun deliverSymbolContext(payload: SymbolContextPayload) {
         LOG.info(payload.toLogString())
-    }
-
-
-    private tailrec fun KtNamedDeclaration.parentForFqName(): KtNamedDeclaration? {
-        val parent: KtNamedDeclaration = getStrictParentOfType<KtNamedDeclaration>() ?: return null
-        if (parent is KtProperty && parent.isLocal) return parent.parentForFqName()
-        return parent
-    }
-
-    private fun KtNamedDeclaration.name(): Name = nameAsName ?: Name.special("<no name provided>")
-
-    private fun KtNamedDeclaration.fqName(): FqNameUnsafe {
-        containingClassOrObject?.let { it: KtClassOrObject ->
-            if (it is KtObjectDeclaration && it.isCompanion()) {
-                LOG.debug { "PORRA1" }
-                return it.fqName().child(name())
-            }
-            LOG.debug { "PORRA2" }
-            return FqNameUnsafe("${it.name()}.${name()}")
-        }
-
-        val internalSegments: List<@NlsSafe String> = generateSequence(this) { it.parentForFqName() }
-            .filterIsInstance<KtNamedDeclaration>()
-            .map { it: KtNamedDeclaration -> it.name ?: "<no name provided>" }
-            .toList()
-            .asReversed()
-        val packageSegments = containingKtFile.packageFqName.pathSegments()
-        LOG.debug { "PORRA3" }
-        return FqNameUnsafe((packageSegments + internalSegments).joinToString("."))
     }
 }
 
@@ -177,7 +143,6 @@ data class CaretLocation(
 
 data class DeclarationSlice(
     val sourceCode: String,
-    val filePath: String,
     val ktFilePath: String,
     val caret: CaretLocation,
     val qualifiedName: String?,
@@ -220,15 +185,15 @@ fun KaSession.collectResolvedUsagesInDeclaration(
     val out = ArrayList<ResolvedUsage>(256)
 
     root.accept(/* visitor = */ object : KtTreeVisitorVoid() {
-        override fun visitDeclaration(dcl: KtDeclaration) {
-            val sb = StringBuilder()
-            sb.appendLine()
-            sb.appendLine("============ Visiting declaration: ${dcl::class.simpleName} - ${dcl::class.qualifiedName} - textRange: ${dcl.textRange} ============")
-            sb.appendLine(dcl.text)
-            sb.appendLine("==============================================================")
-            LOG.info(sb.toString())
-            super.visitDeclaration(dcl)
-        }
+//        override fun visitDeclaration(dcl: KtDeclaration) {
+//            val sb = StringBuilder()
+//            sb.appendLine()
+//            sb.appendLine("============ Visiting declaration: ${dcl::class.simpleName} - ${dcl::class.qualifiedName} - textRange: ${dcl.textRange} ============")
+//            sb.appendLine(dcl.text)
+//            sb.appendLine("==============================================================")
+//            LOG.info(sb.toString())
+//            super.visitDeclaration(dcl)
+//        }
 
         override fun visitCallExpression(expression: KtCallExpression) {
             if (out.size >= maxRefs) return
@@ -305,22 +270,21 @@ fun KaSession.collectResolvedUsagesInDeclaration(
 
 private fun KaSession.buildSymbolContext(
     project: Project,
-    targetDeclaration: KtDeclaration,
+    targetKtDeclaration: KtDeclaration,
     maxRefs: Int = 2000
 ): SymbolContextPayload {
-    val targetKtFile: KtFile = targetDeclaration.containingKtFile
+    val targetKtFile: KtFile = targetKtDeclaration.containingKtFile
     val packageDirectiveText: String? = targetKtFile.packageDirective?.text
     val importTexts: List<String> = targetKtFile.importList?.imports?.map { it.text } ?: emptyList()
-    val symbolOrigin: KaSymbolOrigin = targetDeclaration.symbol.origin
 
-    val targetSlice: DeclarationSlice = targetDeclaration.toDeclarationSlice(project, symbolOrigin)
+    val targetSlice: DeclarationSlice = targetKtDeclaration.toDeclarationSlice(project, targetKtDeclaration.symbol.origin)
     val targetContext = TargetSymbolContext(
         packageDirective = packageDirectiveText,
         imports = importTexts,
         declarationSlice = targetSlice
     )
 
-    val usages: List<ResolvedUsage> = collectResolvedUsagesInDeclaration(targetDeclaration, maxRefs)
+    val usages: List<ResolvedUsage> = collectResolvedUsagesInDeclaration(targetKtDeclaration, maxRefs)
     val referencedSymbols: List<ReferencedSymbolContext> = buildReferencedSymbolContexts(project, usages)
 
     return SymbolContextPayload(
@@ -387,14 +351,10 @@ private fun KaSymbol.locateDeclarationPsi(): KtDeclaration? {
 private fun KtDeclaration.toDeclarationSlice(project: Project, symbolOrigin: KaSymbolOrigin): DeclarationSlice {
     val ktFile: KtFile = containingKtFile
     val ktFilePath: String = containingKtFile.virtualFilePath
-    val packageFqName: FqName = ktFile.packageFqName
-    val psiFile: PsiFile = containingFile
-    val filePath: String = psiFile.virtualFile?.path ?: psiFile.name
-    val caretLocation: CaretLocation = resolveCaretLocation(project, psiFile, textOffset)
-    val qualifiedName: String? = computeQualifiedName()
+    val caretLocation: CaretLocation = resolveCaretLocation(project, ktFile as PsiFile, textOffset)
     val kqFqName: FqName? = kotlinFqName
-    val ktFqNameRelativeString: String? = kqFqName?.tail(packageFqName)?.asString()
-    val ktFqNameString: String? = kqFqName?.asString()
+    val qualifiedName: String? = computeQualifiedName(kqFqName)
+    val ktFqNameRelativeString: String? = computeRelativektFqName(kqFqName, ktFile.packageFqName)
     val presentableText: String? = computePresentableText()
     val ktNamedDeclName: String? = computeKtNamedDeclName()
     val symbolOriginString: String = when (symbolOrigin) {
@@ -417,7 +377,6 @@ private fun KtDeclaration.toDeclarationSlice(project: Project, symbolOrigin: KaS
     val fqNameTypeString: String = this::class.qualifiedName ?: javaClass.name
     return DeclarationSlice(
         sourceCode = text,
-        filePath = filePath,
         ktFilePath = ktFilePath,
         caret = caretLocation,
         qualifiedName = qualifiedName,
@@ -430,16 +389,24 @@ private fun KtDeclaration.toDeclarationSlice(project: Project, symbolOrigin: KaS
     )
 }
 
-private fun KtDeclaration.computeQualifiedName(): String? {
-//    return kotlinFqName?.asString() ?: (this as? KtNamedDeclaration)?.name
-    return kotlinFqName?.asString() ?: (this as? KtNamedDeclaration)?.presentation?.presentableText ?: (this as? KtNamedDeclaration)?.name
+/**
+ * Computes the relative FqName string of `kqFqName` with respect to the given package `packageFqName` FqName
+ * Example: if `kqFqName` is "com.example.MyClass.myMethod" and `packageFqName` is "com.example", the result will be "MyClass.myMethod"
+ * If `kqFqName` is null, returns null
+ */
+private inline fun computeRelativektFqName(kqFqName: FqName?, packageFqName: FqName): String? {
+    return kqFqName?.tail(packageFqName)?.asString()
 }
 
-private fun KtDeclaration.computePresentableText(): String? {
+private inline fun computeQualifiedName(kqFqName: FqName?): String? {
+    return kqFqName?.asString()
+}
+
+private inline fun KtDeclaration.computePresentableText(): String? {
     return (this as? KtNamedDeclaration)?.presentation?.presentableText
 }
 
-private fun KtDeclaration.computeKtNamedDeclName(): String? {
+private inline fun KtDeclaration.computeKtNamedDeclName(): String? {
     return (this as? KtNamedDeclaration)?.name
 }
 
