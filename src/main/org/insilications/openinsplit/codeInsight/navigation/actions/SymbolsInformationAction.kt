@@ -83,19 +83,21 @@ class SymbolsInformationAction : DumbAwareAction() {
             val targetSymbol: PsiElement? = readAction {
                 val offset: Int = editor.caretModel.offset
 
-                val psiReference: PsiReference? = psiFile.findReferenceAt(offset)
-                val resolvedReference: PsiElement? = psiReference?.resolve()
-
-                LOG.debug { "Target symbol resolvedReference: $resolvedReference" }
+//                val psiReference: PsiReference? = psiFile.findReferenceAt(offset)
+//                val resolvedReference: PsiElement? = psiReference?.resolve()
+//
+//                LOG.debug { "Target symbol resolvedReference: $resolvedReference" }
 
                 val targetSymbol: PsiElement =
                     TargetElementUtil.getInstance().findTargetElement(editor, TargetElementUtil.ELEMENT_NAME_ACCEPTED, offset) ?: run {
                         LOG.info("No declaration element at caret")
 
-                        val targetSymbolRef: PsiReference? =
-                            TargetElementUtil.getInstance().findTargetElement(editor, TargetElementUtil.REFERENCED_ELEMENT_ACCEPTED, offset) as? PsiReference
+//                        val targetSymbolRef: PsiReference? =
+//                            TargetElementUtil.getInstance().findTargetElement(editor, TargetElementUtil.REFERENCED_ELEMENT_ACCEPTED, offset) as? PsiReference
+                        val targetSymbolRef: PsiReference? = psiFile.findReferenceAt(offset)
 
                         val resolvedTargetSymbolRef: PsiElement? = targetSymbolRef?.resolve()
+                        LOG.debug { "resolvedTargetSymbolRef resolvedReference: $resolvedTargetSymbolRef" }
                         val navigationElement: PsiElement = resolvedTargetSymbolRef?.navigationElement ?: return@readAction null
 
                         LOG.debug { "navigationElement.file: ${navigationElement.containingFile?.virtualFile?.path}" }
