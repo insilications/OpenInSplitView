@@ -99,7 +99,7 @@ class SymbolsInformationAction : DumbAwareAction() {
             readAction {
                 analyze(targetKtDeclaration) {
                     // KaSession context
-                    val payload: SymbolContextPayload = buildSymbolContext(project, targetKtDeclaration)
+                    val payload: SymbolContextPayload = buildSymbolContext(project, targetKtDeclaration, 5000)
                     deliverSymbolContext(payload)
                 }
             }
@@ -184,7 +184,38 @@ fun KaSession.collectResolvedUsagesInDeclaration(
     val out = ArrayList<ResolvedUsage>(256)
 
     root.accept(/* visitor = */ object : KtTreeVisitorVoid() {
+        override fun visitClass(klass: KtClass) {
+            LOG.debug { "Visiting class: ${klass.text}" }
+            super.visitClass(klass)
+        }
+
+        override fun visitClassOrObject(classOrObject: KtClassOrObject) {
+            LOG.debug { "Visiting class or object: ${classOrObject.text}" }
+            super.visitClassOrObject(classOrObject)
+        }
+
+        override fun visitKtElement(element: KtElement) {
+            LOG.debug { "Visiting KtElement: ${element.text}" }
+            super.visitKtElement(element)
+        }
+
+        override fun visitNamedDeclaration(declaration: KtNamedDeclaration) {
+            LOG.debug { "Visiting named declaration: ${declaration.text}" }
+            super.visitNamedDeclaration(declaration)
+        }
+
+        override fun visitNamedFunction(function: KtNamedFunction) {
+            LOG.debug { "Visiting named function: ${function.text}" }
+            super.visitNamedFunction(function)
+        }
+
+        override fun visitDeclaration(dcl: KtDeclaration) {
+            LOG.debug { "Visiting declaration: ${dcl.text}" }
+            super.visitDeclaration(dcl)
+        }
+
         override fun visitCallExpression(expression: KtCallExpression) {
+            LOG.debug { "Visiting call expression: ${expression.text}" }
             if (out.size >= maxRefs) return
             handleCallLike(expression, out)
             super.visitCallExpression(expression)
@@ -211,12 +242,14 @@ fun KaSession.collectResolvedUsagesInDeclaration(
         }
 
         override fun visitReferenceExpression(expression: KtReferenceExpression) {
+            LOG.debug { "Visiting reference expression: ${expression.text}" }
             if (out.size >= maxRefs) return
             resolveReferenceReadWrite(expression, out, preferWrite = isAssignmentLhs(expression))
             super.visitReferenceExpression(expression)
         }
 
         override fun visitTypeReference(typeReference: KtTypeReference) {
+            LOG.debug { "Visiting type reference: ${typeReference.text}" }
             if (out.size >= maxRefs) return
             resolveTypeReference(typeReference, out)
             super.visitTypeReference(typeReference)
@@ -531,6 +564,10 @@ private fun KaSession.resolveReferenceReadWrite(
     if (syms.isEmpty()) return
 
     for (sym: KaSymbol in syms) {
+        LOG.debug { "Resolved reference '${expr.text}' to symbol of type ${sym::class.qualifiedName}" }
+        val declarationPsi: KtDeclaration? = sym.locateDeclarationPsi()
+        val navigatableElement: PsiElement? = declarationPsi?.navigationElement
+        LOG.debug { "source: ${navigatableElement?.text}\n\n" }
         val ptr: KaSymbolPointer<KaSymbol> = sym.createPointer()
         val usage: UsageKind = when (sym) {
             is KaPropertySymbol -> if (preferWrite && !sym.isVal) UsageKind.PROPERTY_ACCESS_SET else UsageKind.PROPERTY_ACCESS_GET
