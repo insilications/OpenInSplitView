@@ -130,8 +130,9 @@ class SymbolsInformationAction : DumbAwareAction() {
     }
 
     private fun deliverSymbolContext(targetSymbol: PsiElement, payload: SymbolContextPayload) {
-        val targetPsiType: String = targetSymbol::class.qualifiedName ?: targetSymbol.javaClass.name
-        LOG.info(payload.toLogString(targetPsiType))
+//        val targetPsiType: String = targetSymbol::class.qualifiedName ?: targetSymbol.javaClass.name
+//        LOG.info(payload.toLogString(targetPsiType))
+        LOG.info(payload.toLogString())
     }
 
 
@@ -203,7 +204,8 @@ data class DeclarationSlice(
     val presentableText: String?,
     val ktNamedDeclName: String?,
     val ktFqNameRelativeString: String?,
-    val symbolOriginString: String
+    val symbolOriginString: String,
+    val fqNameTypeString: String
 )
 
 data class TargetSymbolContext(
@@ -431,6 +433,7 @@ private fun KtDeclaration.toDeclarationSlice(project: Project, symbolOrigin: KaS
         KaSymbolOrigin.JS_DYNAMIC -> "JS_DYNAMIC"
         KaSymbolOrigin.NATIVE_FORWARD_DECLARATION -> "NATIVE_FORWARD_DECLARATION"
     }
+    val fqNameTypeString: String = this::class.qualifiedName ?: javaClass.name
     return DeclarationSlice(
         sourceCode = text,
         filePath = filePath,
@@ -441,7 +444,8 @@ private fun KtDeclaration.toDeclarationSlice(project: Project, symbolOrigin: KaS
         presentableText = presentableText,
         ktNamedDeclName = ktNamedDeclName,
         ktFqNameRelativeString = ktFqNameRelativeString,
-        symbolOriginString = symbolOriginString
+        symbolOriginString = symbolOriginString,
+        fqNameTypeString = fqNameTypeString
     )
 }
 
@@ -494,6 +498,7 @@ private fun DeclarationSlice.toLogString(): String {
     val sb = StringBuilder()
     sb.appendLine()
     sb.appendLine("---- Referenced symbol NOT ADDED ----")
+    sb.appendLine("fqNameTypeString: $fqNameTypeString")
     sb.appendLine("File: $filePath")
     sb.appendLine("ktFilePath: $ktFilePath")
     sb.appendLine("Qualified name: ${qualifiedName ?: "<anonymous>"}")
@@ -507,10 +512,10 @@ private fun DeclarationSlice.toLogString(): String {
     return sb.toString()
 }
 
-private fun SymbolContextPayload.toLogString(targetPsiType: String): String {
+private fun SymbolContextPayload.toLogString(): String {
     val sb = StringBuilder()
     sb.appendLine()
-    sb.appendLine("============ Target PSI type: $targetPsiType - Referenced Symbols: ${referencedSymbols.size} ============")
+    sb.appendLine("============ Target PSI type: ${target.declarationSlice.fqNameTypeString} - Referenced Symbols: ${referencedSymbols.size} ============")
     sb.appendLine("Target file: ${target.declarationSlice.filePath}")
     sb.appendLine("Target ktFilePath: ${target.declarationSlice.ktFilePath}")
     sb.appendLine("Target qualified name: ${target.declarationSlice.qualifiedName ?: "<anonymous>"}")
@@ -533,6 +538,7 @@ private fun SymbolContextPayload.toLogString(targetPsiType: String): String {
     referencedSymbols.forEachIndexed { index: Int, referenced: ReferencedSymbolContext ->
         sb.appendLine()
         sb.appendLine("---- Referenced symbol #${index + 1} ----")
+        sb.appendLine("fqNameTypeString: ${referenced.declarationSlice.fqNameTypeString}")
         sb.appendLine("File: ${referenced.declarationSlice.filePath}")
         sb.appendLine("ktFilePath: ${referenced.declarationSlice.ktFilePath}")
         sb.appendLine("Qualified name: ${referenced.declarationSlice.qualifiedName ?: "<anonymous>"}")
