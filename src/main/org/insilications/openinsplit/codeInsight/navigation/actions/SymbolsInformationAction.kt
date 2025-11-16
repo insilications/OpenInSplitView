@@ -196,6 +196,7 @@ data class CaretLocation(
 data class DeclarationSlice(
     val sourceCode: String,
     val filePath: String,
+    val ktFilePath: String,
     val caret: CaretLocation,
     val qualifiedName: String?,
     val ktFqName: String?,
@@ -389,7 +390,11 @@ private fun KaSymbol.isProjectSourceSymbol(): Boolean = when (origin) {
 
 private fun KaSymbol.locateDeclarationPsi(): KtDeclaration? {
     // Returns the symbol's PsiElement if its type is PSI and KaSymbol.origin is KaSymbolOrigin.SOURCE or KaSymbolOrigin.JAVA_SOURCE, and null otherwise.
-    val sourcePsi: KtElement = sourcePsiSafe<KtElement>() ?: return null
+    if (origin != KaSymbolOrigin.SOURCE && origin != KaSymbolOrigin.JAVA_SOURCE && origin != KaSymbolOrigin.LIBRARY && origin != KaSymbolOrigin.JAVA_LIBRARY) {
+        return null
+    }
+    val sourcePsi: PsiElement = this.psi ?: return null
+//    val sourcePsi: KtElement = sourcePsiSafe<KtElement>() ?: return null
     return when (sourcePsi) {
         is KtDeclaration -> sourcePsi
         else -> sourcePsi.getParentOfType(strict = true)
@@ -398,6 +403,7 @@ private fun KaSymbol.locateDeclarationPsi(): KtDeclaration? {
 
 private fun KtDeclaration.toDeclarationSlice(project: Project, symbolOrigin: KaSymbolOrigin): DeclarationSlice {
     val ktFile: KtFile = containingKtFile
+    val ktFilePath: String = containingKtFile.virtualFilePath
     val packageFqName: FqName = ktFile.packageFqName
     val psiFile: PsiFile = containingFile
     val filePath: String = psiFile.virtualFile?.path ?: psiFile.name
@@ -428,6 +434,7 @@ private fun KtDeclaration.toDeclarationSlice(project: Project, symbolOrigin: KaS
     return DeclarationSlice(
         sourceCode = text,
         filePath = filePath,
+        ktFilePath = ktFilePath,
         caret = caretLocation,
         qualifiedName = qualifiedName,
         ktFqName = ktFqNameString,
@@ -488,6 +495,7 @@ private fun DeclarationSlice.toLogString(): String {
     sb.appendLine()
     sb.appendLine("---- Referenced symbol NOT ADDED ----")
     sb.appendLine("File: $filePath")
+    sb.appendLine("ktFilePath: $ktFilePath")
     sb.appendLine("Qualified name: ${qualifiedName ?: "<anonymous>"}")
     sb.appendLine("symbolOriginString: $symbolOriginString")
     sb.appendLine("ktFqNameRelativeString: ${ktFqNameRelativeString ?: "<anonymous>"}")
@@ -504,6 +512,7 @@ private fun SymbolContextPayload.toLogString(targetPsiType: String): String {
     sb.appendLine()
     sb.appendLine("============ Target PSI type: $targetPsiType - Referenced Symbols: ${referencedSymbols.size} ============")
     sb.appendLine("Target file: ${target.declarationSlice.filePath}")
+    sb.appendLine("Target ktFilePath: ${target.declarationSlice.ktFilePath}")
     sb.appendLine("Target qualified name: ${target.declarationSlice.qualifiedName ?: "<anonymous>"}")
     sb.appendLine("Target symbolOriginString: ${target.declarationSlice.symbolOriginString}")
     sb.appendLine("Target ktFqNameRelativeString: ${target.declarationSlice.ktFqNameRelativeString ?: "<anonymous>"}")
@@ -525,6 +534,7 @@ private fun SymbolContextPayload.toLogString(targetPsiType: String): String {
         sb.appendLine()
         sb.appendLine("---- Referenced symbol #${index + 1} ----")
         sb.appendLine("File: ${referenced.declarationSlice.filePath}")
+        sb.appendLine("ktFilePath: ${referenced.declarationSlice.ktFilePath}")
         sb.appendLine("Qualified name: ${referenced.declarationSlice.qualifiedName ?: "<anonymous>"}")
         sb.appendLine("symbolOriginString: ${referenced.declarationSlice.symbolOriginString}")
         sb.appendLine("ktFqNameRelativeString: ${referenced.declarationSlice.ktFqNameRelativeString ?: "<anonymous>"}")
