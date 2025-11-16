@@ -436,7 +436,7 @@ private fun SymbolContextPayload.toLogString(): String {
     } else {
         sb.appendLine("Imports: <none>")
     }
-    sb.appendLine("Target declaration:")
+    sb.appendLine("Target declaration source code:")
     sb.appendLine(target.declarationSlice.sourceCode)
 
     referencedSymbols.forEachIndexed { index: Int, referenced: ReferencedSymbolContext ->
@@ -451,7 +451,7 @@ private fun SymbolContextPayload.toLogString(): String {
         sb.appendLine("ktNamedDeclName name: ${referenced.declarationSlice.ktNamedDeclName ?: "<anonymous>"}")
         sb.appendLine("Caret: offset=${referenced.declarationSlice.caret.offset}, line=${referenced.declarationSlice.caret.line}, column=${referenced.declarationSlice.caret.column}")
         sb.appendLine("Usage classifications: ${referenced.usageClassifications.joinToString()}")
-        sb.appendLine("Declaration:")
+        sb.appendLine("Declaration source code:")
         sb.appendLine(referenced.declarationSlice.sourceCode)
     }
 
