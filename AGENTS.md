@@ -1,7 +1,7 @@
 <repository_guidelines>
 # Project Structure & Module Organization
 - Project Source Code: `src/main/`
-- The `intellij-community/` folder contains the IntelliJ Platform API Java/Kotlin source code that is currently in use. Use it to augment your knowledge of the API
+- The IntelliJ Platform API and the Kotlin Analysis API source codes currently in use are located in the `intellij-community/` and `kotlin-src/` folders. Use them to expand your knowledge of the APIs
 - Documentation: `README.md`
 - Changelog: `CHANGELOG.md`
 
