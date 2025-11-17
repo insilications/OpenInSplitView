@@ -7,7 +7,9 @@ import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.actionSystem.DataContext
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.readAction
+import com.intellij.openapi.components.serviceOrNull
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.Document
 import com.intellij.openapi.editor.Editor
@@ -40,6 +42,7 @@ import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.tail
 import org.jetbrains.kotlin.psi.*
+import org.jetbrains.kotlin.psi.KotlinDeclarationNavigationPolicy
 import org.jetbrains.kotlin.psi.psiUtil.getParentOfType
 import kotlin.reflect.KCallable
 
@@ -69,12 +72,14 @@ class SymbolsInformationAction : DumbAwareAction() {
             return
         }
 
+        // Collect everything inside a modal read so the user immediately knows the action is busy
         runWithModalProgressBlocking(project, GETTING_SYMBOL_INFO) {
             if (DumbService.isDumb(project)) {
                 LOG.warn("Dumb mode active; aborting semantic resolution.")
                 return@runWithModalProgressBlocking
             }
 
+            // Resolve the caret target outside of analysis to avoid opening a KaSession without a declaration anchor
             val targetSymbol: PsiElement? = readAction {
                 val offset: Int = editor.caretModel.offset
 
@@ -98,7 +103,7 @@ class SymbolsInformationAction : DumbAwareAction() {
 
             readAction {
                 analyze(targetKtDeclaration) {
-                    // KaSession context
+                    // Everything is inside the KaSession context/lifetime; build the payload eagerly
                     val payload: SymbolContextPayload = buildSymbolContext(project, targetKtDeclaration, 5000)
                     deliverSymbolContext(payload)
                 }
@@ -183,6 +188,7 @@ fun KaSession.collectResolvedUsagesInDeclaration(
 ): List<ResolvedUsage> {
     val out = ArrayList<ResolvedUsage>(256)
 
+    // PSI visitor keeps discovery simple; we bail once the caller-defined limit is reached to avoid runaway traversals
     root.accept(/* visitor = */ object : KtTreeVisitorVoid() {
         override fun visitCallExpression(expression: KtCallExpression) {
             if (out.size >= maxRefs) return
@@ -273,6 +279,7 @@ private fun KaSession.buildSymbolContext(
         declarationSlice = targetSlice
     )
 
+    // Gather all symbol references from the declaration body and then lift them into deduplicated slices
     val usages: List<ResolvedUsage> = collectResolvedUsagesInDeclaration(targetKtDeclaration, maxRefs)
     val referencedSymbols: List<ReferencedSymbolContext> = buildReferencedSymbolContexts(project, usages)
 
@@ -292,8 +299,8 @@ private fun KaSession.buildReferencedSymbolContexts(
         val symbol: KaSymbol = usage.symbol
         val symbolOrigin: KaSymbolOrigin = symbol.origin
 
-
-        val declarationPsi: KtDeclaration = symbol.locateDeclarationPsi() ?: continue
+        // Only symbols that resolve back to PSI declarations are interesting for our context payload
+        val declarationPsi: KtDeclaration = symbol.locateSourceDeclarationPsi() ?: continue
         val declarationSlice: DeclarationSlice = declarationPsi.toDeclarationSlice(project, symbolOrigin)
         val bucket: MutableReferencedSymbolAggregation = aggregations.getOrPut(declarationPsi) {
             MutableReferencedSymbolAggregation(
@@ -312,9 +319,13 @@ private fun KaSession.buildReferencedSymbolContexts(
     }
 }
 
+private fun KaSymbol.locateSourceDeclarationPsi(): KtDeclaration? {
+    val declarationPsi: KtDeclaration = locateDeclarationPsi() ?: return null
+    return declarationPsi.preferSourceDeclaration()
+}
+
 private fun KaSymbol.locateDeclarationPsi(): KtDeclaration? {
-    // Returns the symbol's PsiElement if its type is PSI and KaSymbol.origin is KaSymbolOrigin.SOURCE or KaSymbolOrigin.JAVA_SOURCE
-    // or KaSymbolOrigin.LIBRARY or KaSymbolOrigin.JAVA_LIBRARY, and null otherwise.
+    // Only certain origins can be materialized as PSI; others (e.g. synthetic SAM wrappers) do not have stable slices
     if (origin != KaSymbolOrigin.SOURCE && origin != KaSymbolOrigin.JAVA_SOURCE && origin != KaSymbolOrigin.LIBRARY && origin != KaSymbolOrigin.JAVA_LIBRARY) {
         return null
     }
@@ -325,15 +336,34 @@ private fun KaSymbol.locateDeclarationPsi(): KtDeclaration? {
     }
 }
 
+private fun KtDeclaration.preferSourceDeclaration(): KtDeclaration {
+    if (!containingKtFile.isCompiled) {
+        return this
+    }
+    val navigationPolicy: KotlinDeclarationNavigationPolicy = ApplicationManager.getApplication()
+        .serviceOrNull<KotlinDeclarationNavigationPolicy>() ?: return this
+    val navigationElement: PsiElement = navigationPolicy.getNavigationElement(this)
+    val sourceDeclaration: KtDeclaration? = navigationElement.asKtDeclaration()
+    return if (sourceDeclaration != null && !sourceDeclaration.containingKtFile.isCompiled) sourceDeclaration else this
+}
+
+private fun PsiElement?.asKtDeclaration(): KtDeclaration? {
+    return when (this) {
+        is KtDeclaration -> this
+        else -> this?.getParentOfType(strict = false)
+    }
+}
+
 private fun KtDeclaration.toDeclarationSlice(project: Project, symbolOrigin: KaSymbolOrigin): DeclarationSlice {
-    val ktFile: KtFile = containingKtFile
-    val ktFilePath: String = containingKtFile.virtualFilePath
-    val caretLocation: CaretLocation = resolveCaretLocation(project, ktFile as PsiFile, textOffset)
-    val kqFqName: FqName? = kotlinFqName
+    val declaration: KtDeclaration = preferSourceDeclaration()
+    val ktFile: KtFile = declaration.containingKtFile
+    val ktFilePath: String = ktFile.virtualFilePath
+    val caretLocation: CaretLocation = resolveCaretLocation(project, ktFile as PsiFile, declaration.textOffset)
+    val kqFqName: FqName? = declaration.kotlinFqName
     val qualifiedName: String? = computeQualifiedName(kqFqName)
     val ktFqNameRelativeString: String? = computeRelativektFqName(kqFqName, ktFile.packageFqName)
-    val presentableText: String? = computePresentableText()
-    val ktNamedDeclName: String? = computeKtNamedDeclName()
+    val presentableText: String? = declaration.computePresentableText()
+    val ktNamedDeclName: String? = declaration.computeKtNamedDeclName()
     val symbolOriginString: String = when (symbolOrigin) {
         KaSymbolOrigin.SOURCE -> "SOURCE"
         KaSymbolOrigin.SOURCE_MEMBER_GENERATED -> "SOURCE_MEMBER_GENERATED"
@@ -351,9 +381,10 @@ private fun KtDeclaration.toDeclarationSlice(project: Project, symbolOrigin: KaS
         KaSymbolOrigin.JS_DYNAMIC -> "JS_DYNAMIC"
         KaSymbolOrigin.NATIVE_FORWARD_DECLARATION -> "NATIVE_FORWARD_DECLARATION"
     }
-    val fqNameTypeString: String = this::class.qualifiedName ?: javaClass.name
+    val fqNameTypeString: String = declaration::class.qualifiedName ?: declaration.javaClass.name
+    // Pack every attribute that downstream tooling may need to reconstruct a declarative slice
     return DeclarationSlice(
-        sourceCode = text,
+        sourceCode = declaration.text,
         ktFilePath = ktFilePath,
         caret = caretLocation,
         qualifiedName = qualifiedName,
@@ -462,6 +493,11 @@ private fun SymbolContextPayload.toLogString(): String {
 
 /* ============================= HELPERS (KaSession context) ============================= */
 
+/**
+ * Resolves any call-like PSI (function call, operator call, delegated call, etc.) and records the
+ * corresponding [KaSymbol] alongside the usage site. When the resolved call exposes an extension
+ * receiver, the receiver symbol is captured via [recordExtensionReceiverIfAny].
+ */
 private fun KaSession.handleCallLike(
     expression: KtExpression,
     out: MutableList<ResolvedUsage>,
@@ -482,6 +518,7 @@ private fun KaSession.handleCallLike(
                 sym is KaConstructorSymbol -> UsageKind.CONSTRUCTOR_CALL
                 else -> UsageKind.CALL
             }
+            // Record every callable invocation and keep the original call handy for extension-receiver bookkeeping
             out += ResolvedUsage(
                 symbol = sym,
                 pointer = ptr,
@@ -516,6 +553,11 @@ private fun KaSession.handleCallLike(
     }
 }
 
+/**
+ * Resolves all K2 references that correspond to the supplied [KtReferenceExpression], classifying
+ * them as read/write/property/type usages depending on the resolved symbol. Each resolved symbol is
+ * appended to [out] with the original PSI site so downstream logic can build enriched slices.
+ */
 private fun KaSession.resolveReferenceReadWrite(
     expr: KtReferenceExpression,
     out: MutableList<ResolvedUsage>,
@@ -540,10 +582,16 @@ private fun KaSession.resolveReferenceReadWrite(
             is KaClassLikeSymbol -> UsageKind.TYPE_REFERENCE
             else -> UsageKind.PROPERTY_ACCESS_GET
         }
+        // We store both the resolved symbol and the PSI site for later context reconstruction
         out += ResolvedUsage(symbol = sym, pointer = ptr, usageKind = usage, site = expr)
     }
 }
 
+/**
+ * Records the classifier symbol for a Kotlin type reference by resolving its [KaType] and grabbing
+ * the associated [KaClassSymbol]. Type references are treated as usages even when there is no
+ * callable involvement (e.g. annotations, property types, super types).
+ */
 private fun KaSession.resolveTypeReference(
     typeRef: KtTypeReference,
     out: MutableList<ResolvedUsage>
@@ -559,6 +607,11 @@ private fun KaSession.resolveTypeReference(
     )
 }
 
+/**
+ * Handles entries inside a `super` clause. We log both the classifier usage for the type reference
+ * itself and, when the syntax uses a constructor invocation (e.g. `: Base()`), we heuristically
+ * record the primary constructor usage to capture call relationships.
+ */
 private fun KaSession.resolveSuperTypeEntry(
     entry: KtSuperTypeListEntry,
     out: MutableList<ResolvedUsage>
@@ -585,6 +638,11 @@ private fun KaSession.resolveSuperTypeEntry(
     }
 }
 
+/**
+ * Resolves annotation entries by treating the annotation class as a type usage and, if arguments are
+ * present, recording the invoked constructor. This mirrors how annotations are lowered at the
+ * compiler level—constructor invocation with potential arguments.
+ */
 private fun KaSession.resolveAnnotation(
     annotationEntry: KtAnnotationEntry,
     out: MutableList<ResolvedUsage>
@@ -615,6 +673,12 @@ private fun KaSession.resolveAnnotation(
     }
 }
 
+/**
+ * If the resolved [KaCall] is dispatched through an extension receiver, emit an additional
+ * [ResolvedUsage] that classifies the callable symbol as an [UsageKind.EXTENSION_RECEIVER]. This
+ * allows the downstream consumer to understand when a symbol participates as an extension vs.
+ * regular call.
+ */
 private fun KaSession.recordExtensionReceiverIfAny(
     call: KaCall,
     site: PsiElement,
@@ -657,6 +721,7 @@ private fun KaSession.recordExtensionReceiverIfAny(
             null
         }
     } ?: return
+    // Treat extension receivers as separate usages so downstream consumers understand the symbol is being used as an extension
     out += ResolvedUsage(
         symbol = sym,
         pointer = sym.createPointer(),
@@ -666,6 +731,10 @@ private fun KaSession.recordExtensionReceiverIfAny(
     )
 }
 
+/**
+ * Uses the `isSet` reflection hook (when available) to distinguish property gets from sets so we can
+ * label usages precisely. Falls back to `PROPERTY_ACCESS_GET` when setter intent cannot be proven.
+ */
 private fun KaSession.classifyVariableAccess(call: KaVariableAccessCall): UsageKind {
     val setFlag: Boolean? = call.isSetAccessOrNull()
     return if (setFlag == true) UsageKind.PROPERTY_ACCESS_SET else UsageKind.PROPERTY_ACCESS_GET
@@ -677,6 +746,11 @@ private fun isAssignmentLhs(expr: KtReferenceExpression): Boolean {
     return parent.left == expr
 }
 
+/**
+ * Reflectively calls the analysis API's internal `isSet()` flag, which is not yet part of the
+ * stable surface. Returns null when the flag is unavailable or throws, signalling that the caller
+ * should treat the usage as an indeterminate access.
+ */
 private fun KaVariableAccessCall.isSetAccessOrNull(): Boolean? = try {
     val m: KCallable<*> = this::class.members.firstOrNull { it.name == "isSet" } ?: return null
     (m.call(this) as? Boolean)

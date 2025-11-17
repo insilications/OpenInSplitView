@@ -12,7 +12,7 @@
   - Optional Plugin Dependencies: ﻿`src/main/resources/META-INF/kotlin-bridge.xml`, `src/main/resources/META-INF/java-bridge.xml`
 
 # Build and Development Commands
-- Run `./gradlew buildPlugin` to build the plugin and execute checks.
+- Run `./gradlew buildPlugin` to build the plugin and run checks.
 
 # Coding Style & Naming Conventions
 - Kotlin 2.2 targeting JVM 21 (configured with the Gradle toolchain).
