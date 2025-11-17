@@ -184,38 +184,7 @@ fun KaSession.collectResolvedUsagesInDeclaration(
     val out = ArrayList<ResolvedUsage>(256)
 
     root.accept(/* visitor = */ object : KtTreeVisitorVoid() {
-        override fun visitClass(klass: KtClass) {
-            LOG.debug { "Visiting class: ${klass.text}" }
-            super.visitClass(klass)
-        }
-
-        override fun visitClassOrObject(classOrObject: KtClassOrObject) {
-            LOG.debug { "Visiting class or object: ${classOrObject.text}" }
-            super.visitClassOrObject(classOrObject)
-        }
-
-        override fun visitKtElement(element: KtElement) {
-            LOG.debug { "Visiting KtElement: ${element.text}" }
-            super.visitKtElement(element)
-        }
-
-        override fun visitNamedDeclaration(declaration: KtNamedDeclaration) {
-            LOG.debug { "Visiting named declaration: ${declaration.text}" }
-            super.visitNamedDeclaration(declaration)
-        }
-
-        override fun visitNamedFunction(function: KtNamedFunction) {
-            LOG.debug { "Visiting named function: ${function.text}" }
-            super.visitNamedFunction(function)
-        }
-
-        override fun visitDeclaration(dcl: KtDeclaration) {
-            LOG.debug { "Visiting declaration: ${dcl.text}" }
-            super.visitDeclaration(dcl)
-        }
-
         override fun visitCallExpression(expression: KtCallExpression) {
-            LOG.debug { "Visiting call expression: ${expression.text}" }
             if (out.size >= maxRefs) return
             handleCallLike(expression, out)
             super.visitCallExpression(expression)
@@ -242,14 +211,12 @@ fun KaSession.collectResolvedUsagesInDeclaration(
         }
 
         override fun visitReferenceExpression(expression: KtReferenceExpression) {
-            LOG.debug { "Visiting reference expression: ${expression.text}" }
             if (out.size >= maxRefs) return
             resolveReferenceReadWrite(expression, out, preferWrite = isAssignmentLhs(expression))
             super.visitReferenceExpression(expression)
         }
 
         override fun visitTypeReference(typeReference: KtTypeReference) {
-            LOG.debug { "Visiting type reference: ${typeReference.text}" }
             if (out.size >= maxRefs) return
             resolveTypeReference(typeReference, out)
             super.visitTypeReference(typeReference)
@@ -451,16 +418,17 @@ private fun UsageKind.toClassificationString(): String = when (this) {
     UsageKind.EXTENSION_RECEIVER -> "extension_receiver"
 }
 
+@Suppress("LongLine")
 private fun SymbolContextPayload.toLogString(): String {
     val sb = StringBuilder()
     sb.appendLine()
-    sb.appendLine("============ Target PSI type: ${target.declarationSlice.fqNameTypeString} - Referenced Symbols: ${referencedSymbols.size} ============")
+    sb.appendLine("============ Target PSI Type: ${target.declarationSlice.fqNameTypeString} - Referenced Symbols: ${referencedSymbols.size} ============")
     sb.appendLine("Target ktFilePath: ${target.declarationSlice.ktFilePath}")
-    sb.appendLine("Target qualified name: ${target.declarationSlice.qualifiedName ?: "<anonymous>"}")
+    sb.appendLine("Target Qualified Name: ${target.declarationSlice.qualifiedName ?: "<anonymous>"}")
     sb.appendLine("Target symbolOriginString: ${target.declarationSlice.symbolOriginString}")
     sb.appendLine("Target ktFqNameRelativeString: ${target.declarationSlice.ktFqNameRelativeString ?: "<anonymous>"}")
-    sb.appendLine("Target presentableText name: ${target.declarationSlice.presentableText ?: "<anonymous>"}")
-    sb.appendLine("Target ktNamedDeclName name: ${target.declarationSlice.ktNamedDeclName ?: "<anonymous>"}")
+    sb.appendLine("Target presentableText: ${target.declarationSlice.presentableText ?: "<anonymous>"}")
+    sb.appendLine("Target ktNamedDeclName: ${target.declarationSlice.ktNamedDeclName ?: "<anonymous>"}")
     sb.appendLine("Target caret: offset=${target.declarationSlice.caret.offset}, line=${target.declarationSlice.caret.line}, column=${target.declarationSlice.caret.column}")
     sb.appendLine("Package: ${target.packageDirective ?: "<none>"}")
     if (target.imports.isNotEmpty()) {
@@ -469,22 +437,21 @@ private fun SymbolContextPayload.toLogString(): String {
     } else {
         sb.appendLine("Imports: <none>")
     }
-    sb.appendLine("Target declaration source code:")
+    sb.appendLine("Target Declaration Source Code:")
     sb.appendLine(target.declarationSlice.sourceCode)
 
     referencedSymbols.forEachIndexed { index: Int, referenced: ReferencedSymbolContext ->
         sb.appendLine()
-        sb.appendLine("---- Referenced symbol #${index + 1} ----")
-        sb.appendLine("fqNameTypeString: ${referenced.declarationSlice.fqNameTypeString}")
+        sb.appendLine("---- Referenced symbol #${index + 1} - PSI Type: ${referenced.declarationSlice.fqNameTypeString} ----")
         sb.appendLine("ktFilePath: ${referenced.declarationSlice.ktFilePath}")
-        sb.appendLine("Qualified name: ${referenced.declarationSlice.qualifiedName ?: "<anonymous>"}")
+        sb.appendLine("Qualified Name: ${referenced.declarationSlice.qualifiedName ?: "<anonymous>"}")
         sb.appendLine("symbolOriginString: ${referenced.declarationSlice.symbolOriginString}")
         sb.appendLine("ktFqNameRelativeString: ${referenced.declarationSlice.ktFqNameRelativeString ?: "<anonymous>"}")
-        sb.appendLine("presentableText name: ${referenced.declarationSlice.presentableText ?: "<anonymous>"}")
-        sb.appendLine("ktNamedDeclName name: ${referenced.declarationSlice.ktNamedDeclName ?: "<anonymous>"}")
+        sb.appendLine("presentableText: ${referenced.declarationSlice.presentableText ?: "<anonymous>"}")
+        sb.appendLine("ktNamedDeclName: ${referenced.declarationSlice.ktNamedDeclName ?: "<anonymous>"}")
         sb.appendLine("Caret: offset=${referenced.declarationSlice.caret.offset}, line=${referenced.declarationSlice.caret.line}, column=${referenced.declarationSlice.caret.column}")
-        sb.appendLine("Usage classifications: ${referenced.usageClassifications.joinToString()}")
-        sb.appendLine("Declaration source code:")
+        sb.appendLine("Usage Classifications: ${referenced.usageClassifications.joinToString()}")
+        sb.appendLine("Declaration Source Code:")
         sb.appendLine(referenced.declarationSlice.sourceCode)
     }
 
@@ -564,10 +531,6 @@ private fun KaSession.resolveReferenceReadWrite(
     if (syms.isEmpty()) return
 
     for (sym: KaSymbol in syms) {
-        LOG.debug { "Resolved reference '${expr.text}' to symbol of type ${sym::class.qualifiedName}" }
-        val declarationPsi: KtDeclaration? = sym.locateDeclarationPsi()
-        val navigatableElement: PsiElement? = declarationPsi?.navigationElement
-        LOG.debug { "source: ${navigatableElement?.text}\n\n" }
         val ptr: KaSymbolPointer<KaSymbol> = sym.createPointer()
         val usage: UsageKind = when (sym) {
             is KaPropertySymbol -> if (preferWrite && !sym.isVal) UsageKind.PROPERTY_ACCESS_SET else UsageKind.PROPERTY_ACCESS_GET
