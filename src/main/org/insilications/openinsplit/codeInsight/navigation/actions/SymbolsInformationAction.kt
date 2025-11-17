@@ -437,6 +437,7 @@ private fun SymbolContextPayload.toLogString(): String {
     } else {
         sb.appendLine("Imports: <none>")
     }
+    sb.appendLine()
     sb.appendLine("Target Declaration Source Code:")
     sb.appendLine(target.declarationSlice.sourceCode)
 
