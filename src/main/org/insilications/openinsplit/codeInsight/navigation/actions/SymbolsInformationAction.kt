@@ -360,6 +360,7 @@ private inline fun KaSymbol.locateDeclarationPsi(): KtDeclaration? {
     LOG.debug { "navSourcePsi - navSourcePsi::class.java.simpleName: ${navSourcePsi::class.java.simpleName}" }
     LOG.debug { "navSourcePsi - navSourcePsi.javaClass: ${navSourcePsi.javaClass}" }
     LOG.debug { "navSourcePsi - navSourcePsi.javaClass.name: ${navSourcePsi.javaClass.name}" }
+    LOG.debug { "navSourcePsi - navSourcePsi.javaClass.canonicalName: ${navSourcePsi.javaClass.canonicalName}" }
     LOG.debug { "navSourcePsi - navSourcePsi.javaClass.simpleName: ${navSourcePsi.javaClass.simpleName}" }
     LOG.debug { "navSourcePsi - navSourcePsi.javaClass.declaringClass: ${navSourcePsi.javaClass.declaringClass}" }
     LOG.debug { "navSourcePsi - navSourcePsi.javaClass.descriptorString(): ${navSourcePsi.javaClass.descriptorString()}" }
