@@ -187,6 +187,11 @@ fun KaSession.collectResolvedUsagesInDeclaration(
 
     // PSI visitor keeps discovery simple; we bail once the caller-defined limit is reached to avoid runaway traversals
     root.accept(/* visitor = */ object : KtTreeVisitorVoid() {
+        override fun visitKtElement(element: KtElement) {
+            LOG.info("Visiting element - type: ${element::class.qualifiedName} - text:\n${element.text}\n\n\n")
+            super.visitKtElement(element)
+        }
+
         override fun visitCallExpression(expression: KtCallExpression) {
             if (out.size >= maxRefs) return
             handleCallLike(expression, out)
@@ -601,16 +606,18 @@ private fun KaSession.handleCallLike(
 
         is KaVariableAccessCall -> {
             val sym: KaVariableSymbol = call.symbol
-            val ptr: KaSymbolPointer<KaVariableSymbol> = sym.createPointer()
             val accessKind: UsageKind = classifyVariableAccess(call)
-            out += ResolvedUsage(
-                symbol = sym,
-                pointer = ptr,
-                usageKind = accessKind,
-                site = expression,
-                call = call
-            )
-            recordExtensionReceiverIfAny(call, expression, out)
+            if (shouldRecordResolvedUsage(sym, accessKind)) {
+                val ptr: KaSymbolPointer<KaVariableSymbol> = sym.createPointer()
+                out += ResolvedUsage(
+                    symbol = sym,
+                    pointer = ptr,
+                    usageKind = accessKind,
+                    site = expression,
+                    call = call
+                )
+                recordExtensionReceiverIfAny(call, expression, out)
+            }
         }
 
         is KaCompoundArrayAccessCall -> LOG.debug {
@@ -644,7 +651,6 @@ private fun KaSession.resolveReferenceReadWrite(
     if (syms.isEmpty()) return
 
     for (sym: KaSymbol in syms) {
-        val ptr: KaSymbolPointer<KaSymbol> = sym.createPointer()
         val usage: UsageKind = when (sym) {
             is KaPropertySymbol -> if (preferWrite && !sym.isVal) UsageKind.PROPERTY_ACCESS_SET else UsageKind.PROPERTY_ACCESS_GET
             is KaVariableSymbol -> if (preferWrite) UsageKind.PROPERTY_ACCESS_SET else UsageKind.PROPERTY_ACCESS_GET
@@ -652,6 +658,8 @@ private fun KaSession.resolveReferenceReadWrite(
             is KaClassLikeSymbol -> UsageKind.TYPE_REFERENCE
             else -> UsageKind.PROPERTY_ACCESS_GET
         }
+        if (!shouldRecordResolvedUsage(sym, usage)) continue
+        val ptr: KaSymbolPointer<KaSymbol> = sym.createPointer()
         // We store both the resolved symbol and the PSI site for later context reconstruction
         out += ResolvedUsage(symbol = sym, pointer = ptr, usageKind = usage, site = expr)
     }
@@ -799,6 +807,19 @@ private fun KaSession.recordExtensionReceiverIfAny(
         site = site,
         call = call
     )
+}
+
+/**
+ * Filters out low-signal usages that we do not want to surface in the context payload.
+ * Currently skips PROPERTY_ACCESS_GET references to Kotlin parameters or properties, which
+ * otherwise overwhelm the output with boilerplate like method parameters and LOG fields.
+ */
+private fun shouldRecordResolvedUsage(symbol: KaSymbol, usageKind: UsageKind): Boolean {
+    if (usageKind != UsageKind.PROPERTY_ACCESS_GET) {
+        return true
+    }
+    val psi: PsiElement = symbol.psi ?: return true
+    return psi !is KtParameter && psi !is KtProperty && psi !is KtDestructuringDeclarationEntry
 }
 
 /**
