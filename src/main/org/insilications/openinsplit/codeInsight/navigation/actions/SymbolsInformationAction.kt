@@ -495,12 +495,12 @@ private inline fun KtDeclaration.preferSourceDeclaration(): PsiElement {
 private fun PsiElement.toDeclarationSlice(project: Project, symbolOrigin: KaSymbolOrigin): DeclarationSlice {
     val sourceDeclaration: PsiElement = preferSourceDeclaration()
     // TODO: GET THE FILE FROM `preferSourceDeclaration()` BY RETURNING A PAIR
-    val ktFile: KtFile = sourceDeclaration.containingKtFile
-    val ktFilePath: String = ktFile.virtualFilePath
-    val caretLocation: CaretLocation = resolveCaretLocation(project, ktFile as PsiFile, sourceDeclaration.textOffset)
+    val psiFile: PsiFile = sourceDeclaration.containingFile
+    val psiFilePath: String = psiFile.virtualFile.path
+    val caretLocation: CaretLocation = resolveCaretLocation(project, psiFile as PsiFile, sourceDeclaration.textOffset)
     val kqFqName: FqName? = sourceDeclaration.kotlinFqName
     val qualifiedName: String? = computeQualifiedName(kqFqName)
-    val ktFqNameRelativeString: String? = computeRelativektFqName(kqFqName, ktFile.packageFqName)
+    val ktFqNameRelativeString: String? = computeRelativektFqName(kqFqName, psiFile.packageFqName)
     val presentableText: String? = sourceDeclaration.computePresentableText()
     val ktNamedDeclName: String? = sourceDeclaration.computeKtNamedDeclName()
     val symbolOriginString: String = when (symbolOrigin) {
@@ -524,7 +524,7 @@ private fun PsiElement.toDeclarationSlice(project: Project, symbolOrigin: KaSymb
     // Pack every attribute that downstream tooling may need to reconstruct a declarative slice
     return DeclarationSlice(
         sourceCode = sourceDeclaration.text,
-        ktFilePath = ktFilePath,
+        ktFilePath = psiFilePath,
         caret = caretLocation,
         qualifiedName = qualifiedName,
         presentableText = presentableText,
