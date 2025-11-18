@@ -17,10 +17,7 @@ import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.platform.ide.progress.runWithModalProgressBlocking
-import com.intellij.psi.PsiDocumentManager
-import com.intellij.psi.PsiElement
-import com.intellij.psi.PsiFile
-import com.intellij.psi.PsiReference
+import com.intellij.psi.*
 import com.intellij.psi.tree.IElementType
 import com.intellij.psi.util.PsiTreeUtil
 import org.insilications.openinsplit.debug
@@ -347,6 +344,7 @@ private inline fun KaSymbol.locateDeclarationPsi(): KtDeclaration? {
     if (origin != KaSymbolOrigin.SOURCE && origin != KaSymbolOrigin.JAVA_SOURCE && origin != KaSymbolOrigin.LIBRARY && origin != KaSymbolOrigin.JAVA_LIBRARY) {
         return null
     }
+    val kk: PsiClass
     val sourcePsi: PsiElement = this.psi ?: return null
     return when (sourcePsi) {
         is KtDeclaration -> sourcePsi
@@ -358,20 +356,61 @@ private inline fun KaSymbol.locateDeclarationPsi(): KtDeclaration? {
  * If this KtDeclaration is from compiled code, attempt to get the corresponding source KtDeclaration via `navigationElement` instead.
  * If no source declaration is found, returns `this`.
  */
-private inline fun KtDeclaration.preferSourceDeclaration(): KtDeclaration {
-    if (!containingKtFile.isCompiled) {
-        return this
-    }
+private inline fun KtDeclaration.preferSourceDeclaration(): PsiElement {
+//    if (!containingKtFile.isCompiled) {
+//        return this
+//    }
+//
+//    val sourceDeclaration: KtDeclaration? = when (val navigationElement: PsiElement = this.navigationElement) {
+//        is KtDeclaration -> navigationElement
+//        else -> navigationElement.getParentOfType(strict = false)
+//    }
+//    return if (sourceDeclaration != null && !sourceDeclaration.containingKtFile.isCompiled) sourceDeclaration else this
 
-    val sourceDeclaration: KtDeclaration? = when (val navigationElement: PsiElement = this.navigationElement) {
-        is KtDeclaration -> navigationElement
+//    val sourceDeclaration = when (val navigationElement: PsiElement = this.navigationElement) {
+//        is KtDeclaration -> navigationElement
+//        is PsiClass -> navigationElement
+//        else -> navigationElement.getParentOfType(strict = false)
+//    }
+
+    val sourceDeclaration: NavigatablePsiElement? = when (val navigationElement: PsiElement = this.navigationElement) {
+        is NavigatablePsiElement -> navigationElement
         else -> navigationElement.getParentOfType(strict = false)
     }
-    return if (sourceDeclaration != null && !sourceDeclaration.containingKtFile.isCompiled) sourceDeclaration else this
+
+//    val file = when (sourceDeclaration) {
+//        is KtDeclaration -> sourceDeclaration.containingKtFile
+//        is PsiClass -> sourceDeclaration.containingFile
+//        else -> null
+//    }
+    when (sourceDeclaration) {
+        is KtDeclaration -> {
+            val ktFile: KtFile = sourceDeclaration.containingKtFile
+            return if (!ktFile.isCompiled) {
+                sourceDeclaration
+            } else {
+                this
+            }
+        }
+
+        is PsiClass -> {
+            val psiFile: PsiFile = sourceDeclaration.containingFile
+            return if (!psiFile is PsiCompiledFile) {
+                sourceDeclaration
+            } else {
+                this
+            }
+        }
+
+        else -> return this
+    }
+
+//    return if (sourceDeclaration != null && !sourceDeclaration.containingKtFile.isCompiled) sourceDeclaration else this
 }
 
 private fun KtDeclaration.toDeclarationSlice(project: Project, symbolOrigin: KaSymbolOrigin): DeclarationSlice {
     val sourceDeclaration: KtDeclaration = preferSourceDeclaration()
+    val psiFile = sourceDeclaration.containingFile
     val ktFile: KtFile = sourceDeclaration.containingKtFile
     val ktFilePath: String = ktFile.virtualFilePath
     val caretLocation: CaretLocation = resolveCaretLocation(project, ktFile as PsiFile, sourceDeclaration.textOffset)
