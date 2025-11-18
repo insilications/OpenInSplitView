@@ -80,12 +80,10 @@ class SymbolsInformationAction : DumbAwareAction() {
             val targetSymbol: PsiElement? = readAction {
                 val offset: Int = editor.caretModel.offset
 
-                val targetSymbol: PsiElement =
-                    TargetElementUtil.getInstance().findTargetElement(editor, TargetElementUtil.ELEMENT_NAME_ACCEPTED, offset) ?: run {
-                        LOG.info("No declaration element found at caret")
-                        return@readAction null
-                    }
-                return@readAction targetSymbol
+                return@readAction TargetElementUtil.getInstance().findTargetElement(editor, TargetElementUtil.ELEMENT_NAME_ACCEPTED, offset) ?: run {
+                    LOG.info("No declaration element found at caret")
+                    return@readAction null
+                }
             }
 
             if (targetSymbol == null) {
@@ -352,7 +350,13 @@ private inline fun KaSymbol.locateDeclarationPsi(): KtDeclaration? {
     val sourcePsi: PsiElement = this.psi ?: return null
     val navSourcePsi: PsiElement = sourcePsi.navigationElement
     LOG.debug { "sourcePsi - qualifiedName: ${sourcePsi::class.qualifiedName}" }
-    LOG.debug { "navSourcePsi - containingFile: ${navSourcePsi.containingFile}" }
+    LOG.debug { "navSourcePsi - containingFile: ${navSourcePsi.containingFile.virtualFile.path}" }
+    LOG.debug { "navSourcePsi - navSourcePsi.kotlinFqName: ${navSourcePsi.kotlinFqName}" }
+    LOG.debug { "navSourcePsi - navSourcePsi::class.java.name: ${navSourcePsi::class.java.name}" }
+    LOG.debug { "navSourcePsi - navSourcePsi::class.javaObjectType: ${navSourcePsi::class.javaObjectType}" }
+    LOG.debug { "navSourcePsi - navSourcePsi::class.java.declaringClass: ${navSourcePsi::class.java.declaringClass}" }
+    LOG.debug { "navSourcePsi - navSourcePsi::class.java.simpleName: ${navSourcePsi::class.java.simpleName}" }
+    LOG.debug { "navSourcePsi - navSourcePsi::class.javaClass.simpleName: ${(navSourcePsi::class as Any).javaClass.simpleName}" }
     LOG.debug { "navSourcePsi - qualifiedName: ${navSourcePsi::class.qualifiedName} - javaClass.name: ${navSourcePsi.javaClass.name}  - text:\n${navSourcePsi.text}\n\n\n" }
     return when (sourcePsi) {
         is KtDeclaration -> sourcePsi
