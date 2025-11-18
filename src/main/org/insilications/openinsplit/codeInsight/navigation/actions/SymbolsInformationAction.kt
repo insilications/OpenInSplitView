@@ -182,10 +182,10 @@ fun KaSession.collectResolvedUsagesInDeclaration(
 
     // PSI visitor keeps discovery simple; we bail once the caller-defined limit is reached to avoid runaway traversals
     root.accept(/* visitor = */ object : KtTreeVisitorVoid() {
-        override fun visitKtElement(element: KtElement) {
-            LOG.info("Visiting element - type: ${element::class.qualifiedName} - text:\n${element.text}\n\n\n")
-            super.visitKtElement(element)
-        }
+//        override fun visitKtElement(element: KtElement) {
+//            LOG.info("Visiting element - type: ${element::class.qualifiedName} - text:\n${element.text}\n\n\n")
+//            super.visitKtElement(element)
+//        }
 
         override fun visitCallExpression(expression: KtCallExpression) {
             if (out.size >= maxRefs) return
@@ -290,13 +290,13 @@ private fun KaSession.buildReferencedSymbolContexts(
     project: Project,
     usages: List<ResolvedUsage>
 ): List<ReferencedSymbolContext> {
-    val aggregations = LinkedHashMap<KtDeclaration, MutableReferencedSymbolAggregation>()
+    val aggregations = LinkedHashMap<PsiElement, MutableReferencedSymbolAggregation>()
 
     for (usage: ResolvedUsage in usages) {
         val symbol: KaSymbol = usage.symbol
 
         // Only symbols that resolve back to PSI declarations are interesting for our context payload
-        val sourceDeclarationPsi: KtDeclaration = symbol.locateSourceDeclarationPsi() ?: continue
+        val sourceDeclarationPsi: PsiElement = symbol.locateSourceDeclarationPsi() ?: continue
         val declarationSlice: DeclarationSlice = sourceDeclarationPsi.sourceDeclarationToDeclarationSlice(project, symbol.origin)
         val bucket: MutableReferencedSymbolAggregation = aggregations.getOrPut(sourceDeclarationPsi) {
             MutableReferencedSymbolAggregation(
@@ -313,16 +313,16 @@ private fun KaSession.buildReferencedSymbolContexts(
 
     // Snapshot the declarations before filtering; we need the full set to identify ancestor relationships without
     // mutating iteration order (the payload order mirrors discovery order, which aids reproducibility).
-    val candidateDeclarations: Set<KtDeclaration> = aggregations.keys.toSet()
+    val candidateDeclarations: Set<PsiElement> = aggregations.keys.toSet()
 
     return aggregations.entries.asSequence()
-        .filter { (declaration: KtDeclaration, _) ->
+        .filter { (declaration: PsiElement, _) ->
             // Contexts are stable only when tied to the highest-level container. If the referenced symbol lives inside
             // another declaration that already has a slice (e.g., MyClass.NestedClassMember), ignore the nested
             // one so downstream consumers do not see duplicate snippets from the same logical type.
             !declaration.hasAncestorDeclarationIn(candidateDeclarations)
         }
-        .map { (_, aggregation: MutableReferencedSymbolAggregation): MutableMap.MutableEntry<KtDeclaration, MutableReferencedSymbolAggregation> ->
+        .map { (_, aggregation: MutableReferencedSymbolAggregation): MutableMap.MutableEntry<PsiElement, MutableReferencedSymbolAggregation> ->
             ReferencedSymbolContext(
                 declarationSlice = aggregation.declarationSlice,
                 usageClassifications = aggregation.usageKinds.toList()
@@ -334,22 +334,24 @@ private fun KaSession.buildReferencedSymbolContexts(
 /** Locates the KtDeclaration PSI for this KaSymbol, preferring source declarations over compiled ones.
  * Returns null if no suitable KtDeclaration PSI can be found.
  */
-private inline fun KaSymbol.locateSourceDeclarationPsi(): KtDeclaration? {
-    val declarationPsi: KtDeclaration = locateDeclarationPsi() ?: return null
+private inline fun KaSymbol.locateSourceDeclarationPsi(): PsiElement? {
+    val declarationPsi: PsiElement = locateDeclarationPsi() ?: return null
     return declarationPsi.preferSourceDeclaration()
 }
 
-private inline fun KaSymbol.locateDeclarationPsi(): KtDeclaration? {
+//private inline fun KaSymbol.locateDeclarationPsi(): KtDeclaration? {
+private inline fun KaSymbol.locateDeclarationPsi(): PsiElement? {
     // Only certain origins can be materialized as PSI; others (e.g. synthetic SAM wrappers) do not have stable slices
     if (origin != KaSymbolOrigin.SOURCE && origin != KaSymbolOrigin.JAVA_SOURCE && origin != KaSymbolOrigin.LIBRARY && origin != KaSymbolOrigin.JAVA_LIBRARY) {
         return null
     }
 
     val sourcePsi: PsiElement = this.psi ?: return null
-    return when (sourcePsi) {
-        is KtDeclaration -> sourcePsi
-        else -> sourcePsi.getParentOfType(strict = true)
-    }
+    return sourcePsi
+//    return when (sourcePsi) {
+//        is KtDeclaration -> sourcePsi
+//        else -> sourcePsi.getParentOfType(strict = true)
+//    }
 }
 
 private inline fun PsiElement.preferSourceDeclaration(): PsiElement {
@@ -386,7 +388,7 @@ private inline fun PsiElement.preferSourceDeclaration(): PsiElement {
 
         is PsiClass -> {
             val psiFile: PsiFile = sourceDeclaration.containingFile
-            return if (!psiFile is PsiCompiledFile) {
+            return if (psiFile !is PsiCompiledFile) {
                 sourceDeclaration
             } else {
                 this
@@ -437,7 +439,7 @@ private inline fun KtDeclaration.preferSourceDeclaration(): PsiElement {
 
         is PsiClass -> {
             val psiFile: PsiFile = sourceDeclaration.containingFile
-            return if (!psiFile is PsiCompiledFile) {
+            return if (psiFile !is PsiCompiledFile) {
                 sourceDeclaration
             } else {
                 this
@@ -500,7 +502,10 @@ private fun PsiElement.toDeclarationSlice(project: Project, symbolOrigin: KaSymb
     val caretLocation: CaretLocation = resolveCaretLocation(project, psiFile as PsiFile, sourceDeclaration.textOffset)
     val kqFqName: FqName? = sourceDeclaration.kotlinFqName
     val qualifiedName: String? = computeQualifiedName(kqFqName)
-    val ktFqNameRelativeString: String? = computeRelativektFqName(kqFqName, psiFile.packageFqName)
+    val packageName = (containingFile as? PsiClassOwner)?.packageName ?: "PORRA"
+    val packageFqName = FqName(packageName)
+    // psiFile.getFqNameByDirectory()
+    val ktFqNameRelativeString: String? = computeRelativektFqName(kqFqName, packageFqName)
     val presentableText: String? = sourceDeclaration.computePresentableText()
     val ktNamedDeclName: String? = sourceDeclaration.computeKtNamedDeclName()
     val symbolOriginString: String = when (symbolOrigin) {
@@ -576,12 +581,74 @@ private fun KtDeclaration.sourceDeclarationToDeclarationSlice(project: Project, 
     )
 }
 
+private fun PsiElement.sourceDeclarationToDeclarationSlice(project: Project, symbolOrigin: KaSymbolOrigin): DeclarationSlice {
+    val sourceDeclaration: PsiElement = preferSourceDeclaration()
+    // TODO: GET THE FILE FROM `preferSourceDeclaration()` BY RETURNING A PAIR
+    val psiFile: PsiFile = sourceDeclaration.containingFile
+    val psiFilePath: String = psiFile.virtualFile.path
+    val caretLocation: CaretLocation = resolveCaretLocation(project, psiFile as PsiFile, sourceDeclaration.textOffset)
+    val kqFqName: FqName? = sourceDeclaration.kotlinFqName
+    val qualifiedName: String? = computeQualifiedName(kqFqName)
+    val packageName = (containingFile as? PsiClassOwner)?.packageName ?: "PORRA"
+    val packageFqName = FqName(packageName)
+    // psiFile.getFqNameByDirectory()
+    val ktFqNameRelativeString: String? = computeRelativektFqName(kqFqName, packageFqName)
+    val presentableText: String? = sourceDeclaration.computePresentableText()
+    val ktNamedDeclName: String? = sourceDeclaration.computeKtNamedDeclName()
+    val symbolOriginString: String = when (symbolOrigin) {
+        KaSymbolOrigin.SOURCE -> "KaSymbolOrigin.SOURCE"
+        KaSymbolOrigin.SOURCE_MEMBER_GENERATED -> "KaSymbolOrigin.SOURCE_MEMBER_GENERATED"
+        KaSymbolOrigin.LIBRARY -> "KaSymbolOrigin.LIBRARY"
+        KaSymbolOrigin.JAVA_SOURCE -> "KaSymbolOrigin.JAVA_SOURCE"
+        KaSymbolOrigin.JAVA_LIBRARY -> "KaSymbolOrigin.JAVA_LIBRARY"
+        KaSymbolOrigin.SAM_CONSTRUCTOR -> "KaSymbolOrigin.SAM_CONSTRUCTOR"
+        KaSymbolOrigin.TYPEALIASED_CONSTRUCTOR -> "KaSymbolOrigin.TYPEALIASED_CONSTRUCTOR"
+        KaSymbolOrigin.INTERSECTION_OVERRIDE -> "KaSymbolOrigin.INTERSECTION_OVERRIDE"
+        KaSymbolOrigin.SUBSTITUTION_OVERRIDE -> "KaSymbolOrigin.SUBSTITUTION_OVERRIDE"
+        KaSymbolOrigin.DELEGATED -> "KaSymbolOrigin.DELEGATED"
+        KaSymbolOrigin.JAVA_SYNTHETIC_PROPERTY -> "KaSymbolOrigin.JAVA_SYNTHETIC_PROPERTY"
+        KaSymbolOrigin.PROPERTY_BACKING_FIELD -> "KaSymbolOrigin.PROPERTY_BACKING_FIELD"
+        KaSymbolOrigin.PLUGIN -> "KaSymbolOrigin.PLUGIN"
+        KaSymbolOrigin.JS_DYNAMIC -> "KaSymbolOrigin.JS_DYNAMIC"
+        KaSymbolOrigin.NATIVE_FORWARD_DECLARATION -> "KaSymbolOrigin.NATIVE_FORWARD_DECLARATION"
+    }
+    val fqNameTypeString: String = sourceDeclaration::class.qualifiedName ?: sourceDeclaration.javaClass.name
+    // Pack every attribute that downstream tooling may need to reconstruct a declarative slice
+    return DeclarationSlice(
+        sourceCode = sourceDeclaration.text,
+        ktFilePath = psiFilePath,
+        caret = caretLocation,
+        qualifiedName = qualifiedName,
+        presentableText = presentableText,
+        ktNamedDeclName = ktNamedDeclName,
+        ktFqNameRelativeString = ktFqNameRelativeString,
+        symbolOriginString = symbolOriginString,
+        fqNameTypeString = fqNameTypeString
+    )
+}
+
 /**
  * Returns true if this declaration sits inside another declaration that is already represented in the referenced-symbol
  * payload. The traversal intentionally uses raw PSI parents (instead of KtPsiUtil utilities) because we might be looking
  * at navigation PSI sourced from compiled code, where the tree can swap between light and physical elements.
  */
 private fun KtDeclaration.hasAncestorDeclarationIn(candidates: Set<KtDeclaration>): Boolean {
+    var ancestor: PsiElement? = parent
+    while (ancestor != null) {
+        if (ancestor is KtDeclaration && ancestor in candidates) {
+            return true
+        }
+        ancestor = ancestor.parent
+    }
+    return false
+}
+
+/**
+ * Returns true if this declaration sits inside another declaration that is already represented in the referenced-symbol
+ * payload. The traversal intentionally uses raw PSI parents (instead of KtPsiUtil utilities) because we might be looking
+ * at navigation PSI sourced from compiled code, where the tree can swap between light and physical elements.
+ */
+private fun PsiElement.hasAncestorDeclarationIn(candidates: Set<PsiElement>): Boolean {
     var ancestor: PsiElement? = parent
     while (ancestor != null) {
         if (ancestor is KtDeclaration && ancestor in candidates) {
@@ -609,8 +676,16 @@ private inline fun KtDeclaration.computePresentableText(): String? {
     return (this as? KtNamedDeclaration)?.presentation?.presentableText
 }
 
+private inline fun PsiElement.computePresentableText(): String? {
+    return (this as? NavigatablePsiElement)?.presentation?.presentableText
+}
+
 private inline fun KtDeclaration.computeKtNamedDeclName(): String? {
     return (this as? KtNamedDeclaration)?.name
+}
+
+private inline fun PsiElement.computeKtNamedDeclName(): String? {
+    return (this as? NavigatablePsiElement)?.name
 }
 
 private fun resolveCaretLocation(project: Project, psiFile: PsiFile, offset: Int): CaretLocation {
