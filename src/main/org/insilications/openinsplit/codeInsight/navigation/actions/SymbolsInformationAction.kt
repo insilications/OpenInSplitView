@@ -7,9 +7,7 @@ import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.actionSystem.DataContext
-import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.readAction
-import com.intellij.openapi.components.serviceOrNull
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.Document
 import com.intellij.openapi.editor.Editor
@@ -42,7 +40,6 @@ import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.tail
 import org.jetbrains.kotlin.psi.*
-import org.jetbrains.kotlin.psi.KotlinDeclarationNavigationPolicy
 import org.jetbrains.kotlin.psi.psiUtil.getParentOfType
 import kotlin.reflect.KCallable
 
@@ -297,12 +294,11 @@ private fun KaSession.buildReferencedSymbolContexts(
 
     for (usage: ResolvedUsage in usages) {
         val symbol: KaSymbol = usage.symbol
-        val symbolOrigin: KaSymbolOrigin = symbol.origin
 
         // Only symbols that resolve back to PSI declarations are interesting for our context payload
-        val declarationPsi: KtDeclaration = symbol.locateSourceDeclarationPsi() ?: continue
-        val declarationSlice: DeclarationSlice = declarationPsi.toDeclarationSlice(project, symbolOrigin)
-        val bucket: MutableReferencedSymbolAggregation = aggregations.getOrPut(declarationPsi) {
+        val sourceDeclarationPsi: KtDeclaration = symbol.locateSourceDeclarationPsi() ?: continue
+        val declarationSlice: DeclarationSlice = sourceDeclarationPsi.sourceDeclarationToDeclarationSlice(project, symbol.origin)
+        val bucket: MutableReferencedSymbolAggregation = aggregations.getOrPut(sourceDeclarationPsi) {
             MutableReferencedSymbolAggregation(
                 declarationSlice = declarationSlice,
                 usageKinds = LinkedHashSet()
@@ -319,12 +315,15 @@ private fun KaSession.buildReferencedSymbolContexts(
     }
 }
 
-private fun KaSymbol.locateSourceDeclarationPsi(): KtDeclaration? {
+/** Locates the KtDeclaration PSI for this KaSymbol, preferring source declarations over compiled ones.
+ * Returns null if no suitable KtDeclaration PSI can be found.
+ */
+private inline fun KaSymbol.locateSourceDeclarationPsi(): KtDeclaration? {
     val declarationPsi: KtDeclaration = locateDeclarationPsi() ?: return null
     return declarationPsi.preferSourceDeclaration()
 }
 
-private fun KaSymbol.locateDeclarationPsi(): KtDeclaration? {
+private inline fun KaSymbol.locateDeclarationPsi(): KtDeclaration? {
     // Only certain origins can be materialized as PSI; others (e.g. synthetic SAM wrappers) do not have stable slices
     if (origin != KaSymbolOrigin.SOURCE && origin != KaSymbolOrigin.JAVA_SOURCE && origin != KaSymbolOrigin.LIBRARY && origin != KaSymbolOrigin.JAVA_LIBRARY) {
         return null
@@ -336,34 +335,32 @@ private fun KaSymbol.locateDeclarationPsi(): KtDeclaration? {
     }
 }
 
-private fun KtDeclaration.preferSourceDeclaration(): KtDeclaration {
+/**
+ * If this KtDeclaration is from compiled code, attempt to get the corresponding source KtDeclaration via `navigationElement` instead.
+ * If no source declaration is found, returns `this`.
+ */
+private inline fun KtDeclaration.preferSourceDeclaration(): KtDeclaration {
     if (!containingKtFile.isCompiled) {
         return this
     }
-    val navigationPolicy: KotlinDeclarationNavigationPolicy = ApplicationManager.getApplication()
-        .serviceOrNull<KotlinDeclarationNavigationPolicy>() ?: return this
-    val navigationElement: PsiElement = navigationPolicy.getNavigationElement(this)
-    val sourceDeclaration: KtDeclaration? = navigationElement.asKtDeclaration()
+
+    val sourceDeclaration: KtDeclaration? = when (val navigationElement: PsiElement = this.navigationElement) {
+        is KtDeclaration -> navigationElement
+        else -> navigationElement.getParentOfType(strict = false)
+    }
     return if (sourceDeclaration != null && !sourceDeclaration.containingKtFile.isCompiled) sourceDeclaration else this
 }
 
-private fun PsiElement?.asKtDeclaration(): KtDeclaration? {
-    return when (this) {
-        is KtDeclaration -> this
-        else -> this?.getParentOfType(strict = false)
-    }
-}
-
 private fun KtDeclaration.toDeclarationSlice(project: Project, symbolOrigin: KaSymbolOrigin): DeclarationSlice {
-    val declaration: KtDeclaration = preferSourceDeclaration()
-    val ktFile: KtFile = declaration.containingKtFile
+    val sourceDeclaration: KtDeclaration = preferSourceDeclaration()
+    val ktFile: KtFile = sourceDeclaration.containingKtFile
     val ktFilePath: String = ktFile.virtualFilePath
-    val caretLocation: CaretLocation = resolveCaretLocation(project, ktFile as PsiFile, declaration.textOffset)
-    val kqFqName: FqName? = declaration.kotlinFqName
+    val caretLocation: CaretLocation = resolveCaretLocation(project, ktFile as PsiFile, sourceDeclaration.textOffset)
+    val kqFqName: FqName? = sourceDeclaration.kotlinFqName
     val qualifiedName: String? = computeQualifiedName(kqFqName)
     val ktFqNameRelativeString: String? = computeRelativektFqName(kqFqName, ktFile.packageFqName)
-    val presentableText: String? = declaration.computePresentableText()
-    val ktNamedDeclName: String? = declaration.computeKtNamedDeclName()
+    val presentableText: String? = sourceDeclaration.computePresentableText()
+    val ktNamedDeclName: String? = sourceDeclaration.computeKtNamedDeclName()
     val symbolOriginString: String = when (symbolOrigin) {
         KaSymbolOrigin.SOURCE -> "SOURCE"
         KaSymbolOrigin.SOURCE_MEMBER_GENERATED -> "SOURCE_MEMBER_GENERATED"
@@ -381,10 +378,51 @@ private fun KtDeclaration.toDeclarationSlice(project: Project, symbolOrigin: KaS
         KaSymbolOrigin.JS_DYNAMIC -> "JS_DYNAMIC"
         KaSymbolOrigin.NATIVE_FORWARD_DECLARATION -> "NATIVE_FORWARD_DECLARATION"
     }
-    val fqNameTypeString: String = declaration::class.qualifiedName ?: declaration.javaClass.name
+    val fqNameTypeString: String = sourceDeclaration::class.qualifiedName ?: sourceDeclaration.javaClass.name
     // Pack every attribute that downstream tooling may need to reconstruct a declarative slice
     return DeclarationSlice(
-        sourceCode = declaration.text,
+        sourceCode = sourceDeclaration.text,
+        ktFilePath = ktFilePath,
+        caret = caretLocation,
+        qualifiedName = qualifiedName,
+        presentableText = presentableText,
+        ktNamedDeclName = ktNamedDeclName,
+        ktFqNameRelativeString = ktFqNameRelativeString,
+        symbolOriginString = symbolOriginString,
+        fqNameTypeString = fqNameTypeString
+    )
+}
+
+private fun KtDeclaration.sourceDeclarationToDeclarationSlice(project: Project, symbolOrigin: KaSymbolOrigin): DeclarationSlice {
+    val ktFile: KtFile = containingKtFile
+    val ktFilePath: String = ktFile.virtualFilePath
+    val caretLocation: CaretLocation = resolveCaretLocation(project, ktFile as PsiFile, textOffset)
+    val kqFqName: FqName? = kotlinFqName
+    val qualifiedName: String? = computeQualifiedName(kqFqName)
+    val ktFqNameRelativeString: String? = computeRelativektFqName(kqFqName, ktFile.packageFqName)
+    val presentableText: String? = computePresentableText()
+    val ktNamedDeclName: String? = computeKtNamedDeclName()
+    val symbolOriginString: String = when (symbolOrigin) {
+        KaSymbolOrigin.SOURCE -> "SOURCE"
+        KaSymbolOrigin.SOURCE_MEMBER_GENERATED -> "SOURCE_MEMBER_GENERATED"
+        KaSymbolOrigin.LIBRARY -> "LIBRARY"
+        KaSymbolOrigin.JAVA_SOURCE -> "JAVA_SOURCE"
+        KaSymbolOrigin.JAVA_LIBRARY -> "JAVA_LIBRARY"
+        KaSymbolOrigin.SAM_CONSTRUCTOR -> "SAM_CONSTRUCTOR"
+        KaSymbolOrigin.TYPEALIASED_CONSTRUCTOR -> "TYPEALIASED_CONSTRUCTOR"
+        KaSymbolOrigin.INTERSECTION_OVERRIDE -> "INTERSECTION_OVERRIDE"
+        KaSymbolOrigin.SUBSTITUTION_OVERRIDE -> "SUBSTITUTION_OVERRIDE"
+        KaSymbolOrigin.DELEGATED -> "DELEGATED"
+        KaSymbolOrigin.JAVA_SYNTHETIC_PROPERTY -> "JAVA_SYNTHETIC_PROPERTY"
+        KaSymbolOrigin.PROPERTY_BACKING_FIELD -> "PROPERTY_BACKING_FIELD"
+        KaSymbolOrigin.PLUGIN -> "PLUGIN"
+        KaSymbolOrigin.JS_DYNAMIC -> "JS_DYNAMIC"
+        KaSymbolOrigin.NATIVE_FORWARD_DECLARATION -> "NATIVE_FORWARD_DECLARATION"
+    }
+    val fqNameTypeString: String = this::class.qualifiedName ?: this.javaClass.name
+    // Pack every attribute that downstream tooling may need to reconstruct a declarative slice
+    return DeclarationSlice(
+        sourceCode = text,
         ktFilePath = ktFilePath,
         caret = caretLocation,
         qualifiedName = qualifiedName,
