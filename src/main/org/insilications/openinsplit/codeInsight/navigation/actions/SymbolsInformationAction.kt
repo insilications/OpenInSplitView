@@ -344,12 +344,59 @@ private inline fun KaSymbol.locateDeclarationPsi(): KtDeclaration? {
     if (origin != KaSymbolOrigin.SOURCE && origin != KaSymbolOrigin.JAVA_SOURCE && origin != KaSymbolOrigin.LIBRARY && origin != KaSymbolOrigin.JAVA_LIBRARY) {
         return null
     }
-    val kk: PsiClass
+
     val sourcePsi: PsiElement = this.psi ?: return null
     return when (sourcePsi) {
         is KtDeclaration -> sourcePsi
         else -> sourcePsi.getParentOfType(strict = true)
     }
+}
+
+private inline fun PsiElement.preferSourceDeclaration(): PsiElement {
+//    if (!containingKtFile.isCompiled) {
+//        return this
+//    }
+//
+//    val sourceDeclaration: KtDeclaration? = when (val navigationElement: PsiElement = this.navigationElement) {
+//        is KtDeclaration -> navigationElement
+//        else -> navigationElement.getParentOfType(strict = false)
+//    }
+//    return if (sourceDeclaration != null && !sourceDeclaration.containingKtFile.isCompiled) sourceDeclaration else this
+
+//    val sourceDeclaration = when (val navigationElement: PsiElement = this.navigationElement) {
+//        is KtDeclaration -> navigationElement
+//        is PsiClass -> navigationElement
+//        else -> navigationElement.getParentOfType(strict = false)
+//    }
+
+    val sourceDeclaration: NavigatablePsiElement? = when (val navigationElement: PsiElement = this.navigationElement) {
+        is NavigatablePsiElement -> navigationElement
+        else -> navigationElement.getParentOfType(strict = false)
+    }
+
+    when (sourceDeclaration) {
+        is KtDeclaration -> {
+            val ktFile: KtFile = sourceDeclaration.containingKtFile
+            return if (!ktFile.isCompiled) {
+                sourceDeclaration
+            } else {
+                this
+            }
+        }
+
+        is PsiClass -> {
+            val psiFile: PsiFile = sourceDeclaration.containingFile
+            return if (!psiFile is PsiCompiledFile) {
+                sourceDeclaration
+            } else {
+                this
+            }
+        }
+
+        else -> return this
+    }
+
+//    return if (sourceDeclaration != null && !sourceDeclaration.containingKtFile.isCompiled) sourceDeclaration else this
 }
 
 /**
@@ -378,11 +425,6 @@ private inline fun KtDeclaration.preferSourceDeclaration(): PsiElement {
         else -> navigationElement.getParentOfType(strict = false)
     }
 
-//    val file = when (sourceDeclaration) {
-//        is KtDeclaration -> sourceDeclaration.containingKtFile
-//        is PsiClass -> sourceDeclaration.containingFile
-//        else -> null
-//    }
     when (sourceDeclaration) {
         is KtDeclaration -> {
             val ktFile: KtFile = sourceDeclaration.containingKtFile
@@ -408,9 +450,51 @@ private inline fun KtDeclaration.preferSourceDeclaration(): PsiElement {
 //    return if (sourceDeclaration != null && !sourceDeclaration.containingKtFile.isCompiled) sourceDeclaration else this
 }
 
-private fun KtDeclaration.toDeclarationSlice(project: Project, symbolOrigin: KaSymbolOrigin): DeclarationSlice {
-    val sourceDeclaration: KtDeclaration = preferSourceDeclaration()
-    val psiFile = sourceDeclaration.containingFile
+//private fun KtDeclaration.toDeclarationSlice(project: Project, symbolOrigin: KaSymbolOrigin): DeclarationSlice {
+//    val sourceDeclaration: KtDeclaration = preferSourceDeclaration()
+//    val ktFile: KtFile = sourceDeclaration.containingKtFile
+//    val ktFilePath: String = ktFile.virtualFilePath
+//    val caretLocation: CaretLocation = resolveCaretLocation(project, ktFile as PsiFile, sourceDeclaration.textOffset)
+//    val kqFqName: FqName? = sourceDeclaration.kotlinFqName
+//    val qualifiedName: String? = computeQualifiedName(kqFqName)
+//    val ktFqNameRelativeString: String? = computeRelativektFqName(kqFqName, ktFile.packageFqName)
+//    val presentableText: String? = sourceDeclaration.computePresentableText()
+//    val ktNamedDeclName: String? = sourceDeclaration.computeKtNamedDeclName()
+//    val symbolOriginString: String = when (symbolOrigin) {
+//        KaSymbolOrigin.SOURCE -> "KaSymbolOrigin.SOURCE"
+//        KaSymbolOrigin.SOURCE_MEMBER_GENERATED -> "KaSymbolOrigin.SOURCE_MEMBER_GENERATED"
+//        KaSymbolOrigin.LIBRARY -> "KaSymbolOrigin.LIBRARY"
+//        KaSymbolOrigin.JAVA_SOURCE -> "KaSymbolOrigin.JAVA_SOURCE"
+//        KaSymbolOrigin.JAVA_LIBRARY -> "KaSymbolOrigin.JAVA_LIBRARY"
+//        KaSymbolOrigin.SAM_CONSTRUCTOR -> "KaSymbolOrigin.SAM_CONSTRUCTOR"
+//        KaSymbolOrigin.TYPEALIASED_CONSTRUCTOR -> "KaSymbolOrigin.TYPEALIASED_CONSTRUCTOR"
+//        KaSymbolOrigin.INTERSECTION_OVERRIDE -> "KaSymbolOrigin.INTERSECTION_OVERRIDE"
+//        KaSymbolOrigin.SUBSTITUTION_OVERRIDE -> "KaSymbolOrigin.SUBSTITUTION_OVERRIDE"
+//        KaSymbolOrigin.DELEGATED -> "KaSymbolOrigin.DELEGATED"
+//        KaSymbolOrigin.JAVA_SYNTHETIC_PROPERTY -> "KaSymbolOrigin.JAVA_SYNTHETIC_PROPERTY"
+//        KaSymbolOrigin.PROPERTY_BACKING_FIELD -> "KaSymbolOrigin.PROPERTY_BACKING_FIELD"
+//        KaSymbolOrigin.PLUGIN -> "KaSymbolOrigin.PLUGIN"
+//        KaSymbolOrigin.JS_DYNAMIC -> "KaSymbolOrigin.JS_DYNAMIC"
+//        KaSymbolOrigin.NATIVE_FORWARD_DECLARATION -> "KaSymbolOrigin.NATIVE_FORWARD_DECLARATION"
+//    }
+//    val fqNameTypeString: String = sourceDeclaration::class.qualifiedName ?: sourceDeclaration.javaClass.name
+//    // Pack every attribute that downstream tooling may need to reconstruct a declarative slice
+//    return DeclarationSlice(
+//        sourceCode = sourceDeclaration.text,
+//        ktFilePath = ktFilePath,
+//        caret = caretLocation,
+//        qualifiedName = qualifiedName,
+//        presentableText = presentableText,
+//        ktNamedDeclName = ktNamedDeclName,
+//        ktFqNameRelativeString = ktFqNameRelativeString,
+//        symbolOriginString = symbolOriginString,
+//        fqNameTypeString = fqNameTypeString
+//    )
+//}
+
+private fun PsiElement.toDeclarationSlice(project: Project, symbolOrigin: KaSymbolOrigin): DeclarationSlice {
+    val sourceDeclaration: PsiElement = preferSourceDeclaration()
+    // TODO: GET THE FILE FROM `preferSourceDeclaration()` BY RETURNING A PAIR
     val ktFile: KtFile = sourceDeclaration.containingKtFile
     val ktFilePath: String = ktFile.virtualFilePath
     val caretLocation: CaretLocation = resolveCaretLocation(project, ktFile as PsiFile, sourceDeclaration.textOffset)
