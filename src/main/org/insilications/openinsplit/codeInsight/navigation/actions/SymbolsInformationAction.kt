@@ -350,6 +350,10 @@ private inline fun KaSymbol.locateDeclarationPsi(): KtDeclaration? {
         return null
     }
     val sourcePsi: PsiElement = this.psi ?: return null
+    val navSourcePsi: PsiElement = sourcePsi.navigationElement
+    LOG.debug { "sourcePsi - qualifiedName: ${sourcePsi::class.qualifiedName}" }
+    LOG.debug { "navSourcePsi - containingFile: ${navSourcePsi.containingFile}" }
+    LOG.debug { "navSourcePsi - qualifiedName: ${navSourcePsi::class.qualifiedName} - javaClass.name: ${navSourcePsi.javaClass.name}  - text:\n${navSourcePsi.text}\n\n\n" }
     return when (sourcePsi) {
         is KtDeclaration -> sourcePsi
         else -> sourcePsi.getParentOfType(strict = true)
