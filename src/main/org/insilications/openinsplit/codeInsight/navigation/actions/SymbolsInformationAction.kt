@@ -357,6 +357,9 @@ private inline fun KaSymbol.locateDeclarationPsi(): KtDeclaration? {
     LOG.debug { "navSourcePsi - navSourcePsi::class.java.declaringClass: ${navSourcePsi::class.java.declaringClass}" }
     LOG.debug { "navSourcePsi - navSourcePsi::class.java.simpleName: ${navSourcePsi::class.java.simpleName}" }
     LOG.debug { "navSourcePsi - navSourcePsi::class.javaClass.simpleName: ${(navSourcePsi::class as Any).javaClass.simpleName}" }
+    LOG.debug { "navSourcePsi - navSourcePsi::class.javaClass.simpleName: ${(navSourcePsi::class as Any).javaClass.simpleName}" }
+    LOG.debug { "navSourcePsi - navSourcePsi.originalElement: ${navSourcePsi.originalElement}" }
+
     LOG.debug { "navSourcePsi - qualifiedName: ${navSourcePsi::class.qualifiedName} - javaClass.name: ${navSourcePsi.javaClass.name}  - text:\n${navSourcePsi.text}\n\n\n" }
     return when (sourcePsi) {
         is KtDeclaration -> sourcePsi
