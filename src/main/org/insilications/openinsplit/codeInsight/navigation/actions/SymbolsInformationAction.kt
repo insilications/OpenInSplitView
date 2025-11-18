@@ -355,7 +355,14 @@ private inline fun KaSymbol.locateDeclarationPsi(): KtDeclaration? {
     LOG.debug { "navSourcePsi - navSourcePsi::class.java.name: ${navSourcePsi::class.java.name}" }
     LOG.debug { "navSourcePsi - navSourcePsi::class.javaObjectType: ${navSourcePsi::class.javaObjectType}" }
     LOG.debug { "navSourcePsi - navSourcePsi::class.java.declaringClass: ${navSourcePsi::class.java.declaringClass}" }
+    LOG.debug { "navSourcePsi - navSourcePsi::class.java: ${navSourcePsi::class.java}" }
+    LOG.debug { "navSourcePsi - navSourcePsi::class: ${navSourcePsi::class}" }
     LOG.debug { "navSourcePsi - navSourcePsi::class.java.simpleName: ${navSourcePsi::class.java.simpleName}" }
+    LOG.debug { "navSourcePsi - navSourcePsi.javaClass: ${navSourcePsi.javaClass}" }
+    LOG.debug { "navSourcePsi - navSourcePsi.javaClass.name: ${navSourcePsi.javaClass.name}" }
+    LOG.debug { "navSourcePsi - navSourcePsi.javaClass.simpleName: ${navSourcePsi.javaClass.simpleName}" }
+    LOG.debug { "navSourcePsi - navSourcePsi.javaClass.declaringClass: ${navSourcePsi.javaClass.declaringClass}" }
+    LOG.debug { "navSourcePsi - navSourcePsi.javaClass.descriptorString(): ${navSourcePsi.javaClass.descriptorString()}" }
     LOG.debug { "navSourcePsi - navSourcePsi::class.javaClass.simpleName: ${(navSourcePsi::class as Any).javaClass.simpleName}" }
     LOG.debug { "navSourcePsi - navSourcePsi::class.javaClass.simpleName: ${(navSourcePsi::class as Any).javaClass.simpleName}" }
     LOG.debug { "navSourcePsi - navSourcePsi.originalElement: ${navSourcePsi.originalElement}" }
