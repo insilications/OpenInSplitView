@@ -462,7 +462,7 @@ fun getPackageDirective(file: PsiFile): String? {
 private fun PsiElement.toDeclarationSlice(
     project: Project, psiFile: PsiFile
 ): DeclarationSlice {
-    val (sourceDeclaration, psiFile) = preferSourceDeclaration() // TODO: GET THE FILE FROM `preferSourceDeclaration()` BY RETURNING A PAIR
+    val (sourceDeclaration: PsiElement, psiFile: PsiFile) = preferSourceDeclaration()
     val psiFilePath: String = psiFile.virtualFile.path
     val caretLocation: CaretLocation = resolveCaretLocation(project, psiFile as PsiFile, sourceDeclaration.textOffset)
     val kotlinFqName: FqName? = sourceDeclaration.kotlinFqName
