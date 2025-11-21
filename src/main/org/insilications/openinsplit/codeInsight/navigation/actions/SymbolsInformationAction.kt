@@ -356,22 +356,7 @@ private inline fun KaSymbol.locateDeclarationPsi(): PsiElement? { // Only certai
     //    }
 }
 
-private inline fun PsiElement.preferSourceDeclaration(): PsiElement { //    if (!containingKtFile.isCompiled) {
-    //        return this
-    //    }
-    //
-    //    val sourceDeclaration: KtDeclaration? = when (val navigationElement: PsiElement = this.navigationElement) {
-    //        is KtDeclaration -> navigationElement
-    //        else -> navigationElement.getParentOfType(strict = false)
-    //    }
-    //    return if (sourceDeclaration != null && !sourceDeclaration.containingKtFile.isCompiled) sourceDeclaration else this
-
-    //    val sourceDeclaration = when (val navigationElement: PsiElement = this.navigationElement) {
-    //        is KtDeclaration -> navigationElement
-    //        is PsiClass -> navigationElement
-    //        else -> navigationElement.getParentOfType(strict = false)
-    //    }
-
+private inline fun PsiElement.preferSourceDeclaration(): Pair<PsiElement, PsiFile> {
     val sourceDeclaration: NavigatablePsiElement? = when (val navigationElement: PsiElement = this.navigationElement) {
         is NavigatablePsiElement -> navigationElement
         else -> navigationElement.getParentOfType(strict = false)
@@ -381,25 +366,23 @@ private inline fun PsiElement.preferSourceDeclaration(): PsiElement { //    if (
         is KtDeclaration -> {
             val ktFile: KtFile = sourceDeclaration.containingKtFile
             return if (!ktFile.isCompiled) {
-                sourceDeclaration
+                sourceDeclaration to ktFile
             } else {
-                this
+                this to this.containingFile
             }
         }
 
         is PsiClass -> {
             val psiFile: PsiFile = sourceDeclaration.containingFile
             return if (psiFile !is PsiCompiledFile) {
-                sourceDeclaration
+                sourceDeclaration to psiFile
             } else {
-                this
+                this to this.containingFile
             }
         }
 
-        else -> return this
+        else -> return this to this.containingFile
     }
-
-    //    return if (sourceDeclaration != null && !sourceDeclaration.containingKtFile.isCompiled) sourceDeclaration else this
 }
 
 /**
@@ -479,8 +462,7 @@ fun getPackageDirective(file: PsiFile): String? {
 private fun PsiElement.toDeclarationSlice(
     project: Project, psiFile: PsiFile
 ): DeclarationSlice {
-    val sourceDeclaration: PsiElement = preferSourceDeclaration() // TODO: GET THE FILE FROM `preferSourceDeclaration()` BY RETURNING A PAIR
-    val psiFile: PsiFile = sourceDeclaration.containingFile
+    val (sourceDeclaration, psiFile) = preferSourceDeclaration() // TODO: GET THE FILE FROM `preferSourceDeclaration()` BY RETURNING A PAIR
     val psiFilePath: String = psiFile.virtualFile.path
     val caretLocation: CaretLocation = resolveCaretLocation(project, psiFile as PsiFile, sourceDeclaration.textOffset)
     val kotlinFqName: FqName? = sourceDeclaration.kotlinFqName
