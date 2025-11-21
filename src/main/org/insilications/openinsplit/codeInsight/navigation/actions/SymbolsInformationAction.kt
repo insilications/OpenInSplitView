@@ -164,7 +164,7 @@ private inline fun PsiElement.preferSourceDeclaration(): Pair<PsiElement, PsiFil
     }
 }
 
-fun getImportsList(file: PsiFile): List<String> {
+inline fun getImportsList(file: PsiFile): List<String> {
     return when (file) {
         // Handle Java files
         is PsiJavaFile -> file.importList?.allImportStatements?.map { it.text } ?: emptyList()
@@ -177,7 +177,7 @@ fun getImportsList(file: PsiFile): List<String> {
     }
 }
 
-fun getPackageDirective(file: PsiFile): String? {
+inline fun getPackageDirective(file: PsiFile): String? {
     return when (file) {
         // Handle Java files
         is PsiJavaFile -> file.packageStatement?.text
