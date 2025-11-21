@@ -38,6 +38,11 @@ import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.tail
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.getParentOfType
+import org.jetbrains.uast.UCallExpression
+import org.jetbrains.uast.UObjectLiteralExpression
+import org.jetbrains.uast.UTypeReferenceExpression
+import org.jetbrains.uast.toUElement
+import org.jetbrains.uast.visitor.AbstractUastVisitor
 import kotlin.reflect.KCallable
 
 // import org.jetbrains.uast.visitor.AbstractUastVisitor
@@ -97,9 +102,12 @@ class SymbolsInformationAction : DumbAwareAction() {
 
             readAction {
                 analyze(targetKtDeclaration) {
+                    UastDependencyCollector(
+                        targetKtDeclaration, maxRefs = 5000
+                    )
                     // Everything is inside the KaSession context/lifetime; build the payload eagerly
-                    val payload: SymbolContextPayload = buildSymbolContext(project, targetKtDeclaration, 5000)
-                    deliverSymbolContext(payload)
+                    //                    val payload: SymbolContextPayload = buildSymbolContext(project, targetKtDeclaration, 5000)
+                    //                    deliverSymbolContext(payload)
                 }
             }
 
@@ -127,17 +135,11 @@ enum class UsageKind {
 }
 
 data class ResolvedUsage(
-    val symbol: KaSymbol,
-    val pointer: KaSymbolPointer<*>,
-    val usageKind: UsageKind,
-    val site: PsiElement,
-    val call: KaCall? = null
+    val symbol: KaSymbol, val pointer: KaSymbolPointer<*>, val usageKind: UsageKind, val site: PsiElement, val call: KaCall? = null
 )
 
 data class CaretLocation(
-    val offset: Int,
-    val line: Int,
-    val column: Int
+    val offset: Int, val line: Int, val column: Int
 )
 
 data class DeclarationSlice(
@@ -153,42 +155,59 @@ data class DeclarationSlice(
 )
 
 data class TargetSymbolContext(
-    val packageDirective: String?,
-    val imports: List<String>,
-    val declarationSlice: DeclarationSlice
+    val packageDirective: String?, val imports: List<String>, val declarationSlice: DeclarationSlice
 )
 
 data class ReferencedSymbolContext(
-    val declarationSlice: DeclarationSlice,
-    val usageClassifications: List<String>
+    val declarationSlice: DeclarationSlice, val usageClassifications: List<String>
 )
 
 data class SymbolContextPayload(
-    val target: TargetSymbolContext,
-    val referencedSymbols: List<ReferencedSymbolContext>
+    val target: TargetSymbolContext, val referencedSymbols: List<ReferencedSymbolContext>
 )
 
 private data class MutableReferencedSymbolAggregation(
-    val declarationSlice: DeclarationSlice,
-    val usageKinds: LinkedHashSet<String>
+    val declarationSlice: DeclarationSlice, val usageKinds: LinkedHashSet<String>
 )
 
 /* ============================= COLLECTION LOGIC ============================= */
 
 @OptIn(KaExperimentalApi::class)
+fun KaSession.UastDependencyCollector(
+    root: KtDeclaration, maxRefs: Int = 2000
+) {
+    val element = root.toUElement() ?: return
+    element.accept(object : AbstractUastVisitor() {
+
+        override fun visitCallExpression(node: UCallExpression): Boolean {
+            LOG.debug { "Visiting call expression: ${node.methodName}" } //        handleReference(node)
+            return super.visitCallExpression(node) // Continue traversal
+        }
+
+        // 2. Capture Type References (Variables, Return types, etc.)
+        override fun visitTypeReferenceExpression(node: UTypeReferenceExpression): Boolean {
+            LOG.debug { "Visiting type reference expression: ${node.getQualifiedName()}" } //        handleReference(node)
+            return super.visitTypeReferenceExpression(node)
+        }
+
+        // 3. Capture Constructor Calls (often distinct from method calls)
+        override fun visitObjectLiteralExpression(node: UObjectLiteralExpression): Boolean { // Handle anonymous inner classes
+            LOG.debug { "Visiting object literal expression: ${node.methodName}" }
+            return super.visitObjectLiteralExpression(node)
+        }
+
+    })
+
+}
+
+@OptIn(KaExperimentalApi::class)
 fun KaSession.collectResolvedUsagesInDeclaration(
-    root: KtDeclaration,
-    maxRefs: Int = 2000
+    root: KtDeclaration, maxRefs: Int = 2000
 ): List<ResolvedUsage> {
     val out = ArrayList<ResolvedUsage>(256)
 
     // PSI visitor keeps discovery simple; we bail once the caller-defined limit is reached to avoid runaway traversals
     root.accept(/* visitor = */ object : KtTreeVisitorVoid() {
-//        override fun visitKtElement(element: KtElement) {
-//            LOG.info("Visiting element - type: ${element::class.qualifiedName} - text:\n${element.text}\n\n\n")
-//            super.visitKtElement(element)
-//        }
-
         override fun visitCallExpression(expression: KtCallExpression) {
             if (out.size >= maxRefs) return
             handleCallLike(expression, out)
@@ -246,9 +265,7 @@ fun KaSession.collectResolvedUsagesInDeclaration(
                 PsiTreeUtil.processElements(delegateExpr) { e: PsiElement ->
                     if (out.size >= maxRefs) return@processElements false
                     when (e) {
-                        is KtCallExpression,
-                        is KtUnaryExpression,
-                        is KtBinaryExpression -> handleCallLike(e as KtExpression, out, asDelegated = true)
+                        is KtCallExpression, is KtUnaryExpression, is KtBinaryExpression -> handleCallLike(e as KtExpression, out, asDelegated = true)
                     }
                     true
                 }
@@ -263,9 +280,7 @@ fun KaSession.collectResolvedUsagesInDeclaration(
 /* ============================= CONTEXT BUILDERS ============================= */
 
 private fun KaSession.buildSymbolContext(
-    project: Project,
-    targetKtDeclaration: KtDeclaration,
-    maxRefs: Int = 2000
+    project: Project, targetKtDeclaration: KtDeclaration, maxRefs: Int = 2000
 ): SymbolContextPayload {
     val targetKtFile: KtFile = targetKtDeclaration.containingKtFile
     val packageDirectiveText: String? = targetKtFile.packageDirective?.text
@@ -273,9 +288,7 @@ private fun KaSession.buildSymbolContext(
 
     val targetSlice: DeclarationSlice = targetKtDeclaration.toDeclarationSlice(project, targetKtDeclaration.symbol.origin)
     val targetContext = TargetSymbolContext(
-        packageDirective = packageDirectiveText,
-        imports = importTexts,
-        declarationSlice = targetSlice
+        packageDirective = packageDirectiveText, imports = importTexts, declarationSlice = targetSlice
     )
 
     // Gather all symbol references from the declaration body and then lift them into deduplicated slices
@@ -283,14 +296,12 @@ private fun KaSession.buildSymbolContext(
     val referencedSymbols: List<ReferencedSymbolContext> = buildReferencedSymbolContexts(project, usages)
 
     return SymbolContextPayload(
-        target = targetContext,
-        referencedSymbols = referencedSymbols
+        target = targetContext, referencedSymbols = referencedSymbols
     )
 }
 
 private fun KaSession.buildReferencedSymbolContexts(
-    project: Project,
-    usages: List<ResolvedUsage>
+    project: Project, usages: List<ResolvedUsage>
 ): List<ReferencedSymbolContext> {
     val aggregations = LinkedHashMap<PsiElement, MutableReferencedSymbolAggregation>()
 
@@ -302,8 +313,7 @@ private fun KaSession.buildReferencedSymbolContexts(
         val declarationSlice: DeclarationSlice = sourceDeclarationPsi.sourceDeclarationToDeclarationSlice(project, symbol.origin)
         val bucket: MutableReferencedSymbolAggregation = aggregations.getOrPut(sourceDeclarationPsi) {
             MutableReferencedSymbolAggregation(
-                declarationSlice = declarationSlice,
-                usageKinds = LinkedHashSet()
+                declarationSlice = declarationSlice, usageKinds = LinkedHashSet()
             )
         }
         bucket.usageKinds += usage.usageKind.toClassificationString()
@@ -318,19 +328,15 @@ private fun KaSession.buildReferencedSymbolContexts(
     val candidateDeclarations: Set<PsiElement> = aggregations.keys.toSet()
 
     return aggregations.entries.asSequence()
-        .filter { (declaration: PsiElement, _) ->
-            // Contexts are stable only when tied to the highest-level container. If the referenced symbol lives inside
+        .filter { (declaration: PsiElement, _) -> // Contexts are stable only when tied to the highest-level container. If the referenced symbol lives inside
             // another declaration that already has a slice (e.g., MyClass.NestedClassMember), ignore the nested
             // one so downstream consumers do not see duplicate snippets from the same logical type.
             !declaration.hasAncestorDeclarationIn(candidateDeclarations)
-        }
-        .map { (_, aggregation: MutableReferencedSymbolAggregation): MutableMap.MutableEntry<PsiElement, MutableReferencedSymbolAggregation> ->
+        }.map { (_, aggregation: MutableReferencedSymbolAggregation): MutableMap.MutableEntry<PsiElement, MutableReferencedSymbolAggregation> ->
             ReferencedSymbolContext(
-                declarationSlice = aggregation.declarationSlice,
-                usageClassifications = aggregation.usageKinds.toList()
+                declarationSlice = aggregation.declarationSlice, usageClassifications = aggregation.usageKinds.toList()
             )
-        }
-        .toList()
+        }.toList()
 }
 
 /** Locates the KtDeclaration PSI for this KaSymbol, preferring source declarations over compiled ones.
@@ -342,36 +348,33 @@ private inline fun KaSymbol.locateSourceDeclarationPsi(): PsiElement? {
 }
 
 //private inline fun KaSymbol.locateDeclarationPsi(): KtDeclaration? {
-private inline fun KaSymbol.locateDeclarationPsi(): PsiElement? {
-    // Only certain origins can be materialized as PSI; others (e.g. synthetic SAM wrappers) do not have stable slices
+private inline fun KaSymbol.locateDeclarationPsi(): PsiElement? { // Only certain origins can be materialized as PSI; others (e.g. synthetic SAM wrappers) do not have stable slices
     if (origin != KaSymbolOrigin.SOURCE && origin != KaSymbolOrigin.JAVA_SOURCE && origin != KaSymbolOrigin.LIBRARY && origin != KaSymbolOrigin.JAVA_LIBRARY) {
         return null
     }
 
     val sourcePsi: PsiElement = this.psi ?: return null
-    return sourcePsi
-//    return when (sourcePsi) {
-//        is KtDeclaration -> sourcePsi
-//        else -> sourcePsi.getParentOfType(strict = true)
-//    }
+    return sourcePsi //    return when (sourcePsi) {
+    //        is KtDeclaration -> sourcePsi
+    //        else -> sourcePsi.getParentOfType(strict = true)
+    //    }
 }
 
-private inline fun PsiElement.preferSourceDeclaration(): PsiElement {
-//    if (!containingKtFile.isCompiled) {
-//        return this
-//    }
-//
-//    val sourceDeclaration: KtDeclaration? = when (val navigationElement: PsiElement = this.navigationElement) {
-//        is KtDeclaration -> navigationElement
-//        else -> navigationElement.getParentOfType(strict = false)
-//    }
-//    return if (sourceDeclaration != null && !sourceDeclaration.containingKtFile.isCompiled) sourceDeclaration else this
+private inline fun PsiElement.preferSourceDeclaration(): PsiElement { //    if (!containingKtFile.isCompiled) {
+    //        return this
+    //    }
+    //
+    //    val sourceDeclaration: KtDeclaration? = when (val navigationElement: PsiElement = this.navigationElement) {
+    //        is KtDeclaration -> navigationElement
+    //        else -> navigationElement.getParentOfType(strict = false)
+    //    }
+    //    return if (sourceDeclaration != null && !sourceDeclaration.containingKtFile.isCompiled) sourceDeclaration else this
 
-//    val sourceDeclaration = when (val navigationElement: PsiElement = this.navigationElement) {
-//        is KtDeclaration -> navigationElement
-//        is PsiClass -> navigationElement
-//        else -> navigationElement.getParentOfType(strict = false)
-//    }
+    //    val sourceDeclaration = when (val navigationElement: PsiElement = this.navigationElement) {
+    //        is KtDeclaration -> navigationElement
+    //        is PsiClass -> navigationElement
+    //        else -> navigationElement.getParentOfType(strict = false)
+    //    }
 
     val sourceDeclaration: NavigatablePsiElement? = when (val navigationElement: PsiElement = this.navigationElement) {
         is NavigatablePsiElement -> navigationElement
@@ -400,29 +403,28 @@ private inline fun PsiElement.preferSourceDeclaration(): PsiElement {
         else -> return this
     }
 
-//    return if (sourceDeclaration != null && !sourceDeclaration.containingKtFile.isCompiled) sourceDeclaration else this
+    //    return if (sourceDeclaration != null && !sourceDeclaration.containingKtFile.isCompiled) sourceDeclaration else this
 }
 
 /**
  * If this KtDeclaration is from compiled code, attempt to get the corresponding source KtDeclaration via `navigationElement` instead.
  * If no source declaration is found, returns `this`.
  */
-private inline fun KtDeclaration.preferSourceDeclaration(): PsiElement {
-//    if (!containingKtFile.isCompiled) {
-//        return this
-//    }
-//
-//    val sourceDeclaration: KtDeclaration? = when (val navigationElement: PsiElement = this.navigationElement) {
-//        is KtDeclaration -> navigationElement
-//        else -> navigationElement.getParentOfType(strict = false)
-//    }
-//    return if (sourceDeclaration != null && !sourceDeclaration.containingKtFile.isCompiled) sourceDeclaration else this
+private inline fun KtDeclaration.preferSourceDeclaration(): PsiElement { //    if (!containingKtFile.isCompiled) {
+    //        return this
+    //    }
+    //
+    //    val sourceDeclaration: KtDeclaration? = when (val navigationElement: PsiElement = this.navigationElement) {
+    //        is KtDeclaration -> navigationElement
+    //        else -> navigationElement.getParentOfType(strict = false)
+    //    }
+    //    return if (sourceDeclaration != null && !sourceDeclaration.containingKtFile.isCompiled) sourceDeclaration else this
 
-//    val sourceDeclaration = when (val navigationElement: PsiElement = this.navigationElement) {
-//        is KtDeclaration -> navigationElement
-//        is PsiClass -> navigationElement
-//        else -> navigationElement.getParentOfType(strict = false)
-//    }
+    //    val sourceDeclaration = when (val navigationElement: PsiElement = this.navigationElement) {
+    //        is KtDeclaration -> navigationElement
+    //        is PsiClass -> navigationElement
+    //        else -> navigationElement.getParentOfType(strict = false)
+    //    }
 
     val sourceDeclaration: NavigatablePsiElement? = when (val navigationElement: PsiElement = this.navigationElement) {
         is NavigatablePsiElement -> navigationElement
@@ -451,7 +453,7 @@ private inline fun KtDeclaration.preferSourceDeclaration(): PsiElement {
         else -> return this
     }
 
-//    return if (sourceDeclaration != null && !sourceDeclaration.containingKtFile.isCompiled) sourceDeclaration else this
+    //    return if (sourceDeclaration != null && !sourceDeclaration.containingKtFile.isCompiled) sourceDeclaration else this
 }
 
 //private fun KtDeclaration.toDeclarationSlice(project: Project, symbolOrigin: KaSymbolOrigin): DeclarationSlice {
@@ -496,17 +498,17 @@ private inline fun KtDeclaration.preferSourceDeclaration(): PsiElement {
 //    )
 //}
 
-private fun PsiElement.toDeclarationSlice(project: Project, symbolOrigin: KaSymbolOrigin): DeclarationSlice {
-    val sourceDeclaration: PsiElement = preferSourceDeclaration()
-    // TODO: GET THE FILE FROM `preferSourceDeclaration()` BY RETURNING A PAIR
+private fun PsiElement.toDeclarationSlice(
+    project: Project, symbolOrigin: KaSymbolOrigin
+): DeclarationSlice {
+    val sourceDeclaration: PsiElement = preferSourceDeclaration() // TODO: GET THE FILE FROM `preferSourceDeclaration()` BY RETURNING A PAIR
     val psiFile: PsiFile = sourceDeclaration.containingFile
     val psiFilePath: String = psiFile.virtualFile.path
     val caretLocation: CaretLocation = resolveCaretLocation(project, psiFile as PsiFile, sourceDeclaration.textOffset)
     val kqFqName: FqName? = sourceDeclaration.kotlinFqName
     val qualifiedName: String? = computeQualifiedName(kqFqName)
     val packageName = (containingFile as? PsiClassOwner)?.packageName ?: "PORRA"
-    val packageFqName = FqName(packageName)
-    // psiFile.getFqNameByDirectory()
+    val packageFqName = FqName(packageName) // psiFile.getFqNameByDirectory()
     val ktFqNameRelativeString: String? = computeRelativektFqName(kqFqName, packageFqName)
     val presentableText: String? = sourceDeclaration.computePresentableText()
     val ktNamedDeclName: String? = sourceDeclaration.computeKtNamedDeclName()
@@ -527,8 +529,8 @@ private fun PsiElement.toDeclarationSlice(project: Project, symbolOrigin: KaSymb
         KaSymbolOrigin.JS_DYNAMIC -> "KaSymbolOrigin.JS_DYNAMIC"
         KaSymbolOrigin.NATIVE_FORWARD_DECLARATION -> "KaSymbolOrigin.NATIVE_FORWARD_DECLARATION"
     }
-    val fqNameTypeString: String = sourceDeclaration::class.qualifiedName ?: sourceDeclaration.javaClass.name
-    // Pack every attribute that downstream tooling may need to reconstruct a declarative slice
+    val fqNameTypeString: String = sourceDeclaration::class.qualifiedName
+        ?: sourceDeclaration.javaClass.name // Pack every attribute that downstream tooling may need to reconstruct a declarative slice
     return DeclarationSlice(
         sourceCode = sourceDeclaration.text,
         ktFilePath = psiFilePath,
@@ -542,7 +544,9 @@ private fun PsiElement.toDeclarationSlice(project: Project, symbolOrigin: KaSymb
     )
 }
 
-private fun KtDeclaration.sourceDeclarationToDeclarationSlice(project: Project, symbolOrigin: KaSymbolOrigin): DeclarationSlice {
+private fun KtDeclaration.sourceDeclarationToDeclarationSlice(
+    project: Project, symbolOrigin: KaSymbolOrigin
+): DeclarationSlice {
     val ktFile: KtFile = containingKtFile
     val ktFilePath: String = ktFile.virtualFilePath
     val caretLocation: CaretLocation = resolveCaretLocation(project, ktFile as PsiFile, textOffset)
@@ -568,8 +572,8 @@ private fun KtDeclaration.sourceDeclarationToDeclarationSlice(project: Project, 
         KaSymbolOrigin.JS_DYNAMIC -> "JS_DYNAMIC"
         KaSymbolOrigin.NATIVE_FORWARD_DECLARATION -> "NATIVE_FORWARD_DECLARATION"
     }
-    val fqNameTypeString: String = this::class.qualifiedName ?: this.javaClass.name
-    // Pack every attribute that downstream tooling may need to reconstruct a declarative slice
+    val fqNameTypeString: String =
+        this::class.qualifiedName ?: this.javaClass.name // Pack every attribute that downstream tooling may need to reconstruct a declarative slice
     return DeclarationSlice(
         sourceCode = text,
         ktFilePath = ktFilePath,
@@ -583,17 +587,17 @@ private fun KtDeclaration.sourceDeclarationToDeclarationSlice(project: Project, 
     )
 }
 
-private fun PsiElement.sourceDeclarationToDeclarationSlice(project: Project, symbolOrigin: KaSymbolOrigin): DeclarationSlice {
-    val sourceDeclaration: PsiElement = preferSourceDeclaration()
-    // TODO: GET THE FILE FROM `preferSourceDeclaration()` BY RETURNING A PAIR
+private fun PsiElement.sourceDeclarationToDeclarationSlice(
+    project: Project, symbolOrigin: KaSymbolOrigin
+): DeclarationSlice {
+    val sourceDeclaration: PsiElement = preferSourceDeclaration() // TODO: GET THE FILE FROM `preferSourceDeclaration()` BY RETURNING A PAIR
     val psiFile: PsiFile = sourceDeclaration.containingFile
     val psiFilePath: String = psiFile.virtualFile.path
     val caretLocation: CaretLocation = resolveCaretLocation(project, psiFile as PsiFile, sourceDeclaration.textOffset)
     val kqFqName: FqName? = sourceDeclaration.kotlinFqName
     val qualifiedName: String? = computeQualifiedName(kqFqName)
     val packageName = (containingFile as? PsiClassOwner)?.packageName ?: "PORRA"
-    val packageFqName = FqName(packageName)
-    // psiFile.getFqNameByDirectory()
+    val packageFqName = FqName(packageName) // psiFile.getFqNameByDirectory()
     val ktFqNameRelativeString: String? = computeRelativektFqName(kqFqName, packageFqName)
     val presentableText: String? = sourceDeclaration.computePresentableText()
     val ktNamedDeclName: String? = sourceDeclaration.computeKtNamedDeclName()
@@ -614,8 +618,8 @@ private fun PsiElement.sourceDeclarationToDeclarationSlice(project: Project, sym
         KaSymbolOrigin.JS_DYNAMIC -> "KaSymbolOrigin.JS_DYNAMIC"
         KaSymbolOrigin.NATIVE_FORWARD_DECLARATION -> "KaSymbolOrigin.NATIVE_FORWARD_DECLARATION"
     }
-    val fqNameTypeString: String = sourceDeclaration::class.qualifiedName ?: sourceDeclaration.javaClass.name
-    // Pack every attribute that downstream tooling may need to reconstruct a declarative slice
+    val fqNameTypeString: String = sourceDeclaration::class.qualifiedName
+        ?: sourceDeclaration.javaClass.name // Pack every attribute that downstream tooling may need to reconstruct a declarative slice
     return DeclarationSlice(
         sourceCode = sourceDeclaration.text,
         ktFilePath = psiFilePath,
@@ -666,7 +670,9 @@ private fun PsiElement.hasAncestorDeclarationIn(candidates: Set<PsiElement>): Bo
  * Example: if `kqFqName` is "com.example.MyClass.myMethod" and `packageFqName` is "com.example", the result will be "MyClass.myMethod"
  * If `kqFqName` is null, returns null
  */
-private inline fun computeRelativektFqName(kqFqName: FqName?, packageFqName: FqName): String? {
+private inline fun computeRelativektFqName(
+    kqFqName: FqName?, packageFqName: FqName
+): String? {
     return kqFqName?.tail(packageFqName)?.asString()
 }
 
@@ -690,19 +696,18 @@ private inline fun PsiElement.computeKtNamedDeclName(): String? {
     return (this as? NavigatablePsiElement)?.name
 }
 
-private fun resolveCaretLocation(project: Project, psiFile: PsiFile, offset: Int): CaretLocation {
-    val document: Document? = PsiDocumentManager.getInstance(project).getDocument(psiFile)
-        ?: psiFile.virtualFile?.let { virtualFile: VirtualFile ->
-            FileDocumentManager.getInstance().getDocument(virtualFile)
-        }
+private fun resolveCaretLocation(
+    project: Project, psiFile: PsiFile, offset: Int
+): CaretLocation {
+    val document: Document? = PsiDocumentManager.getInstance(project).getDocument(psiFile) ?: psiFile.virtualFile?.let { virtualFile: VirtualFile ->
+        FileDocumentManager.getInstance().getDocument(virtualFile)
+    }
 
     if (document != null && offset in 0..document.textLength) {
         val lineIndex: Int = document.getLineNumber(offset)
         val columnIndex: Int = offset - document.getLineStartOffset(lineIndex)
         return CaretLocation(
-            offset = offset,
-            line = lineIndex + 1,
-            column = columnIndex + 1
+            offset = offset, line = lineIndex + 1, column = columnIndex + 1
         )
     }
 
@@ -751,10 +756,9 @@ private fun SymbolContextPayload.toLogString(): String {
         sb.appendLine("Qualified Name: ${referenced.declarationSlice.qualifiedName ?: "<anonymous>"}")
         sb.appendLine("ktFqNameRelativeString: ${referenced.declarationSlice.ktFqNameRelativeString ?: "<anonymous>"}")
         sb.appendLine("symbolOriginString: ${referenced.declarationSlice.symbolOriginString}")
-        sb.appendLine("ktFilePath: ${referenced.declarationSlice.ktFilePath}")
-//        sb.appendLine("presentableText: ${referenced.declarationSlice.presentableText ?: "<anonymous>"}")
-//        sb.appendLine("ktNamedDeclName: ${referenced.declarationSlice.ktNamedDeclName ?: "<anonymous>"}")
-//        sb.appendLine("Caret: offset=${referenced.declarationSlice.caret.offset}, line=${referenced.declarationSlice.caret.line}, column=${referenced.declarationSlice.caret.column}")
+        sb.appendLine("ktFilePath: ${referenced.declarationSlice.ktFilePath}") //        sb.appendLine("presentableText: ${referenced.declarationSlice.presentableText ?: "<anonymous>"}")
+        //        sb.appendLine("ktNamedDeclName: ${referenced.declarationSlice.ktNamedDeclName ?: "<anonymous>"}")
+        //        sb.appendLine("Caret: offset=${referenced.declarationSlice.caret.offset}, line=${referenced.declarationSlice.caret.line}, column=${referenced.declarationSlice.caret.column}")
         sb.appendLine("Usage Classifications: ${referenced.usageClassifications.joinToString()}")
         sb.appendLine("Declaration Source Code:")
         sb.appendLine(referenced.declarationSlice.sourceCode)
@@ -772,9 +776,7 @@ private fun SymbolContextPayload.toLogString(): String {
  * receiver, the receiver symbol is captured via [recordExtensionReceiverIfAny].
  */
 private fun KaSession.handleCallLike(
-    expression: KtExpression,
-    out: MutableList<ResolvedUsage>,
-    asDelegated: Boolean = false
+    expression: KtExpression, out: MutableList<ResolvedUsage>, asDelegated: Boolean = false
 ) {
     val call: KaCall = (expression.resolveToCall() as? KaSuccessCallInfo)?.call ?: return
     when (call) {
@@ -790,14 +792,9 @@ private fun KaSession.handleCallLike(
                 asDelegated -> UsageKind.DELEGATED_PROPERTY
                 sym is KaConstructorSymbol -> UsageKind.CONSTRUCTOR_CALL
                 else -> UsageKind.CALL
-            }
-            // Record every callable invocation and keep the original call handy for extension-receiver bookkeeping
+            } // Record every callable invocation and keep the original call handy for extension-receiver bookkeeping
             out += ResolvedUsage(
-                symbol = sym,
-                pointer = ptr,
-                usageKind = usageKind,
-                site = expression,
-                call = call
+                symbol = sym, pointer = ptr, usageKind = usageKind, site = expression, call = call
             )
             recordExtensionReceiverIfAny(call, expression, out)
         }
@@ -808,11 +805,7 @@ private fun KaSession.handleCallLike(
             if (shouldRecordResolvedUsage(sym, accessKind)) {
                 val ptr: KaSymbolPointer<KaVariableSymbol> = sym.createPointer()
                 out += ResolvedUsage(
-                    symbol = sym,
-                    pointer = ptr,
-                    usageKind = accessKind,
-                    site = expression,
-                    call = call
+                    symbol = sym, pointer = ptr, usageKind = accessKind, site = expression, call = call
                 )
                 recordExtensionReceiverIfAny(call, expression, out)
             }
@@ -834,11 +827,8 @@ private fun KaSession.handleCallLike(
  * appended to [out] with the original PSI site so downstream logic can build enriched slices.
  */
 private fun KaSession.resolveReferenceReadWrite(
-    expr: KtReferenceExpression,
-    out: MutableList<ResolvedUsage>,
-    preferWrite: Boolean
-) {
-    // Resolve K2 references
+    expr: KtReferenceExpression, out: MutableList<ResolvedUsage>, preferWrite: Boolean
+) { // Resolve K2 references
     val k2Refs: Array<PsiReference> = expr.references
     val syms: List<KaSymbol> = buildList {
         for (psiRef: PsiReference in k2Refs) {
@@ -857,8 +847,7 @@ private fun KaSession.resolveReferenceReadWrite(
             else -> UsageKind.PROPERTY_ACCESS_GET
         }
         if (!shouldRecordResolvedUsage(sym, usage)) continue
-        val ptr: KaSymbolPointer<KaSymbol> = sym.createPointer()
-        // We store both the resolved symbol and the PSI site for later context reconstruction
+        val ptr: KaSymbolPointer<KaSymbol> = sym.createPointer() // We store both the resolved symbol and the PSI site for later context reconstruction
         out += ResolvedUsage(symbol = sym, pointer = ptr, usageKind = usage, site = expr)
     }
 }
@@ -869,17 +858,12 @@ private fun KaSession.resolveReferenceReadWrite(
  * callable involvement (e.g. annotations, property types, super types).
  */
 private fun KaSession.resolveTypeReference(
-    typeRef: KtTypeReference,
-    out: MutableList<ResolvedUsage>
-) {
-    // Use typeProvider from the session
+    typeRef: KtTypeReference, out: MutableList<ResolvedUsage>
+) { // Use typeProvider from the session
     val type: KaType = typeRef.type
     val classSymbol: KaClassSymbol = (type as? KaClassType)?.symbol as? KaClassSymbol ?: return
     out += ResolvedUsage(
-        symbol = classSymbol,
-        pointer = classSymbol.createPointer(),
-        usageKind = UsageKind.TYPE_REFERENCE,
-        site = typeRef
+        symbol = classSymbol, pointer = classSymbol.createPointer(), usageKind = UsageKind.TYPE_REFERENCE, site = typeRef
     )
 }
 
@@ -889,26 +873,20 @@ private fun KaSession.resolveTypeReference(
  * record the primary constructor usage to capture call relationships.
  */
 private fun KaSession.resolveSuperTypeEntry(
-    entry: KtSuperTypeListEntry,
-    out: MutableList<ResolvedUsage>
+    entry: KtSuperTypeListEntry, out: MutableList<ResolvedUsage>
 ) {
-    val typeRef: KtTypeReference = entry.typeReference ?: return
-    // Record the super type classifier
+    val typeRef: KtTypeReference = entry.typeReference ?: return // Record the super type classifier
     resolveTypeReference(typeRef, out)
 
     // If this is a super type call (constructor call), try to record constructor usage
     if (entry is KtSuperTypeCallEntry) {
         val type: KaType = typeRef.type
-        val classSymbol: KaClassSymbol = (type as? KaClassType)?.symbol as? KaClassSymbol ?: return
-        // Heuristic: if there's a super constructor call syntax, record a constructor call usage
-        // (Picking the primary constructor is acceptable here; refine by parameter count if needed)
+        val classSymbol: KaClassSymbol = (type as? KaClassType)?.symbol as? KaClassSymbol
+            ?: return // Heuristic: if there's a super constructor call syntax, record a constructor call usage // (Picking the primary constructor is acceptable here; refine by parameter count if needed)
         val ctorSym: KaConstructorSymbol? = classSymbol.memberScope.constructors.firstOrNull()
         if (ctorSym != null) {
             out += ResolvedUsage(
-                symbol = ctorSym,
-                pointer = ctorSym.createPointer(),
-                usageKind = UsageKind.CONSTRUCTOR_CALL,
-                site = entry
+                symbol = ctorSym, pointer = ctorSym.createPointer(), usageKind = UsageKind.CONSTRUCTOR_CALL, site = entry
             )
         }
     }
@@ -920,8 +898,7 @@ private fun KaSession.resolveSuperTypeEntry(
  * compiler level—constructor invocation with potential arguments.
  */
 private fun KaSession.resolveAnnotation(
-    annotationEntry: KtAnnotationEntry,
-    out: MutableList<ResolvedUsage>
+    annotationEntry: KtAnnotationEntry, out: MutableList<ResolvedUsage>
 ) {
     val typeRef: KtTypeReference = annotationEntry.typeReference ?: return
     val type: KaType = typeRef.type
@@ -929,10 +906,7 @@ private fun KaSession.resolveAnnotation(
 
     // Record the annotation class as a type reference
     out += ResolvedUsage(
-        symbol = classSymbol,
-        pointer = classSymbol.createPointer(),
-        usageKind = UsageKind.TYPE_REFERENCE,
-        site = typeRef
+        symbol = classSymbol, pointer = classSymbol.createPointer(), usageKind = UsageKind.TYPE_REFERENCE, site = typeRef
     )
 
     // If it has arguments, it effectively calls a constructor
@@ -940,10 +914,7 @@ private fun KaSession.resolveAnnotation(
         val ctor: KaConstructorSymbol? = classSymbol.memberScope.constructors.firstOrNull()
         if (ctor != null) {
             out += ResolvedUsage(
-                symbol = ctor,
-                pointer = ctor.createPointer(),
-                usageKind = UsageKind.CONSTRUCTOR_CALL,
-                site = annotationEntry
+                symbol = ctor, pointer = ctor.createPointer(), usageKind = UsageKind.CONSTRUCTOR_CALL, site = annotationEntry
             )
         }
     }
@@ -956,9 +927,7 @@ private fun KaSession.resolveAnnotation(
  * regular call.
  */
 private fun KaSession.recordExtensionReceiverIfAny(
-    call: KaCall,
-    site: PsiElement,
-    out: MutableList<ResolvedUsage>
+    call: KaCall, site: PsiElement, out: MutableList<ResolvedUsage>
 ) {
     val par: KaPartiallyAppliedSymbol<KaCallableSymbol, KaCallableSignature<KaCallableSymbol>> = when (call) {
         is KaFunctionCall<*> -> call.partiallyAppliedSymbol
@@ -996,14 +965,9 @@ private fun KaSession.recordExtensionReceiverIfAny(
             }
             null
         }
-    } ?: return
-    // Treat extension receivers as separate usages so downstream consumers understand the symbol is being used as an extension
+    } ?: return // Treat extension receivers as separate usages so downstream consumers understand the symbol is being used as an extension
     out += ResolvedUsage(
-        symbol = sym,
-        pointer = sym.createPointer(),
-        usageKind = UsageKind.EXTENSION_RECEIVER,
-        site = site,
-        call = call
+        symbol = sym, pointer = sym.createPointer(), usageKind = UsageKind.EXTENSION_RECEIVER, site = site, call = call
     )
 }
 
@@ -1012,7 +976,9 @@ private fun KaSession.recordExtensionReceiverIfAny(
  * Currently skips PROPERTY_ACCESS_GET references to Kotlin parameters or properties, which
  * otherwise overwhelm the output with boilerplate like method parameters and LOG fields.
  */
-private fun shouldRecordResolvedUsage(symbol: KaSymbol, usageKind: UsageKind): Boolean {
+private fun shouldRecordResolvedUsage(
+    symbol: KaSymbol, usageKind: UsageKind
+): Boolean {
     if (usageKind != UsageKind.PROPERTY_ACCESS_GET) {
         return true
     }
