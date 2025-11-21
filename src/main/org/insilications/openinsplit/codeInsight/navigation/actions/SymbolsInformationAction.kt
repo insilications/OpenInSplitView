@@ -18,14 +18,36 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.platform.ide.progress.runWithModalProgressBlocking
 import com.intellij.psi.*
+import com.intellij.psi.SmartPointerManager
+import com.intellij.psi.SmartPsiElementPointer
+import com.intellij.psi.util.PsiUtil
 import org.insilications.openinsplit.debug
+import org.jetbrains.kotlin.analysis.api.KaSession
+import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.idea.base.psi.kotlinFqName
 import org.jetbrains.kotlin.idea.refactoring.project
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.tail
 import org.jetbrains.kotlin.psi.KtDeclaration
+import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.jetbrains.kotlin.psi.KtFile
+import org.jetbrains.kotlin.psi.KtFunction
+import org.jetbrains.kotlin.psi.KtElement
+import org.jetbrains.kotlin.psi.KtTypeReference
 import org.jetbrains.kotlin.psi.psiUtil.getParentOfType
+import org.jetbrains.uast.UAnnotation
+import org.jetbrains.uast.UCallExpression
+import org.jetbrains.uast.UClass
+import org.jetbrains.uast.UClassLiteralExpression
+import org.jetbrains.uast.ULambdaExpression
+import org.jetbrains.uast.UMethod
+import org.jetbrains.uast.USimpleNameReferenceExpression
+import org.jetbrains.uast.USuperExpression
+import org.jetbrains.uast.UTypeReferenceExpression
+import org.jetbrains.uast.UastCallKind
+import org.jetbrains.uast.UElement
+import org.jetbrains.uast.toUElementOfType
+import org.jetbrains.uast.visitor.AbstractUastVisitor
 
 class SymbolsInformationAction : DumbAwareAction() {
     companion object {
@@ -98,6 +120,11 @@ enum class UsageKind {
     EXTENSION_RECEIVER
 }
 
+enum class SymbolKind {
+    FUNCTION,
+    CLASS
+}
+
 data class CaretLocation(
     val offset: Int, val line: Int, val column: Int
 )
@@ -113,9 +140,28 @@ data class DeclarationSlice(
     val sourceCode: String
 )
 
-data class TargetSymbolContext(
-    val packageDirective: String?, val importsList: List<String>, val declarationSlice: DeclarationSlice
+data class ReferencedDeclaration(
+    val declarationSlice: DeclarationSlice,
+    val usageKinds: Set<UsageKind>
 )
+
+data class TargetSymbolContext(
+    val packageDirective: String?,
+    val importsList: List<String>,
+    val declarationSlice: DeclarationSlice,
+    val symbolKind: SymbolKind,
+    val referencedTypes: List<ReferencedDeclaration>,
+    val referencedFunctions: List<ReferencedDeclaration>,
+    val referenceLimitReached: Boolean
+)
+
+private data class ReferencedCollections(
+    val typeSlices: List<ReferencedDeclaration>,
+    val functionSlices: List<ReferencedDeclaration>,
+    val limitReached: Boolean
+)
+
+private val SYMBOL_USAGE_LOG: Logger = Logger.getInstance("org.insilications.openinsplit.SymbolUsageCollector")
 
 /* ============================= CONTEXT BUILDERS ============================= */
 
@@ -126,11 +172,230 @@ private fun buildSymbolContext(
     val packageDirective: String? = getPackageDirective(targetPsiFile)
     val importsList: List<String> = getImportsList(targetPsiFile)
 
+    val symbolKind: SymbolKind = targetSymbol.detectSymbolKind() ?: run {
+        LOG.warn("Unsupported target symbol: ${targetSymbol::class.qualifiedName}")
+        return
+    }
+
     val targetSlice: DeclarationSlice = targetSymbol.toDeclarationSlice(project)
+    val referencedCollections: ReferencedCollections = collectReferencedDeclarations(project, targetSymbol, symbolKind, maxRefs)
     val targetContext = TargetSymbolContext(
-        packageDirective, importsList, declarationSlice = targetSlice
+        packageDirective = packageDirective,
+        importsList = importsList,
+        declarationSlice = targetSlice,
+        symbolKind = symbolKind,
+        referencedTypes = referencedCollections.typeSlices,
+        referencedFunctions = referencedCollections.functionSlices,
+        referenceLimitReached = referencedCollections.limitReached
     )
     LOG.info(targetContext.toLogString())
+}
+
+private fun PsiElement.detectSymbolKind(): SymbolKind? {
+    val (sourceDeclaration) = preferSourceDeclaration()
+    return when (sourceDeclaration) {
+        is KtFunction -> SymbolKind.FUNCTION
+        is PsiMethod -> SymbolKind.FUNCTION
+        is PsiFunctionalExpression -> SymbolKind.FUNCTION
+        is PsiLambdaExpression -> SymbolKind.FUNCTION
+        is KtClassOrObject -> SymbolKind.CLASS
+        is PsiClass -> SymbolKind.CLASS
+        else -> null
+    }
+}
+
+private fun collectReferencedDeclarations(
+    project: Project,
+    targetSymbol: PsiElement,
+    symbolKind: SymbolKind,
+    maxRefs: Int
+): ReferencedCollections {
+    val uRoot: UElement = targetSymbol.toUDeclarationRoot(symbolKind)
+        ?: targetSymbol.navigationElement?.toUDeclarationRoot(symbolKind)
+        ?: return ReferencedCollections(emptyList(), emptyList(), limitReached = false)
+
+    val collector = SymbolUsageCollector(project, targetSymbol, maxRefs)
+    uRoot.accept(collector)
+    return collector.buildResult(project)
+}
+
+private fun PsiElement.toUDeclarationRoot(symbolKind: SymbolKind): UElement? = when (symbolKind) {
+    SymbolKind.FUNCTION -> this.toUElementOfType<UMethod>()
+        ?: this.toUElementOfType<ULambdaExpression>()
+    SymbolKind.CLASS -> this.toUElementOfType<UClass>()
+}
+
+private class SymbolUsageCollector(
+    private val project: Project,
+    targetPsi: PsiElement,
+    private val maxRefs: Int
+) : AbstractUastVisitor() {
+
+    private data class CollectedUsage(
+        val pointer: SmartPsiElementPointer<PsiElement>,
+        val usageKinds: MutableSet<UsageKind>
+    )
+
+    private val pointerManager: SmartPointerManager = SmartPointerManager.getInstance(project)
+    private val targetDeclaration: PsiElement = targetPsi.preferSourceDeclaration().first
+    private val typeUsages: LinkedHashMap<String, CollectedUsage> = LinkedHashMap()
+    private val functionUsages: LinkedHashMap<String, CollectedUsage> = LinkedHashMap()
+    private var hasReachedLimit: Boolean = false
+
+    fun buildResult(project: Project): ReferencedCollections {
+        val typeSlices: List<ReferencedDeclaration> = typeUsages.values.mapNotNull { it.toReferencedDeclaration(project) }
+        val functionSlices: List<ReferencedDeclaration> = functionUsages.values.mapNotNull { it.toReferencedDeclaration(project) }
+        return ReferencedCollections(typeSlices, functionSlices, hasReachedLimit)
+    }
+
+    private fun CollectedUsage.toReferencedDeclaration(project: Project): ReferencedDeclaration? {
+        val resolved: PsiElement = pointer.element ?: return null
+        return ReferencedDeclaration(
+            declarationSlice = resolved.toDeclarationSlice(project),
+            usageKinds = usageKinds.toSet()
+        )
+    }
+
+    private fun shouldStopTraversal(): Boolean = hasReachedLimit
+
+    override fun visitElement(node: UElement): Boolean {
+        if (shouldStopTraversal()) return false
+        return super.visitElement(node)
+    }
+
+    override fun visitTypeReferenceExpression(node: UTypeReferenceExpression): Boolean {
+        if (shouldStopTraversal()) return true
+        val resolved: PsiElement? = node.resolvePsiClass()
+            ?: node.sourcePsi?.let { resolveClassifierWithAnalysis(it) }
+        recordType(resolved, UsageKind.TYPE_REFERENCE)
+        return super.visitTypeReferenceExpression(node)
+    }
+
+    override fun visitClassLiteralExpression(node: UClassLiteralExpression): Boolean {
+        if (shouldStopTraversal()) return true
+        val resolved: PsiElement? = node.type?.let { PsiUtil.resolveClassInType(it) }
+            ?: node.sourcePsi?.let { resolveClassifierWithAnalysis(it) }
+        recordType(resolved, UsageKind.TYPE_REFERENCE)
+        return super.visitClassLiteralExpression(node)
+    }
+
+    override fun visitSuperExpression(node: USuperExpression): Boolean {
+        if (shouldStopTraversal()) return true
+        val resolved: PsiElement? = node.resolve() ?: node.sourcePsi?.let { resolveClassifierWithAnalysis(it) }
+        recordType(resolved, UsageKind.SUPER_TYPE)
+        return super.visitSuperExpression(node)
+    }
+
+    override fun visitAnnotation(node: UAnnotation): Boolean {
+        if (shouldStopTraversal()) return true
+        val resolved: PsiElement? = node.resolve() ?: node.javaPsi?.nameReferenceElement?.resolve()
+        recordType(resolved, UsageKind.ANNOTATION)
+        return super.visitAnnotation(node)
+    }
+
+    override fun visitCallExpression(node: UCallExpression): Boolean {
+        if (shouldStopTraversal()) return true
+        val usageKind: UsageKind = if (node.kind == UastCallKind.CONSTRUCTOR_CALL) {
+            UsageKind.CONSTRUCTOR_CALL
+        } else {
+            UsageKind.CALL
+        }
+
+        val resolvedCallable: PsiElement? = node.resolve()
+        recordFunction(resolvedCallable, usageKind)
+
+        if (node.kind == UastCallKind.CONSTRUCTOR_CALL) {
+            val constructorOwner: PsiElement? = (resolvedCallable as? PsiMethod)?.containingClass
+                ?: node.classReference?.resolve()
+                ?: node.sourcePsi?.let { resolveClassifierWithAnalysis(it) }
+            recordType(constructorOwner, UsageKind.CONSTRUCTOR_CALL)
+        }
+
+        return super.visitCallExpression(node)
+    }
+
+    override fun visitSimpleNameReferenceExpression(node: USimpleNameReferenceExpression): Boolean {
+        if (shouldStopTraversal()) return true
+        if (node.uastParent is UCallExpression) {
+            return super.visitSimpleNameReferenceExpression(node)
+        }
+        val resolved: PsiElement? = node.resolve()
+        when (resolved) {
+            is PsiMethod -> recordFunction(resolved, UsageKind.CALL)
+            is PsiClass -> recordType(resolved, UsageKind.TYPE_REFERENCE)
+        }
+        return super.visitSimpleNameReferenceExpression(node)
+    }
+
+    private fun recordType(element: PsiElement?, usageKind: UsageKind) {
+        record(element, usageKind, typeUsages)
+    }
+
+    private fun recordFunction(element: PsiElement?, usageKind: UsageKind) {
+        record(element, usageKind, functionUsages)
+    }
+
+    private fun record(
+        element: PsiElement?,
+        usageKind: UsageKind,
+        bucket: LinkedHashMap<String, CollectedUsage>
+    ) {
+        if (element == null || hasReachedLimit) return
+        val normalized: PsiElement = element.preferSourceDeclaration().first
+        if (normalized.isSameDeclarationAs(targetDeclaration)) return
+        val key: String = normalized.computeStableStorageKey() ?: return
+        val existing: CollectedUsage? = bucket[key]
+        if (existing != null) {
+            existing.usageKinds.add(usageKind)
+            return
+        }
+        if (typeUsages.size + functionUsages.size >= maxRefs) {
+            hasReachedLimit = true
+            return
+        }
+        bucket[key] = CollectedUsage(
+            pointer = pointerManager.createSmartPsiElementPointer(normalized),
+            usageKinds = linkedSetOf(usageKind)
+        )
+    }
+}
+
+private fun UTypeReferenceExpression.resolvePsiClass(): PsiElement? = type?.let { PsiUtil.resolveClassInType(it) }
+
+private fun PsiElement.computeStableStorageKey(): String? {
+    val psiFile: PsiFile? = containingFile
+    val virtualFilePath: String? = psiFile?.virtualFile?.path
+    val offset: Int? = textRange?.startOffset?.takeIf { it >= 0 }
+        ?: textOffset.takeIf { it >= 0 }
+    return when {
+        virtualFilePath != null && offset != null -> "$virtualFilePath@$offset"
+        virtualFilePath != null -> "$virtualFilePath@${hashCode()}"
+        this is KtDeclaration && kotlinFqName != null -> kotlinFqName?.asString()
+        else -> hashCode().toString()
+    }
+}
+
+private fun PsiElement.isSameDeclarationAs(other: PsiElement): Boolean {
+    if (this == other) return true
+    val thisNav: PsiElement = navigationElement ?: this
+    val otherNav: PsiElement = other.navigationElement ?: other
+    return thisNav == other || this == otherNav || thisNav == otherNav
+}
+
+private fun resolveClassifierWithAnalysis(element: PsiElement): PsiElement? {
+    val typeReference: KtTypeReference = element as? KtTypeReference ?: return null
+    return typeReference.runAnalysisSafely {
+        typeReference.type.expandedSymbol?.psi
+    }
+}
+
+private inline fun <T> KtElement.runAnalysisSafely(
+    crossinline block: KaSession.() -> T?
+): T? = try {
+    analyze(this) { block() }
+} catch (throwable: Throwable) {
+    SYMBOL_USAGE_LOG.debug("Analysis failed for ${this::class.qualifiedName}", throwable)
+    null
 }
 
 private inline fun PsiElement.preferSourceDeclaration(): Pair<PsiElement, PsiFile> {
@@ -291,6 +556,7 @@ private fun TargetSymbolContext.toLogString(): String {
     sb.appendLine("Target presentableText: ${declarationSlice.presentableText ?: "<anonymous>"}")
     sb.appendLine("Target ktNamedDeclName: ${declarationSlice.name ?: "<anonymous>"}")
     sb.appendLine("Target caret: offset=${declarationSlice.caretLocation.offset}, line=${declarationSlice.caretLocation.line}, column=${declarationSlice.caretLocation.column}")
+    sb.appendLine("Symbol Kind: $symbolKind")
     sb.appendLine("Package: ${packageDirective ?: "<none>"}")
     if (importsList.isNotEmpty()) {
         sb.appendLine("Imports:")
@@ -298,10 +564,41 @@ private fun TargetSymbolContext.toLogString(): String {
     } else {
         sb.appendLine("Imports: <none>")
     }
+    appendReferencedSection(sb, "Referenced Types", referencedTypes)
+    appendReferencedSection(sb, "Referenced Functions", referencedFunctions)
+    if (referenceLimitReached) {
+        sb.appendLine("Reference limit reached; output truncated.")
+    }
     sb.appendLine()
     sb.appendLine("Target Declaration Source Code:")
     sb.appendLine(declarationSlice.sourceCode)
 
     sb.appendLine("==============================================================")
     return sb.toString()
+}
+
+private fun TargetSymbolContext.appendReferencedSection(
+    sb: StringBuilder,
+    label: String,
+    references: List<ReferencedDeclaration>,
+    maxEntries: Int = 25
+) {
+    if (references.isEmpty()) {
+        sb.appendLine("$label: <none>")
+        return
+    }
+
+    sb.appendLine("$label (${references.size}):")
+    references.take(maxEntries).forEach { ref ->
+        val usageSummary: String = ref.usageKinds.takeIf { it.isNotEmpty() }
+            ?.joinToString { usage -> usage.toClassificationString() } ?: "unknown"
+        val displayName: String = ref.declarationSlice.kotlinFqNameString
+            ?: ref.declarationSlice.presentableText
+            ?: ref.declarationSlice.name
+            ?: "<anonymous>"
+        sb.appendLine("  - $displayName [$usageSummary] @ ${ref.declarationSlice.psiFilePath}")
+    }
+    if (references.size > maxEntries) {
+        sb.appendLine("  ... (${references.size - maxEntries} more)")
+    }
 }
