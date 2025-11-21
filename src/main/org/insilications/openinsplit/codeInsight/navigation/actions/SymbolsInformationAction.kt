@@ -336,10 +336,10 @@ private fun buildSymbolContext(
 //}
 
 /** Locates the KtDeclaration PSI for this KaSymbol, preferring source declarations over compiled ones.
- * Returns null if no suitable KtDeclaration PSI can be found.
+ * Returns a null pair if no suitable KtDeclaration PSI can be found.
  */
-private inline fun KaSymbol.locateSourceDeclarationPsi(): PsiElement? {
-    val declarationPsi: PsiElement = locateDeclarationPsi() ?: return null
+private inline fun KaSymbol.locateSourceDeclarationPsi(): Pair<PsiElement?, PsiFile?> {
+    val declarationPsi: PsiElement = locateDeclarationPsi() ?: return null to null
     return declarationPsi.preferSourceDeclaration()
 }
 
