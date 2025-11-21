@@ -27,8 +27,6 @@ import org.jetbrains.kotlin.psi.KtDeclaration
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.psiUtil.getParentOfType
 
-// import org.jetbrains.uast.visitor.AbstractUastVisitor
-
 class SymbolsInformationAction : DumbAwareAction() {
     companion object {
         private val LOG: Logger = Logger.getInstance("org.insilications.openinsplit")
@@ -214,22 +212,6 @@ private fun PsiElement.toDeclarationSlice(
         kotlinFqNameString = kotlinFqName?.asString(),
         sourceCode = sourceDeclaration.text,
     )
-}
-
-/**
- * Returns true if this declaration sits inside another declaration that is already represented in the referenced-symbol
- * payload. The traversal intentionally uses raw PSI parents (instead of KtPsiUtil utilities) because we might be looking
- * at navigation PSI sourced from compiled code, where the tree can swap between light and physical elements.
- */
-private fun KtDeclaration.hasAncestorDeclarationIn(candidates: Set<KtDeclaration>): Boolean {
-    var ancestor: PsiElement? = parent
-    while (ancestor != null) {
-        if (ancestor is KtDeclaration && ancestor in candidates) {
-            return true
-        }
-        ancestor = ancestor.parent
-    }
-    return false
 }
 
 /**
