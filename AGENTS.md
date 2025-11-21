@@ -1,15 +1,22 @@
 <repository_guidelines>
-# Project Structure & Module Organization
+# Project Structure
 - Project Source Code: `src/main/`
-- The IntelliJ Platform API and the Kotlin Analysis API source codes currently in use are located in the `intellij-community/` and `kotlin-src/` folders. Use them to expand your knowledge of the APIs
 - Documentation: `README.md`
 - Changelog: `CHANGELOG.md`
+
+# API Reference Sources
+For IntelliJ Platform and Kotlin Analysis APIs: Always verify behavior against the actual source code in `intellij-community/` and `kotlin-src/` rather than making assumptions, especially when:
+- API behavior or parameters are unclear
+- You need implementation examples or usage patterns
+- Verifying deprecated methods, best practices, or undocumented behaviors
+
+These sources contain the ground truth—treat them as the definitive reference.
 
 # Build & Plugin Configuration
 - Build config: `build.gradle.kts`, `settings.gradle.kts`, `gradle.properties`
 - Specify dependencies in `gradle/libs.versions.toml` (Gradle Version Catalog)
 - Main Plugin Config: `src/main/resources/META-INF/plugin.xml` (actions, dependencies, etc)
-  - Optional Plugin Dependencies: ﻿`src/main/resources/META-INF/kotlin-bridge.xml`, `src/main/resources/META-INF/java-bridge.xml`
+  - Optional Plugin Dependencies: `src/main/resources/META-INF/kotlin-bridge.xml`, `src/main/resources/META-INF/java-bridge.xml`
 
 # Build and Development Commands
 - Run `./gradlew buildPlugin` to build the plugin and run checks.
