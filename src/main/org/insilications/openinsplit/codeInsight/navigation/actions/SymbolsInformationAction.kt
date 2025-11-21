@@ -142,15 +142,14 @@ data class CaretLocation(
 )
 
 data class DeclarationSlice(
-    val sourceCode: String,
     val psiFilePath: String,
-    val caret: CaretLocation,
-    val qualifiedName: String?,
+    val caretLocation: CaretLocation,
     val presentableText: String?,
     val name: String?,
     val ktFqNameRelativeString: String?,
-//    val symbolOriginString: String,
-    val fqNameTypeString: String
+    val fqNameTypeString: String,
+    val kotlinFqNameString: String?,
+    val sourceCode: String
 )
 
 data class TargetSymbolContext(
@@ -485,25 +484,22 @@ private fun PsiElement.toDeclarationSlice(
     val psiFilePath: String = psiFile.virtualFile.path
     val caretLocation: CaretLocation = resolveCaretLocation(project, psiFile as PsiFile, sourceDeclaration.textOffset)
     val kotlinFqName: FqName? = sourceDeclaration.kotlinFqName
-    val kotlinFqNameString: String? = kotlinFqName?.asString()
-    val packageName = (containingFile as? PsiClassOwner)?.packageName ?: "PORRA"
-    val packageFqName = FqName(packageName) // psiFile.getFqNameByDirectory()
-    val ktFqNameRelativeString: String? = computeRelativeFqName(kotlinFqName, packageFqName)
+    val packageName: String = (containingFile as? PsiClassOwner)?.packageName ?: ""
+    val ktFqNameRelativeString: String? = computeRelativeFqName(kotlinFqName, FqName(packageName))
     val presentableText: String? = sourceDeclaration.computePresentableText()
     val name: String? = sourceDeclaration.computeName()
+    val fqNameTypeString: String = sourceDeclaration::class.qualifiedName ?: sourceDeclaration.javaClass.name
 
-    val fqNameTypeString: String = sourceDeclaration::class.qualifiedName
-        ?: sourceDeclaration.javaClass.name // Pack every attribute that downstream tooling may need to reconstruct a declarative slice
+    // Pack every attribute that downstream tooling may need to reconstruct a declarative slice
     return DeclarationSlice(
+        psiFilePath,
+        caretLocation,
+        presentableText,
+        name,
+        ktFqNameRelativeString,
+        fqNameTypeString,
+        kotlinFqNameString = kotlinFqName?.asString(),
         sourceCode = sourceDeclaration.text,
-        psiFilePath = psiFilePath,
-        caret = caretLocation,
-        qualifiedName = kotlinFqNameString,
-        presentableText = presentableText,
-        name = name,
-        ktFqNameRelativeString = ktFqNameRelativeString,
-//        symbolOriginString = symbolOriginString,
-        fqNameTypeString = fqNameTypeString
     )
 }
 
@@ -629,14 +625,14 @@ private fun PsiElement.hasAncestorDeclarationIn(candidates: Set<PsiElement>): Bo
 }
 
 /**
- * Computes the relative FqName string of `kqFqName` with respect to the given package `packageFqName` FqName
- * Example: if `kqFqName` is "com.example.MyClass.myMethod" and `packageFqName` is "com.example", the result will be "MyClass.myMethod"
- * If `kqFqName` is null, returns null
+ * Computes the relative `FqName` of `kotlinFqName` with respect to the package `packageFqName`
+ * Example: if `kotlinFqName` is "com.example.MyClass.myMethod" and `packageFqName` is "com.example", then the result will be "MyClass.myMethod"
+ * If `kotlinFqName` is null, returns null
  */
 private inline fun computeRelativeFqName(
-    kqFqName: FqName?, packageFqName: FqName
+    kotlinFqName: FqName?, packageFqName: FqName
 ): String? {
-    return kqFqName?.tail(packageFqName)?.asString()
+    return kotlinFqName?.tail(packageFqName)?.asString()
 }
 
 private inline fun KtDeclaration.computePresentableText(): String? {
@@ -691,12 +687,12 @@ private fun TargetSymbolContext.toLogString(): String {
     val sb = StringBuilder()
     sb.appendLine()
     sb.appendLine("============ Target PSI Type: ${declarationSlice.fqNameTypeString} ============")
-    sb.appendLine("Target Qualified Name: ${declarationSlice.qualifiedName ?: "<anonymous>"}")
+    sb.appendLine("Target Qualified Name: ${declarationSlice.kotlinFqNameString ?: "<anonymous>"}")
     sb.appendLine("Target ktFqNameRelativeString: ${declarationSlice.ktFqNameRelativeString ?: "<anonymous>"}")
     sb.appendLine("Target ktFilePath: ${declarationSlice.psiFilePath}")
     sb.appendLine("Target presentableText: ${declarationSlice.presentableText ?: "<anonymous>"}")
     sb.appendLine("Target ktNamedDeclName: ${declarationSlice.name ?: "<anonymous>"}")
-    sb.appendLine("Target caret: offset=${declarationSlice.caret.offset}, line=${declarationSlice.caret.line}, column=${declarationSlice.caret.column}")
+    sb.appendLine("Target caret: offset=${declarationSlice.caretLocation.offset}, line=${declarationSlice.caretLocation.line}, column=${declarationSlice.caretLocation.column}")
     sb.appendLine("Package: ${packageDirective ?: "<none>"}")
     if (importsList.isNotEmpty()) {
         sb.appendLine("Imports:")
