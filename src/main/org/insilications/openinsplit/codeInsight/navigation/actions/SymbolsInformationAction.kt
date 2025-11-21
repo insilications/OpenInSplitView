@@ -40,6 +40,8 @@ import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.getParentOfType
 import kotlin.reflect.KCallable
 
+// import org.jetbrains.uast.visitor.AbstractUastVisitor
+
 class SymbolsInformationAction : DumbAwareAction() {
     companion object {
         private val LOG: Logger = Logger.getInstance("org.insilications.openinsplit")
