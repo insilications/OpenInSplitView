@@ -4,14 +4,6 @@
 - Documentation: `README.md`
 - Changelog: `CHANGELOG.md`
 
-# API Reference Sources
-For IntelliJ Platform and Kotlin Analysis APIs: Always verify behavior against the actual source code in `intellij-community/` and `kotlin-src/` rather than making assumptions, especially when:
-- API behavior or parameters are unclear
-- You need implementation examples or usage patterns
-- Verifying deprecated methods, best practices, or undocumented behaviors
-
-These sources contain the ground truth—treat them as the definitive reference.
-
 # Build & Plugin Configuration
 - Build config: `build.gradle.kts`, `settings.gradle.kts`, `gradle.properties`
 - Specify dependencies in `gradle/libs.versions.toml` (Gradle Version Catalog)
