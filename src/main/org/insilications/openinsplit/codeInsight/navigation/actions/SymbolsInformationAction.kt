@@ -18,8 +18,6 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.platform.ide.progress.runWithModalProgressBlocking
 import com.intellij.psi.*
-import com.intellij.psi.SmartPointerManager
-import com.intellij.psi.SmartPsiElementPointer
 import com.intellij.psi.util.PsiUtil
 import org.insilications.openinsplit.debug
 import org.jetbrains.kotlin.analysis.api.KaSession
@@ -28,25 +26,9 @@ import org.jetbrains.kotlin.idea.base.psi.kotlinFqName
 import org.jetbrains.kotlin.idea.refactoring.project
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.tail
-import org.jetbrains.kotlin.psi.KtDeclaration
-import org.jetbrains.kotlin.psi.KtClassOrObject
-import org.jetbrains.kotlin.psi.KtFile
-import org.jetbrains.kotlin.psi.KtFunction
-import org.jetbrains.kotlin.psi.KtElement
-import org.jetbrains.kotlin.psi.KtTypeReference
+import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.getParentOfType
-import org.jetbrains.uast.UAnnotation
-import org.jetbrains.uast.UCallExpression
-import org.jetbrains.uast.UClass
-import org.jetbrains.uast.UClassLiteralExpression
-import org.jetbrains.uast.ULambdaExpression
-import org.jetbrains.uast.UMethod
-import org.jetbrains.uast.USimpleNameReferenceExpression
-import org.jetbrains.uast.USuperExpression
-import org.jetbrains.uast.UTypeReferenceExpression
-import org.jetbrains.uast.UastCallKind
-import org.jetbrains.uast.UElement
-import org.jetbrains.uast.toUElementOfType
+import org.jetbrains.uast.*
 import org.jetbrains.uast.visitor.AbstractUastVisitor
 
 class SymbolsInformationAction : DumbAwareAction() {
@@ -141,8 +123,7 @@ data class DeclarationSlice(
 )
 
 data class ReferencedDeclaration(
-    val declarationSlice: DeclarationSlice,
-    val usageKinds: Set<UsageKind>
+    val declarationSlice: DeclarationSlice, val usageKinds: Set<UsageKind>
 )
 
 data class TargetSymbolContext(
@@ -156,9 +137,7 @@ data class TargetSymbolContext(
 )
 
 private data class ReferencedCollections(
-    val typeSlices: List<ReferencedDeclaration>,
-    val functionSlices: List<ReferencedDeclaration>,
-    val limitReached: Boolean
+    val typeSlices: List<ReferencedDeclaration>, val functionSlices: List<ReferencedDeclaration>, val limitReached: Boolean
 )
 
 private val SYMBOL_USAGE_LOG: Logger = Logger.getInstance("org.insilications.openinsplit.SymbolUsageCollector")
@@ -191,6 +170,8 @@ private fun buildSymbolContext(
     LOG.info(targetContext.toLogString())
 }
 
+// Normalize the caret element into a coarse symbol kind so we know how deep the traversal
+// must go (only the function body vs. the entire class hierarchy of declarations).
 private fun PsiElement.detectSymbolKind(): SymbolKind? {
     val (sourceDeclaration) = preferSourceDeclaration()
     return when (sourceDeclaration) {
@@ -204,36 +185,36 @@ private fun PsiElement.detectSymbolKind(): SymbolKind? {
     }
 }
 
+// Entrypoint for the “semantic slice” aggregation. It converts the declaration into a
+// UAST root (shared model for Kotlin/Java) and feeds it to the usage collector.
 private fun collectReferencedDeclarations(
-    project: Project,
-    targetSymbol: PsiElement,
-    symbolKind: SymbolKind,
-    maxRefs: Int
+    project: Project, targetSymbol: PsiElement, symbolKind: SymbolKind, maxRefs: Int
 ): ReferencedCollections {
-    val uRoot: UElement = targetSymbol.toUDeclarationRoot(symbolKind)
-        ?: targetSymbol.navigationElement?.toUDeclarationRoot(symbolKind)
-        ?: return ReferencedCollections(emptyList(), emptyList(), limitReached = false)
+    val uRoot: UElement = targetSymbol.toUDeclarationRoot(symbolKind) ?: targetSymbol.navigationElement?.toUDeclarationRoot(symbolKind)
+    ?: return ReferencedCollections(emptyList(), emptyList(), limitReached = false)
 
     val collector = SymbolUsageCollector(project, targetSymbol, maxRefs)
     uRoot.accept(collector)
     return collector.buildResult(project)
 }
 
+// Different languages surface different concrete PSI classes; we rely on UAST to provide
+// a single node type per concept (UMethod/UClass) and gracefully fall back to lambdas.
 private fun PsiElement.toUDeclarationRoot(symbolKind: SymbolKind): UElement? = when (symbolKind) {
-    SymbolKind.FUNCTION -> this.toUElementOfType<UMethod>()
-        ?: this.toUElementOfType<ULambdaExpression>()
+    SymbolKind.FUNCTION -> this.toUElementOfType<UMethod>() ?: this.toUElementOfType<ULambdaExpression>()
     SymbolKind.CLASS -> this.toUElementOfType<UClass>()
 }
 
+// Walks the target declaration once, recording all referenced types/functions while keeping
+// the output deterministic (LinkedHashMap) and bounded (maxRefs guard).
 private class SymbolUsageCollector(
-    private val project: Project,
-    targetPsi: PsiElement,
-    private val maxRefs: Int
+    private val project: Project, targetPsi: PsiElement, private val maxRefs: Int
 ) : AbstractUastVisitor() {
 
+    // We store smart pointers so the underlying PSI can be re-read after the traversal without
+    // holding onto invalid elements when the file changes.
     private data class CollectedUsage(
-        val pointer: SmartPsiElementPointer<PsiElement>,
-        val usageKinds: MutableSet<UsageKind>
+        val pointer: SmartPsiElementPointer<PsiElement>, val usageKinds: MutableSet<UsageKind>
     )
 
     private val pointerManager: SmartPointerManager = SmartPointerManager.getInstance(project)
@@ -248,11 +229,11 @@ private class SymbolUsageCollector(
         return ReferencedCollections(typeSlices, functionSlices, hasReachedLimit)
     }
 
+    // Re-hydrate a `CollectedUsage` into the serializable payload, skipping dead pointers.
     private fun CollectedUsage.toReferencedDeclaration(project: Project): ReferencedDeclaration? {
         val resolved: PsiElement = pointer.element ?: return null
         return ReferencedDeclaration(
-            declarationSlice = resolved.toDeclarationSlice(project),
-            usageKinds = usageKinds.toSet()
+            declarationSlice = resolved.toDeclarationSlice(project), usageKinds = usageKinds.toSet()
         )
     }
 
@@ -265,16 +246,14 @@ private class SymbolUsageCollector(
 
     override fun visitTypeReferenceExpression(node: UTypeReferenceExpression): Boolean {
         if (shouldStopTraversal()) return true
-        val resolved: PsiElement? = node.resolvePsiClass()
-            ?: node.sourcePsi?.let { resolveClassifierWithAnalysis(it) }
+        val resolved: PsiElement? = node.resolvePsiClass() ?: node.sourcePsi?.let { resolveClassifierWithAnalysis(it) }
         recordType(resolved, UsageKind.TYPE_REFERENCE)
         return super.visitTypeReferenceExpression(node)
     }
 
     override fun visitClassLiteralExpression(node: UClassLiteralExpression): Boolean {
         if (shouldStopTraversal()) return true
-        val resolved: PsiElement? = node.type?.let { PsiUtil.resolveClassInType(it) }
-            ?: node.sourcePsi?.let { resolveClassifierWithAnalysis(it) }
+        val resolved: PsiElement? = node.type?.let { PsiUtil.resolveClassInType(it) } ?: node.sourcePsi?.let { resolveClassifierWithAnalysis(it) }
         recordType(resolved, UsageKind.TYPE_REFERENCE)
         return super.visitClassLiteralExpression(node)
     }
@@ -305,9 +284,8 @@ private class SymbolUsageCollector(
         recordFunction(resolvedCallable, usageKind)
 
         if (node.kind == UastCallKind.CONSTRUCTOR_CALL) {
-            val constructorOwner: PsiElement? = (resolvedCallable as? PsiMethod)?.containingClass
-                ?: node.classReference?.resolve()
-                ?: node.sourcePsi?.let { resolveClassifierWithAnalysis(it) }
+            val constructorOwner: PsiElement? =
+                (resolvedCallable as? PsiMethod)?.containingClass ?: node.classReference?.resolve() ?: node.sourcePsi?.let { resolveClassifierWithAnalysis(it) }
             recordType(constructorOwner, UsageKind.CONSTRUCTOR_CALL)
         }
 
@@ -335,10 +313,10 @@ private class SymbolUsageCollector(
         record(element, usageKind, functionUsages)
     }
 
+    // Shared bookkeeping for both type/function usage buckets. We dedupe using a stable key,
+    // short-circuit when the limit is hit, and avoid reporting the root declaration itself.
     private fun record(
-        element: PsiElement?,
-        usageKind: UsageKind,
-        bucket: LinkedHashMap<String, CollectedUsage>
+        element: PsiElement?, usageKind: UsageKind, bucket: LinkedHashMap<String, CollectedUsage>
     ) {
         if (element == null || hasReachedLimit) return
         val normalized: PsiElement = element.preferSourceDeclaration().first
@@ -354,19 +332,18 @@ private class SymbolUsageCollector(
             return
         }
         bucket[key] = CollectedUsage(
-            pointer = pointerManager.createSmartPsiElementPointer(normalized),
-            usageKinds = linkedSetOf(usageKind)
+            pointer = pointerManager.createSmartPsiElementPointer(normalized), usageKinds = linkedSetOf(usageKind)
         )
     }
 }
 
+// Helper extracted for readability: UAST type reference -> PsiClass when possible.
 private fun UTypeReferenceExpression.resolvePsiClass(): PsiElement? = type?.let { PsiUtil.resolveClassInType(it) }
 
 private fun PsiElement.computeStableStorageKey(): String? {
     val psiFile: PsiFile? = containingFile
     val virtualFilePath: String? = psiFile?.virtualFile?.path
-    val offset: Int? = textRange?.startOffset?.takeIf { it >= 0 }
-        ?: textOffset.takeIf { it >= 0 }
+    val offset: Int? = textRange?.startOffset?.takeIf { it >= 0 } ?: textOffset.takeIf { it >= 0 }
     return when {
         virtualFilePath != null && offset != null -> "$virtualFilePath@$offset"
         virtualFilePath != null -> "$virtualFilePath@${hashCode()}"
@@ -389,6 +366,7 @@ private fun resolveClassifierWithAnalysis(element: PsiElement): PsiElement? {
     }
 }
 
+// Wrapper that shields us from Analysis API exceptions (e.g., FIR session invalidation).
 private inline fun <T> KtElement.runAnalysisSafely(
     crossinline block: KaSession.() -> T?
 ): T? = try {
@@ -404,12 +382,26 @@ private inline fun PsiElement.preferSourceDeclaration(): Pair<PsiElement, PsiFil
         else -> navigationElement.getParentOfType(strict = false)
     }
 
+    LOG.info("preferSourceDeclaration - this: ${this.kotlinFqName}")
+    if (sourceDeclaration != null) {
+        LOG.info("preferSourceDeclaration - sourceDeclaration not NULL: ${sourceDeclaration.kotlinFqName}")
+        // print class type
+        val fqNameTypeString: String = sourceDeclaration::class.qualifiedName ?: sourceDeclaration.javaClass.name
+        LOG.info("preferSourceDeclaration - sourceDeclaration class: $fqNameTypeString")
+    } else {
+        LOG.info("preferSourceDeclaration - sourceDeclaration is NULL")
+    }
+
+
+
     when (sourceDeclaration) {
         is KtDeclaration -> {
             val ktFile: KtFile = sourceDeclaration.containingKtFile
             return if (!ktFile.isCompiled) {
+                LOG.info("preferSourceDeclaration - 1")
                 sourceDeclaration to ktFile
             } else {
+                LOG.info("preferSourceDeclaration - 2")
                 this to this.containingFile
             }
         }
@@ -417,13 +409,18 @@ private inline fun PsiElement.preferSourceDeclaration(): Pair<PsiElement, PsiFil
         is PsiClass -> {
             val psiFile: PsiFile = sourceDeclaration.containingFile
             return if (psiFile !is PsiCompiledFile) {
+                LOG.info("preferSourceDeclaration - 3")
                 sourceDeclaration to psiFile
             } else {
+                LOG.info("preferSourceDeclaration - 4")
                 this to this.containingFile
             }
         }
 
-        else -> return this to this.containingFile
+        else -> {
+            LOG.info("preferSourceDeclaration - 5")
+            return this to this.containingFile
+        }
     }
 }
 
@@ -577,11 +574,9 @@ private fun TargetSymbolContext.toLogString(): String {
     return sb.toString()
 }
 
+// Pretty-prints referenced declarations in logs while keeping verbosity in check.
 private fun TargetSymbolContext.appendReferencedSection(
-    sb: StringBuilder,
-    label: String,
-    references: List<ReferencedDeclaration>,
-    maxEntries: Int = 25
+    sb: StringBuilder, label: String, references: List<ReferencedDeclaration>, maxEntries: Int = 25
 ) {
     if (references.isEmpty()) {
         sb.appendLine("$label: <none>")
@@ -590,12 +585,8 @@ private fun TargetSymbolContext.appendReferencedSection(
 
     sb.appendLine("$label (${references.size}):")
     references.take(maxEntries).forEach { ref ->
-        val usageSummary: String = ref.usageKinds.takeIf { it.isNotEmpty() }
-            ?.joinToString { usage -> usage.toClassificationString() } ?: "unknown"
-        val displayName: String = ref.declarationSlice.kotlinFqNameString
-            ?: ref.declarationSlice.presentableText
-            ?: ref.declarationSlice.name
-            ?: "<anonymous>"
+        val usageSummary: String = ref.usageKinds.takeIf { it.isNotEmpty() }?.joinToString { usage -> usage.toClassificationString() } ?: "unknown"
+        val displayName: String = ref.declarationSlice.kotlinFqNameString ?: ref.declarationSlice.presentableText ?: ref.declarationSlice.name ?: "<anonymous>"
         sb.appendLine("  - $displayName [$usageSummary] @ ${ref.declarationSlice.psiFilePath}")
     }
     if (references.size > maxEntries) {
