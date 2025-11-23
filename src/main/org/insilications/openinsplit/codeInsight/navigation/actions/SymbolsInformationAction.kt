@@ -233,16 +233,39 @@ private class SymbolUsageCollector(
     private var hasReachedLimit: Boolean = false
 
     fun buildResult(project: Project): ReferencedCollections {
-        val typeSlices: List<ReferencedDeclaration> = typeUsages.values.mapNotNull { it.toReferencedDeclaration(project) }
-        val functionSlices: List<ReferencedDeclaration> = functionUsages.values.mapNotNull { it.toReferencedDeclaration(project) }
+        val resolvedTypes: List<Pair<PsiElement, CollectedUsage>> =
+            typeUsages.values.mapNotNull { usage: CollectedUsage -> usage.pointer.element?.let { it to usage } }
+        val resolvedFunctions: List<Pair<PsiElement, CollectedUsage>> =
+            functionUsages.values.mapNotNull { usage: CollectedUsage -> usage.pointer.element?.let { it to usage } }
+
+        // Filter out any referenced declaration if it is structurally contained within another
+        // referenced declaration (or the target itself). This avoids redundant noise in the output.
+        val suppressionSet: Set<PsiElement> = (resolvedTypes.map { it.first } + resolvedFunctions.map { it.first } + targetDeclaration).toSet()
+
+        fun isRedundant(element: PsiElement): Boolean {
+            var parent: PsiElement? = element.parent
+            while (parent != null) {
+                if (parent in suppressionSet) return true
+                if (parent is PsiFile) break
+                parent = parent.parent
+            }
+            return false
+        }
+
+        val typeSlices: List<ReferencedDeclaration> = resolvedTypes.mapNotNull { (element: PsiElement, usage: CollectedUsage) ->
+            if (isRedundant(element)) null else usage.toReferencedDeclaration(project, element)
+        }
+        val functionSlices: List<ReferencedDeclaration> = resolvedFunctions.mapNotNull { (element: PsiElement, usage: CollectedUsage) ->
+            if (isRedundant(element)) null else usage.toReferencedDeclaration(project, element)
+        }
+
         return ReferencedCollections(typeSlices, functionSlices, hasReachedLimit)
     }
 
-    // Re-hydrate a `CollectedUsage` into the serializable payload, skipping dead pointers.
-    private fun CollectedUsage.toReferencedDeclaration(project: Project): ReferencedDeclaration? {
-        val resolved: PsiElement = pointer.element ?: return null
+    // Re-hydrate a `CollectedUsage` into the serializable payload.
+    private fun CollectedUsage.toReferencedDeclaration(project: Project, element: PsiElement): ReferencedDeclaration {
         return ReferencedDeclaration(
-            declarationSlice = resolved.toDeclarationSlice(project), usageKinds = usageKinds.toSet()
+            declarationSlice = element.toDeclarationSlice(project), usageKinds = usageKinds.toSet()
         )
     }
 
