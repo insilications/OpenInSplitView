@@ -22,8 +22,16 @@ import com.intellij.psi.util.PsiUtil
 import org.insilications.openinsplit.debug
 import org.jetbrains.kotlin.analysis.api.KaSession
 import org.jetbrains.kotlin.analysis.api.analyze
+import org.jetbrains.kotlin.analysis.api.resolution.KaFunctionCall
+import org.jetbrains.kotlin.analysis.api.resolution.successfulCallOrNull
+import org.jetbrains.kotlin.analysis.api.resolution.symbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaClassSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaConstructorSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaTypeAliasSymbol
+import org.jetbrains.kotlin.analysis.api.types.KaClassType
 import org.jetbrains.kotlin.idea.base.psi.kotlinFqName
 import org.jetbrains.kotlin.idea.refactoring.project
+import org.jetbrains.kotlin.idea.references.mainReference
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.tail
 import org.jetbrains.kotlin.psi.*
@@ -140,7 +148,7 @@ private data class ReferencedCollections(
     val typeSlices: List<ReferencedDeclaration>, val functionSlices: List<ReferencedDeclaration>, val limitReached: Boolean
 )
 
-private val SYMBOL_USAGE_LOG: Logger = Logger.getInstance("org.insilications.openinsplit.SymbolUsageCollector")
+private val SYMBOL_USAGE_LOG: Logger = Logger.getInstance("org.insilications.openinsplit")
 
 /* ============================= CONTEXT BUILDERS ============================= */
 
@@ -173,12 +181,11 @@ private fun buildSymbolContext(
 // Normalize the caret element into a coarse symbol kind so we know how deep the traversal
 // must go (only the function body vs. the entire class hierarchy of declarations).
 private fun PsiElement.detectSymbolKind(): SymbolKind? {
-    val (sourceDeclaration) = preferSourceDeclaration()
+    val (sourceDeclaration: PsiElement) = preferSourceDeclaration()
     return when (sourceDeclaration) {
         is KtFunction -> SymbolKind.FUNCTION
         is PsiMethod -> SymbolKind.FUNCTION
         is PsiFunctionalExpression -> SymbolKind.FUNCTION
-        is PsiLambdaExpression -> SymbolKind.FUNCTION
         is KtClassOrObject -> SymbolKind.CLASS
         is PsiClass -> SymbolKind.CLASS
         else -> null
@@ -240,7 +247,7 @@ private class SymbolUsageCollector(
     private fun shouldStopTraversal(): Boolean = hasReachedLimit
 
     override fun visitElement(node: UElement): Boolean {
-        if (shouldStopTraversal()) return false
+        if (shouldStopTraversal()) return true
         return super.visitElement(node)
     }
 
@@ -297,10 +304,12 @@ private class SymbolUsageCollector(
         if (node.uastParent is UCallExpression) {
             return super.visitSimpleNameReferenceExpression(node)
         }
-        val resolved: PsiElement? = node.resolve()
+        val resolved: PsiElement? = node.resolve() ?: node.sourcePsi?.let { resolveReferenceWithAnalysis(it) }
         when (resolved) {
             is PsiMethod -> recordFunction(resolved, UsageKind.CALL)
+            is KtFunction -> recordFunction(resolved, UsageKind.CALL)
             is PsiClass -> recordType(resolved, UsageKind.TYPE_REFERENCE)
+            is KtClassOrObject -> recordType(resolved, UsageKind.TYPE_REFERENCE)
         }
         return super.visitSimpleNameReferenceExpression(node)
     }
@@ -338,7 +347,7 @@ private class SymbolUsageCollector(
 }
 
 // Helper extracted for readability: UAST type reference -> PsiClass when possible.
-private fun UTypeReferenceExpression.resolvePsiClass(): PsiElement? = type?.let { PsiUtil.resolveClassInType(it) }
+private fun UTypeReferenceExpression.resolvePsiClass(): PsiElement? = type.let { PsiUtil.resolveClassInType(it) }
 
 private fun PsiElement.computeStableStorageKey(): String? {
     val psiFile: PsiFile? = containingFile
@@ -359,10 +368,46 @@ private fun PsiElement.isSameDeclarationAs(other: PsiElement): Boolean {
     return thisNav == other || this == otherNav || thisNav == otherNav
 }
 
+private fun resolveReferenceWithAnalysis(element: PsiElement): PsiElement? {
+    val ktElement = element as? KtElement ?: return null
+    return ktElement.runAnalysisSafely {
+        val ref = (ktElement as? KtReferenceExpression)?.mainReference ?: return@runAnalysisSafely null
+        ref.resolveToSymbol()?.psi
+    }
+}
+
 private fun resolveClassifierWithAnalysis(element: PsiElement): PsiElement? {
-    val typeReference: KtTypeReference = element as? KtTypeReference ?: return null
-    return typeReference.runAnalysisSafely {
-        typeReference.type.expandedSymbol?.psi
+    val ktElement = element as? KtElement ?: return null
+    return ktElement.runAnalysisSafely {
+        when (ktElement) {
+            is KtTypeReference -> {
+                ktElement.type.expandedSymbol?.psi
+            }
+
+            is KtCallExpression -> {
+                val call = ktElement.resolveToCall()?.successfulCallOrNull<KaFunctionCall<*>>()
+                val symbol = call?.symbol
+                if (symbol is KaConstructorSymbol) {
+                    symbol.containingSymbol?.psi
+                } else null
+            }
+
+            is KtClassLiteralExpression -> {
+                val type = ktElement.expressionType as? KaClassType
+                type?.typeArguments?.firstOrNull()?.type?.expandedSymbol?.psi
+            }
+
+            is KtSuperExpression -> {
+                ktElement.superTypeQualifier?.type?.expandedSymbol?.psi
+            }
+
+            is KtNameReferenceExpression -> {
+                val symbol = ktElement.mainReference.resolveToSymbol()
+                if (symbol is KaClassSymbol || symbol is KaTypeAliasSymbol) symbol.psi else null
+            }
+
+            else -> null
+        }
     }
 }
 
@@ -381,18 +426,6 @@ private inline fun PsiElement.preferSourceDeclaration(): Pair<PsiElement, PsiFil
         is NavigatablePsiElement -> navigationElement
         else -> navigationElement.getParentOfType(strict = false)
     }
-
-    LOG.info("preferSourceDeclaration - this: ${this.kotlinFqName}")
-    if (sourceDeclaration != null) {
-        LOG.info("preferSourceDeclaration - sourceDeclaration not NULL: ${sourceDeclaration.kotlinFqName}")
-        // print class type
-        val fqNameTypeString: String = sourceDeclaration::class.qualifiedName ?: sourceDeclaration.javaClass.name
-        LOG.info("preferSourceDeclaration - sourceDeclaration class: $fqNameTypeString")
-    } else {
-        LOG.info("preferSourceDeclaration - sourceDeclaration is NULL")
-    }
-
-
 
     when (sourceDeclaration) {
         is KtDeclaration -> {
@@ -547,13 +580,13 @@ private fun TargetSymbolContext.toLogString(): String {
     val sb = StringBuilder()
     sb.appendLine()
     sb.appendLine("============ Target PSI Type: ${declarationSlice.fqNameTypeString} ============")
-    sb.appendLine("Target Qualified Name: ${declarationSlice.kotlinFqNameString ?: "<anonymous>"}")
+    sb.appendLine("Target kotlinFqNameString: ${declarationSlice.kotlinFqNameString ?: "<anonymous>"}")
     sb.appendLine("Target ktFqNameRelativeString: ${declarationSlice.ktFqNameRelativeString ?: "<anonymous>"}")
-    sb.appendLine("Target ktFilePath: ${declarationSlice.psiFilePath}")
+    sb.appendLine("Target psiFilePath: ${declarationSlice.psiFilePath}")
     sb.appendLine("Target presentableText: ${declarationSlice.presentableText ?: "<anonymous>"}")
-    sb.appendLine("Target ktNamedDeclName: ${declarationSlice.name ?: "<anonymous>"}")
+    sb.appendLine("Target name: ${declarationSlice.name ?: "<anonymous>"}")
     sb.appendLine("Target caret: offset=${declarationSlice.caretLocation.offset}, line=${declarationSlice.caretLocation.line}, column=${declarationSlice.caretLocation.column}")
-    sb.appendLine("Symbol Kind: $symbolKind")
+    sb.appendLine("Target Symbol Kind: $symbolKind")
     sb.appendLine("Package: ${packageDirective ?: "<none>"}")
     if (importsList.isNotEmpty()) {
         sb.appendLine("Imports:")
