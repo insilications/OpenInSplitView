@@ -274,6 +274,7 @@ private class SymbolUsageCollector(
 
     override fun visitAnnotation(node: UAnnotation): Boolean {
         if (shouldStopTraversal()) return true
+        if (node.sourcePsi == null) return super.visitAnnotation(node)
         val resolved: PsiElement? = node.resolve() ?: node.javaPsi?.nameReferenceElement?.resolve()
         recordType(resolved, UsageKind.ANNOTATION)
         return super.visitAnnotation(node)
@@ -431,10 +432,8 @@ private inline fun PsiElement.preferSourceDeclaration(): Pair<PsiElement, PsiFil
         is KtDeclaration -> {
             val ktFile: KtFile = sourceDeclaration.containingKtFile
             return if (!ktFile.isCompiled) {
-                LOG.info("preferSourceDeclaration - 1")
                 sourceDeclaration to ktFile
             } else {
-                LOG.info("preferSourceDeclaration - 2")
                 this to this.containingFile
             }
         }
@@ -442,16 +441,19 @@ private inline fun PsiElement.preferSourceDeclaration(): Pair<PsiElement, PsiFil
         is PsiClass -> {
             val psiFile: PsiFile = sourceDeclaration.containingFile
             return if (psiFile !is PsiCompiledFile) {
-                LOG.info("preferSourceDeclaration - 3")
                 sourceDeclaration to psiFile
             } else {
-                LOG.info("preferSourceDeclaration - 4")
                 this to this.containingFile
             }
         }
 
         else -> {
-            LOG.info("preferSourceDeclaration - 5")
+            if (sourceDeclaration != null) {
+                val psiFile: PsiFile = sourceDeclaration.containingFile
+                if (psiFile !is PsiCompiledFile) {
+                    return sourceDeclaration to psiFile
+                }
+            }
             return this to this.containingFile
         }
     }
