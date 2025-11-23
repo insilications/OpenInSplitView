@@ -251,6 +251,24 @@ private class SymbolUsageCollector(
         return super.visitElement(node)
     }
 
+    override fun visitMethod(node: UMethod): Boolean {
+        if (shouldStopTraversal()) return true
+        val resolved = node.returnType?.let { PsiUtil.resolveClassInType(it) }
+            ?: node.returnTypeReference?.resolvePsiClass()
+            ?: node.returnTypeReference?.sourcePsi?.let { resolveClassifierWithAnalysis(it) }
+        recordType(resolved, UsageKind.TYPE_REFERENCE)
+        return super.visitMethod(node)
+    }
+
+    override fun visitVariable(node: UVariable): Boolean {
+        if (shouldStopTraversal()) return true
+        val resolved = node.type.let { PsiUtil.resolveClassInType(it) }
+            ?: node.typeReference?.resolvePsiClass()
+            ?: node.typeReference?.sourcePsi?.let { resolveClassifierWithAnalysis(it) }
+        recordType(resolved, UsageKind.TYPE_REFERENCE)
+        return super.visitVariable(node)
+    }
+
     override fun visitTypeReferenceExpression(node: UTypeReferenceExpression): Boolean {
         if (shouldStopTraversal()) return true
         val resolved: PsiElement? = node.resolvePsiClass() ?: node.sourcePsi?.let { resolveClassifierWithAnalysis(it) }
