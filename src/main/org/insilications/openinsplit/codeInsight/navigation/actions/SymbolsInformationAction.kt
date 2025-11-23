@@ -616,15 +616,16 @@ private fun TargetSymbolContext.toLogString(): String {
     } else {
         sb.appendLine("Imports: <none>")
     }
+    sb.appendLine()
+    sb.appendLine("Target Declaration Source Code:")
+    sb.appendLine(declarationSlice.sourceCode)
+    sb.appendLine()
     appendReferencedSection(sb, "Referenced Types", referencedTypes)
     appendReferencedSection(sb, "Referenced Functions", referencedFunctions)
     if (referenceLimitReached) {
         sb.appendLine("Reference limit reached; output truncated.")
     }
     sb.appendLine()
-    sb.appendLine("Target Declaration Source Code:")
-    sb.appendLine(declarationSlice.sourceCode)
-
     sb.appendLine("==============================================================")
     return sb.toString()
 }
@@ -642,7 +643,10 @@ private fun TargetSymbolContext.appendReferencedSection(
     references.take(maxEntries).forEach { ref: ReferencedDeclaration ->
         val usageSummary: String = ref.usageKinds.takeIf { it.isNotEmpty() }?.joinToString { usage -> usage.toClassificationString() } ?: "unknown"
         val displayName: String = ref.declarationSlice.kotlinFqNameString ?: ref.declarationSlice.presentableText ?: ref.declarationSlice.name ?: "<anonymous>"
-        sb.appendLine("  - $displayName [$usageSummary] - Relative: ${ref.declarationSlice.ktFqNameRelativeString} @ ${ref.declarationSlice.psiFilePath}")
+        sb.appendLine("  - $displayName [$usageSummary]")
+        sb.appendLine("  ktFqNameRelativeString: ${ref.declarationSlice.ktFqNameRelativeString}")
+        sb.appendLine("  psiFilePath: ${ref.declarationSlice.psiFilePath}")
+        sb.appendLine()
     }
     if (references.size > maxEntries) {
         sb.appendLine("  ... (${references.size - maxEntries} more)")
