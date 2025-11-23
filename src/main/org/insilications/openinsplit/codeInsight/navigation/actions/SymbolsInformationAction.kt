@@ -27,10 +27,12 @@ import org.jetbrains.kotlin.analysis.api.resolution.successfulCallOrNull
 import org.jetbrains.kotlin.analysis.api.resolution.symbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaClassSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaConstructorSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.KaFunctionSymbol
 import org.jetbrains.kotlin.analysis.api.symbols.KaTypeAliasSymbol
 import org.jetbrains.kotlin.analysis.api.types.KaClassType
 import org.jetbrains.kotlin.idea.base.psi.kotlinFqName
 import org.jetbrains.kotlin.idea.refactoring.project
+import org.jetbrains.kotlin.idea.references.KtReference
 import org.jetbrains.kotlin.idea.references.mainReference
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.tail
@@ -253,18 +255,16 @@ private class SymbolUsageCollector(
 
     override fun visitMethod(node: UMethod): Boolean {
         if (shouldStopTraversal()) return true
-        val resolved = node.returnType?.let { PsiUtil.resolveClassInType(it) }
-            ?: node.returnTypeReference?.resolvePsiClass()
-            ?: node.returnTypeReference?.sourcePsi?.let { resolveClassifierWithAnalysis(it) }
+        val resolved = node.returnType?.let { PsiUtil.resolveClassInType(it) } ?: node.returnTypeReference?.resolvePsiClass()
+        ?: node.returnTypeReference?.sourcePsi?.let { resolveClassifierWithAnalysis(it) }
         recordType(resolved, UsageKind.TYPE_REFERENCE)
         return super.visitMethod(node)
     }
 
     override fun visitVariable(node: UVariable): Boolean {
         if (shouldStopTraversal()) return true
-        val resolved = node.type.let { PsiUtil.resolveClassInType(it) }
-            ?: node.typeReference?.resolvePsiClass()
-            ?: node.typeReference?.sourcePsi?.let { resolveClassifierWithAnalysis(it) }
+        val resolved = node.type.let { PsiUtil.resolveClassInType(it) } ?: node.typeReference?.resolvePsiClass()
+        ?: node.typeReference?.sourcePsi?.let { resolveClassifierWithAnalysis(it) }
         recordType(resolved, UsageKind.TYPE_REFERENCE)
         return super.visitVariable(node)
     }
@@ -390,29 +390,31 @@ private fun PsiElement.isSameDeclarationAs(other: PsiElement): Boolean {
 private fun resolveReferenceWithAnalysis(element: PsiElement): PsiElement? {
     val ktElement = element as? KtElement ?: return null
     return ktElement.runAnalysisSafely {
-        val ref = (ktElement as? KtReferenceExpression)?.mainReference ?: return@runAnalysisSafely null
+        // This is inside a `KaSession` context
+        val ref: KtReference = (ktElement as? KtReferenceExpression)?.mainReference ?: return@runAnalysisSafely null
         ref.resolveToSymbol()?.psi
     }
 }
 
 private fun resolveClassifierWithAnalysis(element: PsiElement): PsiElement? {
-    val ktElement = element as? KtElement ?: return null
+    val ktElement: KtElement = element as? KtElement ?: return null
     return ktElement.runAnalysisSafely {
+        // This is inside a `KaSession` context
         when (ktElement) {
             is KtTypeReference -> {
                 ktElement.type.expandedSymbol?.psi
             }
 
             is KtCallExpression -> {
-                val call = ktElement.resolveToCall()?.successfulCallOrNull<KaFunctionCall<*>>()
-                val symbol = call?.symbol
+                val call: KaFunctionCall<*>? = ktElement.resolveToCall()?.successfulCallOrNull<KaFunctionCall<*>>()
+                val symbol: KaFunctionSymbol? = call?.symbol
                 if (symbol is KaConstructorSymbol) {
                     symbol.containingSymbol?.psi
                 } else null
             }
 
             is KtClassLiteralExpression -> {
-                val type = ktElement.expressionType as? KaClassType
+                val type: KaClassType? = ktElement.expressionType as? KaClassType
                 type?.typeArguments?.firstOrNull()?.type?.expandedSymbol?.psi
             }
 
@@ -629,7 +631,7 @@ private fun TargetSymbolContext.toLogString(): String {
 
 // Pretty-prints referenced declarations in logs while keeping verbosity in check.
 private fun TargetSymbolContext.appendReferencedSection(
-    sb: StringBuilder, label: String, references: List<ReferencedDeclaration>, maxEntries: Int = 25
+    sb: StringBuilder, label: String, references: List<ReferencedDeclaration>, maxEntries: Int = 100
 ) {
     if (references.isEmpty()) {
         sb.appendLine("$label: <none>")
@@ -637,10 +639,10 @@ private fun TargetSymbolContext.appendReferencedSection(
     }
 
     sb.appendLine("$label (${references.size}):")
-    references.take(maxEntries).forEach { ref ->
+    references.take(maxEntries).forEach { ref: ReferencedDeclaration ->
         val usageSummary: String = ref.usageKinds.takeIf { it.isNotEmpty() }?.joinToString { usage -> usage.toClassificationString() } ?: "unknown"
         val displayName: String = ref.declarationSlice.kotlinFqNameString ?: ref.declarationSlice.presentableText ?: ref.declarationSlice.name ?: "<anonymous>"
-        sb.appendLine("  - $displayName [$usageSummary] @ ${ref.declarationSlice.psiFilePath}")
+        sb.appendLine("  - $displayName [$usageSummary] - Relative: ${ref.declarationSlice.ktFqNameRelativeString} @ ${ref.declarationSlice.psiFilePath}")
     }
     if (references.size > maxEntries) {
         sb.appendLine("  ... (${references.size - maxEntries} more)")
