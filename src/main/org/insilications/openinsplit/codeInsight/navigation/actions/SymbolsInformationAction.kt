@@ -326,6 +326,26 @@ private class SymbolUsageCollector(
         return super.visitElement(node)
     }
 
+    override fun visitLambdaExpression(node: ULambdaExpression): Boolean {
+        if (shouldStopTraversal()) return true
+
+        // Explicitly handle Kotlin destructuring declarations in lambda parameters,
+        // as UAST might not traverse them as standard variables/parameters.
+        val ktLambda = node.sourcePsi as? KtLambdaExpression
+        if (ktLambda != null) {
+            ktLambda.functionLiteral.valueParameters.forEach { parameter ->
+                parameter.destructuringDeclaration?.entries?.forEach { entry ->
+                    entry.typeReference?.let { typeRef ->
+                        val resolved = resolveClassifierWithAnalysis(typeRef)
+                        recordType(resolved, UsageKind.TYPE_REFERENCE)
+                    }
+                }
+            }
+        }
+
+        return super.visitLambdaExpression(node)
+    }
+
     // --- UAST VISITOR METHODS ---
     // These methods are called for each node in the UAST. We inspect the node
     // to see if it represents a reference to a type or a function/method.
