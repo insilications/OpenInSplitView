@@ -411,8 +411,10 @@ private class SymbolUsageCollector(
         }
 
         LOG.info("0 visitCallExpression - node:\n${node.asRecursiveLogString()}")
-        val resolvedCallable: PsiElement? = node.resolve()
-        LOG.info("1 visitCallExpression - resolvedCallable: $resolvedCallable \n\n\n")
+        val resolvedCallable0: PsiElement? = node.resolve()
+        val resolvedCallable: PsiElement? = node.sourcePsi
+        LOG.info("1 visitCallExpression - resolvedCallable0: $resolvedCallable0")
+        LOG.info("2 visitCallExpression - resolvedCallable: $resolvedCallable")
 
 //        val sourcePsi: KtElement? = node.sourcePsi as? KtElement
         val sourcePsi: KtElement? = resolvedCallable as? KtElement
@@ -430,6 +432,8 @@ private class SymbolUsageCollector(
                 }
             }
         }
+
+        LOG.info("\n\n\n")
 
         recordFunction(resolvedCallable, usageKind)
 
