@@ -411,28 +411,46 @@ private class SymbolUsageCollector(
         }
 
         LOG.info("0 visitCallExpression - node:\n${node.asRecursiveLogString()}")
-        val resolvedCallable: PsiElement? = node.resolve()
+
         val sourcePsi: PsiElement? = node.sourcePsi
-        LOG.info("1 visitCallExpression - resolvedCallable: $resolvedCallable")
-        LOG.info("2 visitCallExpression - sourcePsi: $sourcePsi")
 
-//        val sourcePsi: KtElement? = node.sourcePsi as? KtElement
-//        val sourcePsi: KtElement? = resolvedCallable as? KtElement
-        if (sourcePsi is KtCallExpression) {
-            sourcePsi.runAnalysisSafely {
+        // 1. Decide strategy based on the CALL SITE language
+//        val resolvedCallable: PsiElement? = if (sourcePsi is KtElement) {
+        val resolvedCallable: PsiElement? = if (sourcePsi is KtCallExpression) {
+            // === K2 PATH (Kotlin) ===
+            // Directly use Analysis API. Avoids UAST's "LightMethod" wrappers entirely.
+            analyze(sourcePsi) {
+                // Resolve the call using K2 semantics
+                val callInfo = sourcePsi.resolveCall()
 
-                LOG.info("visitCallExpression sourcePsi.text: ${sourcePsi.text}")
-                LOG.info("visitCallExpression sourcePsi.kotlinFqName?.asString(): ${sourcePsi.kotlinFqName?.asString()}")
-//                    val ref = sourcePsi.mainReference
-                val ref = sourcePsi.calleeExpression?.mainReference
-                val refPsi = ref?.resolveToSymbol()?.psi
-                val refPsiNav = refPsi?.navigationElement
-                LOG.info("visitCallExpression sourcePsi refPsi: ${refPsiNav?.kotlinFqName?.asString()}")
-                LOG.info("visitCallExpression sourcePsi refPsi.text: ${refPsiNav?.text}")
-                LOG.info("visitCallExpression sourcePsi refPsi.FILE: ${refPsiNav?.containingFile?.virtualFile?.path}")
+                // Get the target symbol (Function, Constructor, etc.)
+                val symbol = callInfo?.singleFunctionCallOrNull()?.symbol ?: callInfo?.singleConstructorCallOrNull()?.symbol
+
+                // symbol.psi returns the ACTUAL source declaration (KtFunction),
+                // or the Decompiled PSI if it's from a library.
+                symbol?.psi
             }
+        } else {
+            // === JAVA/UAST PATH ===
+            // For Java files, node.resolve() returns the real PsiMethod
+            node.resolve()
         }
 
+//        val resolvedCallable: PsiElement? = node.resolve() ?: node.sourcePsi?.let {
+////        val resolvedCallable: PsiElement? = node.sourcePsi?.let {
+//            if (it is KtCallExpression) {
+//                analyze(it) {
+//                    val ktRef = it.calleeExpression?.mainReference
+//                    val refPsi = ktRef?.resolveToSymbol()?.psi
+//                    refPsi?.navigationElement
+//                }
+//            } else {
+//                null
+//            }
+//        }
+
+        LOG.info("1 visitCallExpression - resolvedCallable: $resolvedCallable")
+        LOG.info("1 visitCallExpression - resolvedCallable: ${resolvedCallable?.text}")
         LOG.info("\n\n\n")
 
         recordFunction(resolvedCallable, usageKind)
