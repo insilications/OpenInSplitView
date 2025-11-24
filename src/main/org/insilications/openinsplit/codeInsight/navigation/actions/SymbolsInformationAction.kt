@@ -411,25 +411,25 @@ private class SymbolUsageCollector(
         }
 
         LOG.info("0 visitCallExpression - node:\n${node.asRecursiveLogString()}")
-        val resolvedCallable0: PsiElement? = node.resolve()
-        val resolvedCallable: PsiElement? = node.sourcePsi
-        LOG.info("1 visitCallExpression - resolvedCallable0: $resolvedCallable0")
-        LOG.info("2 visitCallExpression - resolvedCallable: $resolvedCallable")
+        val resolvedCallable: PsiElement? = node.resolve()
+        val sourcePsi: PsiElement? = node.sourcePsi
+        LOG.info("1 visitCallExpression - resolvedCallable: $resolvedCallable")
+        LOG.info("2 visitCallExpression - sourcePsi: $sourcePsi")
 
 //        val sourcePsi: KtElement? = node.sourcePsi as? KtElement
-        val sourcePsi: KtElement? = resolvedCallable as? KtElement
-        if (sourcePsi != null) {
+//        val sourcePsi: KtElement? = resolvedCallable as? KtElement
+        if (sourcePsi is KtCallExpression) {
             sourcePsi.runAnalysisSafely {
-                if (sourcePsi is KtCallExpression) {
-                    LOG.info("visitCallExpression sourcePsi.text: ${sourcePsi.text}")
-                    LOG.info("visitCallExpression sourcePsi.kotlinFqName?.asString(): ${sourcePsi.kotlinFqName?.asString()}")
-                    val ref = sourcePsi.calleeExpression?.mainReference
-                    val refPsi = ref?.resolveToSymbol()?.psi
-                    val refPsiNav = refPsi?.navigationElement
-                    LOG.info("visitCallExpression sourcePsi refPsi: ${refPsiNav?.kotlinFqName?.asString()}")
-                    LOG.info("visitCallExpression sourcePsi refPsi.text: ${refPsiNav?.text}")
-                    LOG.info("visitCallExpression sourcePsi refPsi.FILE: ${refPsiNav?.containingFile?.virtualFile?.path}")
-                }
+
+                LOG.info("visitCallExpression sourcePsi.text: ${sourcePsi.text}")
+                LOG.info("visitCallExpression sourcePsi.kotlinFqName?.asString(): ${sourcePsi.kotlinFqName?.asString()}")
+//                    val ref = sourcePsi.mainReference
+                val ref = sourcePsi.calleeExpression?.mainReference
+                val refPsi = ref?.resolveToSymbol()?.psi
+                val refPsiNav = refPsi?.navigationElement
+                LOG.info("visitCallExpression sourcePsi refPsi: ${refPsiNav?.kotlinFqName?.asString()}")
+                LOG.info("visitCallExpression sourcePsi refPsi.text: ${refPsiNav?.text}")
+                LOG.info("visitCallExpression sourcePsi refPsi.FILE: ${refPsiNav?.containingFile?.virtualFile?.path}")
             }
         }
 
@@ -541,7 +541,6 @@ private fun PsiElement.isSameDeclarationAs(other: PsiElement): Boolean {
  * This is a fallback for when standard UAST resolution (`node.resolve()`) fails or returns null.
  */
 private fun resolveReferenceWithAnalysis(element: PsiElement): List<PsiElement?>? {
-    LOG.info("resolveReferenceWithAnalysis element: ${element::class.qualifiedName ?: element.javaClass.name}")
     val ktReferenceExpr: KtReferenceExpression = element as? KtReferenceExpression ?: return null
     return ktReferenceExpr.runAnalysisSafely {
 
