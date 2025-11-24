@@ -424,13 +424,16 @@ private class SymbolUsageCollector(
     }
 
     override fun visitSimpleNameReferenceExpression(node: USimpleNameReferenceExpression): Boolean {
+        LOG.info("0 visitSimpleNameReferenceExpression - node: ${node.asRecursiveLogString()}\n")
         if (shouldStopTraversal()) return true
 
         // Avoid double counting calls (which are handled in visitCallExpression)
         if (node.uastParent is UCallExpression) {
+            LOG.info("1 visitSimpleNameReferenceExpression - node: ${node.asRecursiveLogString()}\n\n")
             return super.visitSimpleNameReferenceExpression(node)
         }
 
+        LOG.info("2 visitSimpleNameReferenceExpression - node: ${node.asRecursiveLogString()}\n\n")
         // Fallback to Analysis API
         val resolved: List<PsiElement?>? = node.resolve()?.let { listOf(it) } ?: node.sourcePsi?.let { resolveReferenceWithAnalysis(it) }
 
