@@ -408,8 +408,6 @@ private class SymbolUsageCollector(
             UsageKind.CALL
         }
 
-        LOG.info("0 visitCallExpression - node:\n${node.asRecursiveLogString()}")
-
         val sourcePsi: PsiElement? = node.sourcePsi
 
         // Base the strategy on the CALL SITE language with a type check, since every implementation of `KtElement` is inherently part of Kotlin
@@ -428,10 +426,6 @@ private class SymbolUsageCollector(
             // For Java files, `node.resolve()` returns the real `PsiMethod`
             node.resolve()
         }
-
-        LOG.info("1 visitCallExpression - resolvedCallable: $resolvedCallable")
-        LOG.info("1 visitCallExpression - resolvedCallable: ${resolvedCallable?.text}")
-        LOG.info("\n\n\n")
 
         recordFunction(resolvedCallable, usageKind)
 
