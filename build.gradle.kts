@@ -1,6 +1,7 @@
 @file:Suppress("LongLine")
 
 import com.github.benmanes.gradle.versions.updates.DependencyUpdatesTask
+import org.gradle.internal.extensions.core.serviceOf
 import org.jetbrains.changelog.markdownToHTML
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import org.jetbrains.intellij.platform.gradle.tasks.PrepareSandboxTask
@@ -188,16 +189,19 @@ tasks {
 
         // Resolve the source directory during the configuration phase.
         val sourceConfigDir: File = project.file("sandbox-config")
+        val execOps: ExecOperations = project.serviceOf<ExecOperations>()
 
         doLast {
             // Resolve the DirectoryProperty to a concrete File at execution time.
             val destinationDir: File = sandboxDirectory.get().asFile
 
             if (sourceConfigDir.exists() && sourceConfigDir.isDirectory) {
-                println("Copying custom IDE configuration from '${sourceConfigDir.path}' to sandbox.")
-
+                println("Copying custom IDE configuration from '${sourceConfigDir.path}' to sandbox folder '${destinationDir.path}'.")
+                execOps.exec {
+                    commandLine("rsync", "-avc", "--no-times", "${sourceConfigDir.path}/", "${destinationDir.path}/")
+                }
                 // Use standard Kotlin I/O, which is configuration-cache-safe.
-                sourceConfigDir.copyRecursively(destinationDir, overwrite = true)
+                // sourceConfigDir.copyRecursively(destinationDir, overwrite = true)
             } else {
                 println("Skipping custom IDE configuration copy: '${sourceConfigDir.path}' does not exist.")
             }

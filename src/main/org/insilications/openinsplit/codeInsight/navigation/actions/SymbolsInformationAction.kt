@@ -409,16 +409,16 @@ private class SymbolUsageCollector(
         }
 
         val sourcePsi: PsiElement? = node.sourcePsi
-
         // Base the strategy on the CALL SITE language with a type check, since every implementation of `KtElement` is inherently part of Kotlin
-        val resolvedCallable: PsiElement? = if (sourcePsi is KtCallExpression) {
+        val resolvedCallable: PsiElement? = if (sourcePsi is KtElement) {
             // === K2 PATH (Kotlin) ===
-            analyze(sourcePsi) {
+            sourcePsi.runAnalysisSafely {
                 // Resolve the call using K2 semantics
                 val callInfo: KaCallInfo? = sourcePsi.resolveToCall()
 
                 // Get the target symbol (Function, Constructor, etc.)
-                val symbol: KaFunctionSymbol? = callInfo?.singleFunctionCallOrNull()?.symbol ?: callInfo?.singleConstructorCallOrNull()?.symbol
+                val symbol: KaFunctionSymbol? = callInfo?.successfulFunctionCallOrNull()?.symbol ?: callInfo?.successfulConstructorCallOrNull()?.symbol
+                ?: callInfo?.singleFunctionCallOrNull()?.symbol ?: callInfo?.singleConstructorCallOrNull()?.symbol
                 symbol?.psi
             }
         } else {
@@ -431,8 +431,12 @@ private class SymbolUsageCollector(
 
         // If it's a constructor call, we also want to record the Type being instantiated.
         if (node.kind == UastCallKind.CONSTRUCTOR_CALL) {
-            val constructorOwner: PsiElement? =
-                (resolvedCallable as? PsiMethod)?.containingClass ?: node.classReference?.resolve() ?: node.sourcePsi?.let { resolveClassifierWithAnalysis(it) }
+            val constructorOwner: PsiElement? = when (resolvedCallable) {
+                is PsiMethod -> resolvedCallable.containingClass
+                is KtConstructor<*> -> resolvedCallable.getContainingClassOrObject()
+                is KtClassOrObject -> resolvedCallable
+                else -> null
+            } ?: node.classReference?.resolve() ?: node.sourcePsi?.let { resolveClassifierWithAnalysis(it) }
             recordType(constructorOwner, UsageKind.CONSTRUCTOR_CALL)
         }
 
@@ -570,8 +574,8 @@ private fun resolveClassifierWithAnalysis(element: PsiElement): PsiElement? {
             // Case 2: Function/Constructor Calls (e.g., `MyClass()`)
             is KtCallExpression -> {
                 // `resolveToCall()` returns a `KaCallInfo`. We check if it's a successful function call.
-                val call: KaFunctionCall<*>? = ktElement.resolveToCall()?.successfulCallOrNull<KaFunctionCall<*>>()
-                val symbol: KaFunctionSymbol? = call?.symbol
+                val callInfo = ktElement.resolveToCall()
+                val symbol = callInfo?.successfulFunctionCallOrNull()?.symbol ?: callInfo?.successfulConstructorCallOrNull()?.symbol
 
                 // If it's a constructor call, we want the class (containing symbol), not the constructor function itself.
                 if (symbol is KaConstructorSymbol) {
