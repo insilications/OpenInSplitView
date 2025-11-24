@@ -405,7 +405,12 @@ private class SymbolUsageCollector(
     override fun visitCallExpression(node: UCallExpression): Boolean {
         LOG.info("visitCallExpression node.asSourceString(): ${node.asSourceString()}")
         LOG.info("visitCallExpression node.asLogString(): ${node.asLogString()}")
-        LOG.info("\n\n")
+        LOG.info("visitCallExpression node.asRenderString(): ${node.asRenderString()}")
+        LOG.info("visitCallExpression node.methodName: ${node.methodName}")
+        LOG.info("visitCallExpression node.methodIdentifier?.asRenderString(): ${node.methodIdentifier?.asRenderString()}")
+
+//        val kk = node.methodIdentifier?.
+
 
         if (shouldStopTraversal()) return true
         val usageKind: UsageKind = if (node.kind == UastCallKind.CONSTRUCTOR_CALL) {
@@ -415,6 +420,14 @@ private class SymbolUsageCollector(
         }
 
         val resolvedCallable: PsiElement? = node.resolve()
+
+        if (resolvedCallable != null) {
+            LOG.info("visitCallExpression resolvedCallable: ${resolvedCallable?.kotlinFqName?.asString()}")
+            val fqNameTypeString: String = resolvedCallable::class.qualifiedName ?: resolvedCallable.javaClass.name
+            LOG.info("visitCallExpression fqNameTypeString: $fqNameTypeString")
+
+        }
+        LOG.info("\n\n")
         recordFunction(resolvedCallable, usageKind)
 
         // If it's a constructor call, we also want to record the Type being instantiated.
@@ -431,7 +444,9 @@ private class SymbolUsageCollector(
         LOG.info("visitSimpleNameReferenceExpression node.getQualifiedName(): ${node.getQualifiedName()}")
         LOG.info("visitSimpleNameReferenceExpression node.asSourceString(): ${node.asSourceString()}")
         LOG.info("visitSimpleNameReferenceExpression node.asLogString(): ${node.asLogString()}")
+        LOG.info("visitSimpleNameReferenceExpression node.asRenderString(): ${node.asRenderString()}")
         LOG.info("\n\n")
+
         if (shouldStopTraversal()) return true
 
         // Avoid double counting calls (which are handled in visitCallExpression)
