@@ -25,10 +25,7 @@ import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.analysis.api.resolution.KaFunctionCall
 import org.jetbrains.kotlin.analysis.api.resolution.successfulCallOrNull
 import org.jetbrains.kotlin.analysis.api.resolution.symbol
-import org.jetbrains.kotlin.analysis.api.symbols.KaClassSymbol
-import org.jetbrains.kotlin.analysis.api.symbols.KaConstructorSymbol
-import org.jetbrains.kotlin.analysis.api.symbols.KaFunctionSymbol
-import org.jetbrains.kotlin.analysis.api.symbols.KaTypeAliasSymbol
+import org.jetbrains.kotlin.analysis.api.symbols.*
 import org.jetbrains.kotlin.analysis.api.types.KaClassType
 import org.jetbrains.kotlin.idea.base.psi.kotlinFqName
 import org.jetbrains.kotlin.idea.refactoring.project
@@ -406,6 +403,10 @@ private class SymbolUsageCollector(
     }
 
     override fun visitCallExpression(node: UCallExpression): Boolean {
+        LOG.info("visitCallExpression node.asSourceString(): ${node.asSourceString()}")
+        LOG.info("visitCallExpression node.asLogString(): ${node.asLogString()}")
+        LOG.info("\n\n")
+
         if (shouldStopTraversal()) return true
         val usageKind: UsageKind = if (node.kind == UastCallKind.CONSTRUCTOR_CALL) {
             UsageKind.CONSTRUCTOR_CALL
@@ -427,21 +428,48 @@ private class SymbolUsageCollector(
     }
 
     override fun visitSimpleNameReferenceExpression(node: USimpleNameReferenceExpression): Boolean {
+        LOG.info("visitSimpleNameReferenceExpression node.getQualifiedName(): ${node.getQualifiedName()}")
+        LOG.info("visitSimpleNameReferenceExpression node.asSourceString(): ${node.asSourceString()}")
+        LOG.info("visitSimpleNameReferenceExpression node.asLogString(): ${node.asLogString()}")
+        LOG.info("\n\n")
         if (shouldStopTraversal()) return true
+
         // Avoid double counting calls (which are handled in visitCallExpression)
         if (node.uastParent is UCallExpression) {
             return super.visitSimpleNameReferenceExpression(node)
         }
-        val resolved: PsiElement? = node.resolve() ?: node.sourcePsi?.let { resolveReferenceWithAnalysis(it) } // Fallback to Analysis API
+        // Fallback to Analysis API
+        val resolved: List<PsiElement?>? = node.resolve()?.let { listOf(it) } ?: node.sourcePsi?.let { resolveReferenceWithAnalysis(it) }
+//        val resolved: List<PsiElement?>? = node.resolve() ?: node.sourcePsi?.let { resolveReferenceWithAnalysis(it) }
 
-        when (resolved) {
-            is PsiMethod -> recordFunction(resolved, UsageKind.CALL)
-            is KtFunction -> recordFunction(resolved, UsageKind.CALL)
-            is PsiClass -> recordType(resolved, UsageKind.TYPE_REFERENCE)
-            is KtClassOrObject -> recordType(resolved, UsageKind.TYPE_REFERENCE)
+        for (element: PsiElement? in resolved.orEmpty()) {
+            when (element) {
+                is PsiMethod -> recordFunction(element, UsageKind.CALL)
+                is KtFunction -> recordFunction(element, UsageKind.CALL)
+                is PsiClass -> recordType(element, UsageKind.TYPE_REFERENCE)
+                is KtClassOrObject -> recordType(element, UsageKind.TYPE_REFERENCE)
+            }
         }
         return super.visitSimpleNameReferenceExpression(node)
     }
+//    override fun visitSimpleNameReferenceExpression(node: USimpleNameReferenceExpression): Boolean {
+//        if (shouldStopTraversal()) return true
+//
+//        LOG.info("node.getQualifiedName(): ${node.getQualifiedName()}")
+//        // Avoid double counting calls (which are handled in visitCallExpression)
+//        if (node.uastParent is UCallExpression) {
+//            return super.visitSimpleNameReferenceExpression(node)
+//        }
+//        val resolved: PsiElement? = node.resolve() ?: node.sourcePsi?.let { resolveReferenceWithAnalysis(it) } // Fallback to Analysis API
+//
+//        when (resolved) {
+//            is PsiMethod -> recordFunction(resolved, UsageKind.CALL)
+//            is KtFunction -> recordFunction(resolved, UsageKind.CALL)
+//            is PsiClass -> recordType(resolved, UsageKind.TYPE_REFERENCE)
+//            is KtClassOrObject -> recordType(resolved, UsageKind.TYPE_REFERENCE)
+//        }
+//        return super.visitSimpleNameReferenceExpression(node)
+//    }
 
     private fun recordType(element: PsiElement?, usageKind: UsageKind) {
         record(element, usageKind, typeUsages)
@@ -514,18 +542,44 @@ private fun PsiElement.isSameDeclarationAs(other: PsiElement): Boolean {
  * Attempts to resolve a Kotlin reference to its target declaration using the Analysis API.
  * This is a fallback for when standard UAST resolution (`node.resolve()`) fails or returns null.
  */
-private fun resolveReferenceWithAnalysis(element: PsiElement): PsiElement? {
-    val ktElement = element as? KtElement ?: return null
-    return ktElement.runAnalysisSafely {
-        // `KaSession` Context
-        // `mainReference` retrieves the primary reference from the PSI element (e.g., the name in a function call).
-        val ref: KtReference = (ktElement as? KtReferenceExpression)?.mainReference ?: return@runAnalysisSafely null
+private fun resolveReferenceWithAnalysis(element: PsiElement): List<PsiElement?>? {
+    val ktReferenceExpr: KtReferenceExpression = element as? KtReferenceExpression ?: return null
+    return ktReferenceExpr.runAnalysisSafely {
+
+        // Resolve K2 references
+        val k2References: Array<PsiReference> = ktReferenceExpr.references
+
+        val kaSymbols: List<KaSymbol> = buildList {
+            for (psiRef: PsiReference in k2References) {
+                val k2Ref: KtReference = psiRef as? KtReference ?: continue
+                addAll(runCatching<MutableList<KaSymbol>, Collection<KaSymbol>> { k2Ref.resolveToSymbols() }.getOrElse { emptyList() })
+            }
+        }
+        if (kaSymbols.isEmpty()) return@runAnalysisSafely null
+
+        return@runAnalysisSafely kaSymbols.map { it.psi }
 
         // `resolveToSymbol()` is a K2 API that resolves the reference to a `KaSymbol`.
         // We then access `.psi` to get back to the underlying PSI element (source declaration).
-        ref.resolveToSymbol()?.psi
+//        ref.resolveToSymbol()?.psi
     }
 }
+//private fun resolveReferenceWithAnalysis(element: PsiElement): PsiElement? {
+//    val ktElement: KtElement = element as? KtElement ?: return null
+//    return ktElement.runAnalysisSafely {
+//
+//        // Resolve K2 references
+//        val k2Refs: Array<PsiReference> = expr.references
+//
+//        // `KaSession` Context
+//        // `mainReference` retrieves the primary reference from the PSI element (e.g., the name in a function call).
+//        val ref: KtReference = (ktElement as? KtReferenceExpression)?.mainReference ?: return@runAnalysisSafely null
+//
+//        // `resolveToSymbol()` is a K2 API that resolves the reference to a `KaSymbol`.
+//        // We then access `.psi` to get back to the underlying PSI element (source declaration).
+//        ref.resolveToSymbol()?.psi
+//    }
+//}
 
 /**
  * A more specialized resolver for classifiers (classes, interfaces, objects) and types.
@@ -603,35 +657,11 @@ private inline fun PsiElement.preferSourceDeclaration(): Pair<PsiElement, PsiFil
         else -> navigationElement.getParentOfType(strict = false)
     }
 
-    when (sourceDeclaration) {
-        is KtDeclaration -> {
-            val ktFile: KtFile = sourceDeclaration.containingKtFile
-            return if (!ktFile.isCompiled) {
-                sourceDeclaration to ktFile
-            } else {
-                this to this.containingFile
-            }
-        }
-
-        is PsiClass -> {
-            val psiFile: PsiFile = sourceDeclaration.containingFile
-            return if (psiFile !is PsiCompiledFile) {
-                sourceDeclaration to psiFile
-            } else {
-                this to this.containingFile
-            }
-        }
-
-        else -> {
-            if (sourceDeclaration != null) {
-                val psiFile: PsiFile = sourceDeclaration.containingFile
-                if (psiFile !is PsiCompiledFile) {
-                    return sourceDeclaration to psiFile
-                }
-            }
-            return this to this.containingFile
-        }
+    if (sourceDeclaration != null) {
+        return sourceDeclaration to sourceDeclaration.containingFile
     }
+
+    return this to this.containingFile
 }
 
 inline fun getImportsList(file: PsiFile): List<String> {
@@ -673,6 +703,22 @@ private fun PsiElement.toDeclarationSlice(
     val name: String? = sourceDeclaration.computeName()
     val fqNameTypeString: String = sourceDeclaration::class.qualifiedName ?: sourceDeclaration.javaClass.name
 
+    val sourceCode: String = try {
+        sourceDeclaration.text ?: "<!-- Source code not available (text is null) -->"
+    } catch (e: Exception) {
+        "<!-- Source code not available (compiled/error: ${e.message}) -->"
+    }
+
+    LOG.info("kotlinFqName?.asString(): ${kotlinFqName?.asString()}")
+    LOG.info("psiFilePath: $psiFilePath")
+    LOG.info("packageName: $packageName")
+    LOG.info("ktFqNameRelativeString: $ktFqNameRelativeString")
+    LOG.info("presentableText: $presentableText")
+    LOG.info("name: $name")
+    LOG.info("fqNameTypeString: $fqNameTypeString")
+    LOG.info("sourceCode: $sourceCode")
+    LOG.info("\n\n")
+
     // Pack every attribute that downstream tooling may need to reconstruct a declarative slice
     return DeclarationSlice(
         psiFilePath,
@@ -682,7 +728,7 @@ private fun PsiElement.toDeclarationSlice(
         ktFqNameRelativeString,
         fqNameTypeString,
         kotlinFqNameString = kotlinFqName?.asString(),
-        sourceCode = sourceDeclaration.text,
+        sourceCode = sourceCode,
     )
 }
 
