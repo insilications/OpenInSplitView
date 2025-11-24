@@ -410,7 +410,27 @@ private class SymbolUsageCollector(
             UsageKind.CALL
         }
 
+        LOG.info("0 visitCallExpression - node:\n${node.asRecursiveLogString()}")
         val resolvedCallable: PsiElement? = node.resolve()
+        LOG.info("1 visitCallExpression - resolvedCallable: $resolvedCallable \n\n\n")
+
+//        val sourcePsi: KtElement? = node.sourcePsi as? KtElement
+        val sourcePsi: KtElement? = resolvedCallable as? KtElement
+        if (sourcePsi != null) {
+            sourcePsi.runAnalysisSafely {
+                if (sourcePsi is KtCallExpression) {
+                    LOG.info("visitCallExpression sourcePsi.text: ${sourcePsi.text}")
+                    LOG.info("visitCallExpression sourcePsi.kotlinFqName?.asString(): ${sourcePsi.kotlinFqName?.asString()}")
+                    val ref = sourcePsi.calleeExpression?.mainReference
+                    val refPsi = ref?.resolveToSymbol()?.psi
+                    val refPsiNav = refPsi?.navigationElement
+                    LOG.info("visitCallExpression sourcePsi refPsi: ${refPsiNav?.kotlinFqName?.asString()}")
+                    LOG.info("visitCallExpression sourcePsi refPsi.text: ${refPsiNav?.text}")
+                    LOG.info("visitCallExpression sourcePsi refPsi.FILE: ${refPsiNav?.containingFile?.virtualFile?.path}")
+                }
+            }
+        }
+
         recordFunction(resolvedCallable, usageKind)
 
         // If it's a constructor call, we also want to record the Type being instantiated.
@@ -424,16 +444,13 @@ private class SymbolUsageCollector(
     }
 
     override fun visitSimpleNameReferenceExpression(node: USimpleNameReferenceExpression): Boolean {
-        LOG.info("0 visitSimpleNameReferenceExpression - node: ${node.asRecursiveLogString()}\n")
         if (shouldStopTraversal()) return true
 
         // Avoid double counting calls (which are handled in visitCallExpression)
         if (node.uastParent is UCallExpression) {
-            LOG.info("1 visitSimpleNameReferenceExpression - node: ${node.asRecursiveLogString()}\n\n")
             return super.visitSimpleNameReferenceExpression(node)
         }
 
-        LOG.info("2 visitSimpleNameReferenceExpression - node: ${node.asRecursiveLogString()}\n\n")
         // Fallback to Analysis API
         val resolved: List<PsiElement?>? = node.resolve()?.let { listOf(it) } ?: node.sourcePsi?.let { resolveReferenceWithAnalysis(it) }
 
