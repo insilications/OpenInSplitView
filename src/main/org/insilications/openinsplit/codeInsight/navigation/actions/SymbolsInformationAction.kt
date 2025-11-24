@@ -425,6 +425,8 @@ private class SymbolUsageCollector(
             LOG.info("visitCallExpression resolvedCallable: ${resolvedCallable?.kotlinFqName?.asString()}")
             val fqNameTypeString: String = resolvedCallable::class.qualifiedName ?: resolvedCallable.javaClass.name
             LOG.info("visitCallExpression fqNameTypeString: $fqNameTypeString")
+            val ueL = resolvedCallable.toUElement()
+            LOG.info("visitCallExpression ueL?.asRenderString(): ${ueL?.asRenderString()}")
 
         }
         LOG.info("\n\n")
@@ -445,14 +447,16 @@ private class SymbolUsageCollector(
         LOG.info("visitSimpleNameReferenceExpression node.asSourceString(): ${node.asSourceString()}")
         LOG.info("visitSimpleNameReferenceExpression node.asLogString(): ${node.asLogString()}")
         LOG.info("visitSimpleNameReferenceExpression node.asRenderString(): ${node.asRenderString()}")
-        LOG.info("\n\n")
+
 
         if (shouldStopTraversal()) return true
 
         // Avoid double counting calls (which are handled in visitCallExpression)
         if (node.uastParent is UCallExpression) {
+            LOG.info("visitSimpleNameReferenceExpression node.uastParent is UCallExpression")
             return super.visitSimpleNameReferenceExpression(node)
         }
+        LOG.info("\n\n")
         // Fallback to Analysis API
         val resolved: List<PsiElement?>? = node.resolve()?.let { listOf(it) } ?: node.sourcePsi?.let { resolveReferenceWithAnalysis(it) }
 //        val resolved: List<PsiElement?>? = node.resolve() ?: node.sourcePsi?.let { resolveReferenceWithAnalysis(it) }
