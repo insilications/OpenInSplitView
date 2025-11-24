@@ -412,40 +412,22 @@ private class SymbolUsageCollector(
 
         val sourcePsi: PsiElement? = node.sourcePsi
 
-        // 1. Decide strategy based on the CALL SITE language
-//        val resolvedCallable: PsiElement? = if (sourcePsi is KtElement) {
+        // Base the strategy on the CALL SITE language with a type check, since every implementation of `KtElement` is inherently part of Kotlin
         val resolvedCallable: PsiElement? = if (sourcePsi is KtCallExpression) {
             // === K2 PATH (Kotlin) ===
-            // Directly use Analysis API. Avoids UAST's "LightMethod" wrappers entirely.
             analyze(sourcePsi) {
                 // Resolve the call using K2 semantics
                 val callInfo: KaCallInfo? = sourcePsi.resolveToCall()
 
                 // Get the target symbol (Function, Constructor, etc.)
                 val symbol: KaFunctionSymbol? = callInfo?.singleFunctionCallOrNull()?.symbol ?: callInfo?.singleConstructorCallOrNull()?.symbol
-
-                // symbol.psi returns the ACTUAL source declaration (KtFunction),
-                // or the Decompiled PSI if it's from a library.
                 symbol?.psi
             }
         } else {
             // === JAVA/UAST PATH ===
-            // For Java files, node.resolve() returns the real PsiMethod
+            // For Java files, `node.resolve()` returns the real `PsiMethod`
             node.resolve()
         }
-
-//        val resolvedCallable: PsiElement? = node.resolve() ?: node.sourcePsi?.let {
-////        val resolvedCallable: PsiElement? = node.sourcePsi?.let {
-//            if (it is KtCallExpression) {
-//                analyze(it) {
-//                    val ktRef = it.calleeExpression?.mainReference
-//                    val refPsi = ktRef?.resolveToSymbol()?.psi
-//                    refPsi?.navigationElement
-//                }
-//            } else {
-//                null
-//            }
-//        }
 
         LOG.info("1 visitCallExpression - resolvedCallable: $resolvedCallable")
         LOG.info("1 visitCallExpression - resolvedCallable: ${resolvedCallable?.text}")
