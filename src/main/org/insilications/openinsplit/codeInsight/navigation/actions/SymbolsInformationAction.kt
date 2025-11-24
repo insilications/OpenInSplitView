@@ -454,6 +454,7 @@ private class SymbolUsageCollector(
         // Avoid double counting calls (which are handled in visitCallExpression)
         if (node.uastParent is UCallExpression) {
             LOG.info("visitSimpleNameReferenceExpression node.uastParent is UCallExpression")
+            LOG.info("\n\n")
             return super.visitSimpleNameReferenceExpression(node)
         }
         LOG.info("\n\n")
@@ -557,6 +558,19 @@ private fun PsiElement.isSameDeclarationAs(other: PsiElement): Boolean {
 // and call resolution results (`KaCall`).
 // =================================================================================================
 
+private inline fun KaSymbol.locateDeclarationPsi(): PsiElement? {
+    // Only certain origins can be materialized as PSI; others (e.g. synthetic SAM wrappers) do not have stable slices
+    if (origin != KaSymbolOrigin.SOURCE && origin != KaSymbolOrigin.JAVA_SOURCE && origin != KaSymbolOrigin.LIBRARY && origin != KaSymbolOrigin.JAVA_LIBRARY) {
+        return null
+    }
+
+    val sourcePsi: PsiElement = this.psi ?: return null
+    return sourcePsi //    return when (sourcePsi) {
+    //        is KtDeclaration -> sourcePsi
+    //        else -> sourcePsi.getParentOfType(strict = true)
+    //    }
+}
+
 /**
  * Attempts to resolve a Kotlin reference to its target declaration using the Analysis API.
  * This is a fallback for when standard UAST resolution (`node.resolve()`) fails or returns null.
@@ -576,7 +590,7 @@ private fun resolveReferenceWithAnalysis(element: PsiElement): List<PsiElement?>
         }
         if (kaSymbols.isEmpty()) return@runAnalysisSafely null
 
-        return@runAnalysisSafely kaSymbols.map { it.psi }
+        return@runAnalysisSafely kaSymbols.map { it.locateDeclarationPsi() }
 
         // `resolveToSymbol()` is a K2 API that resolves the reference to a `KaSymbol`.
         // We then access `.psi` to get back to the underlying PSI element (source declaration).
