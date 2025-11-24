@@ -422,13 +422,55 @@ private class SymbolUsageCollector(
         val resolvedCallable: PsiElement? = node.resolve()
 
         if (resolvedCallable != null) {
-            LOG.info("visitCallExpression resolvedCallable: ${resolvedCallable?.kotlinFqName?.asString()}")
+            LOG.info("visitCallExpression resolvedCallable: ${resolvedCallable.kotlinFqName?.asString()}")
+
+            if (resolvedCallable is KtFunction) {
+                LOG.info("visitCallExpression resolvedCallable is KtFunction")
+            }
             val fqNameTypeString: String = resolvedCallable::class.qualifiedName ?: resolvedCallable.javaClass.name
-            LOG.info("visitCallExpression fqNameTypeString: $fqNameTypeString")
+            LOG.info("visitCallExpression resolvedCallable - fqNameTypeString: $fqNameTypeString")
             val ueL = resolvedCallable.toUElement()
-            LOG.info("visitCallExpression ueL?.asRenderString(): ${ueL?.asRenderString()}")
+            LOG.info("visitCallExpression resolvedCallable - ueL?.asRenderString(): ${ueL?.asRenderString()}")
 
         }
+
+
+//        val sourcePsi = node.sourcePsi as? KtCallExpression
+        val sourcePsi: KtElement? = node.sourcePsi as? KtElement
+        if (sourcePsi != null) {
+            sourcePsi.runAnalysisSafely {
+                if (sourcePsi is KtCallExpression) {
+                    LOG.info("visitCallExpression sourcePsi: ${sourcePsi.text}")
+                    val ref = sourcePsi.calleeExpression?.mainReference
+                    val refPsi = ref?.resolveToSymbol()?.psi
+                    val refPsiNav = refPsi?.navigationElement
+                    LOG.info("visitCallExpression sourcePsi refPsi: ${refPsiNav?.kotlinFqName}")
+                    LOG.info("visitCallExpression sourcePsi refPsi.text: ${refPsiNav?.text}")
+                    LOG.info("visitCallExpression sourcePsi refPsi.FILE: ${refPsiNav?.containingFile?.virtualFile?.path}")
+                }
+            }
+        }
+//        val kkK = node.resolve()?.let { resolveClassifierWithAnalysis(it) }
+        val kkK = node.resolve()?.let { resolveClassifierWithAnalysis(it) }
+        if (kkK != null) {
+            LOG.info("visitCallExpression kkK: ${kkK.kotlinFqName?.asString()}")
+            LOG.info("visitCallExpression kkK: ${kkK.navigationElement.text}")
+            LOG.info("visitCallExpression kkK.text: ${kkK.text}")
+            val fqNameTypeString2: String = kkK::class.qualifiedName ?: kkK.javaClass.name
+            LOG.info("visitCallExpression kkK - fqNameTypeString2: $fqNameTypeString2")
+        }
+
+
+        val resolvedCallableSourcePsi = node.methodIdentifier?.sourcePsi?.let { resolveReferenceWithAnalysis(it) }
+
+        for (element: PsiElement? in resolvedCallableSourcePsi.orEmpty()) {
+            if (element != null) {
+                LOG.info("visitCallExpression element: ${element.kotlinFqName?.asString()}")
+                val fqNameTypeString2: String = element::class.qualifiedName ?: element.javaClass.name
+                LOG.info("visitCallExpression element - fqNameTypeString2: $fqNameTypeString2")
+            }
+        }
+
         LOG.info("\n\n")
         recordFunction(resolvedCallable, usageKind)
 
@@ -576,6 +618,7 @@ private inline fun KaSymbol.locateDeclarationPsi(): PsiElement? {
  * This is a fallback for when standard UAST resolution (`node.resolve()`) fails or returns null.
  */
 private fun resolveReferenceWithAnalysis(element: PsiElement): List<PsiElement?>? {
+    LOG.info("resolveReferenceWithAnalysis element: ${element::class.qualifiedName ?: element.javaClass.name}")
     val ktReferenceExpr: KtReferenceExpression = element as? KtReferenceExpression ?: return null
     return ktReferenceExpr.runAnalysisSafely {
 
