@@ -331,7 +331,7 @@ private class SymbolUsageCollector(
 
         // Explicitly handle Kotlin destructuring declarations in lambda parameters,
         // as UAST might not traverse them as standard variables/parameters.
-        val ktLambda = node.sourcePsi as? KtLambdaExpression
+        val ktLambda: KtLambdaExpression? = node.sourcePsi as? KtLambdaExpression
         if (ktLambda != null) {
             ktLambda.functionLiteral.valueParameters.forEach { parameter ->
                 parameter.destructuringDeclaration?.entries?.forEach { entry ->
@@ -342,7 +342,6 @@ private class SymbolUsageCollector(
                 }
             }
         }
-
         return super.visitLambdaExpression(node)
     }
 
