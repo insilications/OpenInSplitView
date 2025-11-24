@@ -512,19 +512,6 @@ private fun PsiElement.isSameDeclarationAs(other: PsiElement): Boolean {
 // and call resolution results (`KaCall`).
 // =================================================================================================
 
-private inline fun KaSymbol.locateDeclarationPsi(): PsiElement? {
-    // Only certain origins can be materialized as PSI; others (e.g. synthetic SAM wrappers) do not have stable slices
-    if (origin != KaSymbolOrigin.SOURCE && origin != KaSymbolOrigin.JAVA_SOURCE && origin != KaSymbolOrigin.LIBRARY && origin != KaSymbolOrigin.JAVA_LIBRARY) {
-        return null
-    }
-
-    val sourcePsi: PsiElement = this.psi ?: return null
-    return sourcePsi //    return when (sourcePsi) {
-    //        is KtDeclaration -> sourcePsi
-    //        else -> sourcePsi.getParentOfType(strict = true)
-    //    }
-}
-
 /**
  * Attempts to resolve a Kotlin reference to its target declaration using the Analysis API.
  * This is a fallback for when standard UAST resolution (`node.resolve()`) fails or returns null.
@@ -546,28 +533,8 @@ private fun resolveReferenceWithAnalysis(element: PsiElement): List<PsiElement?>
         if (kaSymbols.isEmpty()) return@runAnalysisSafely null
 
         return@runAnalysisSafely kaSymbols.map { it.psi }
-
-        // `resolveToSymbol()` is a K2 API that resolves the reference to a `KaSymbol`.
-        // We then access `.psi` to get back to the underlying PSI element (source declaration).
-//        ref.resolveToSymbol()?.psi
     }
 }
-//private fun resolveReferenceWithAnalysis(element: PsiElement): PsiElement? {
-//    val ktElement: KtElement = element as? KtElement ?: return null
-//    return ktElement.runAnalysisSafely {
-//
-//        // Resolve K2 references
-//        val k2Refs: Array<PsiReference> = expr.references
-//
-//        // `KaSession` Context
-//        // `mainReference` retrieves the primary reference from the PSI element (e.g., the name in a function call).
-//        val ref: KtReference = (ktElement as? KtReferenceExpression)?.mainReference ?: return@runAnalysisSafely null
-//
-//        // `resolveToSymbol()` is a K2 API that resolves the reference to a `KaSymbol`.
-//        // We then access `.psi` to get back to the underlying PSI element (source declaration).
-//        ref.resolveToSymbol()?.psi
-//    }
-//}
 
 /**
  * A more specialized resolver for classifiers (classes, interfaces, objects) and types.
