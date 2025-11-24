@@ -41,12 +41,19 @@ import org.jetbrains.kotlin.psi.psiUtil.getParentOfType
 import org.jetbrains.uast.*
 import org.jetbrains.uast.visitor.AbstractUastVisitor
 
+/**
+ * Action that collects and logs detailed semantic information about the symbol under the caret.
+ *
+ * It is marked as `DumbAware` so it can be invoked even during indexing, although the core logic
+ * checks `DumbService` to avoid expensive or inaccurate resolution when indices are incomplete.
+ */
 class SymbolsInformationAction : DumbAwareAction() {
     companion object {
         private val LOG: Logger = Logger.getInstance("org.insilications.openinsplit")
         private const val GETTING_SYMBOL_INFO = "Getting symbol information..."
     }
 
+    // Run on a background thread to avoid freezing the UI during update checks.
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
@@ -67,14 +74,18 @@ class SymbolsInformationAction : DumbAwareAction() {
             return
         }
 
-        // Collect everything inside a modal read so the user immediately knows the action is busy
+        // We use `runWithModalProgressBlocking` to show a progress indicator to the user.
+        // Semantic analysis can be slow, especially for complex files or large hierarchies.
         runWithModalProgressBlocking(project, GETTING_SYMBOL_INFO) {
+            // Early exit if indices are not ready. The Analysis API relies heavily on indices.
             if (DumbService.isDumb(project)) {
                 LOG.warn("Dumb mode active; aborting semantic resolution.")
                 return@runWithModalProgressBlocking
             }
 
-            // Resolve the caret target outside of analysis to avoid opening a KaSession without a declaration anchor
+            // Step 1: Find the target element (symbol) at the caret.
+            // We do this in a `readAction` because it accesses the PSI/AST.
+            // We do NOT use the Analysis API yet; `TargetElementUtil` is sufficient for finding the declaration.
             val targetSymbol: PsiElement? = readAction {
                 val offset: Int = editor.caretModel.offset
 
@@ -89,10 +100,11 @@ class SymbolsInformationAction : DumbAwareAction() {
             }
 
             LOG.info("Analyzing...")
+
+            // Step 2: Build the full context (references, types, etc.) for the found symbol.
             readAction {
                 buildSymbolContext(project, targetSymbol)
             }
-
         }
     }
 }
@@ -154,6 +166,10 @@ private val SYMBOL_USAGE_LOG: Logger = Logger.getInstance("org.insilications.ope
 
 /* ============================= CONTEXT BUILDERS ============================= */
 
+/**
+ * Orchestrates the gathering of information for the target symbol.
+ * It determines the symbol kind, converts the target to a slice, and triggers the recursive reference collection.
+ */
 private fun buildSymbolContext(
     project: Project, targetSymbol: PsiElement, maxRefs: Int = 5000
 ) {
@@ -161,13 +177,17 @@ private fun buildSymbolContext(
     val packageDirective: String? = getPackageDirective(targetPsiFile)
     val importsList: List<String> = getImportsList(targetPsiFile)
 
+    // Determine if we are looking at a Function or a Class to decide the scope of traversal.
     val symbolKind: SymbolKind = targetSymbol.detectSymbolKind() ?: run {
         LOG.warn("Unsupported target symbol: ${targetSymbol::class.qualifiedName}")
         return
     }
 
     val targetSlice: DeclarationSlice = targetSymbol.toDeclarationSlice(project)
+
+    // Collect references (types, calls, etc.) used WITHIN the target symbol's scope.
     val referencedCollections: ReferencedCollections = collectReferencedDeclarations(project, targetSymbol, symbolKind, maxRefs)
+
     val targetContext = TargetSymbolContext(
         packageDirective = packageDirective,
         importsList = importsList,
@@ -180,8 +200,13 @@ private fun buildSymbolContext(
     LOG.info(targetContext.toLogString())
 }
 
-// Normalize the caret element into a coarse symbol kind so we know how deep the traversal
-// must go (only the function body vs. the entire class hierarchy of declarations).
+/**
+ * Normalize the caret element into a coarse symbol kind so we know how deep the traversal
+ * must go (only the function body vs. the entire class hierarchy of declarations).
+ * 
+ * We check `preferSourceDeclaration` first because we might be at a usage site (reference)
+ * and want to analyze the definition.
+ */
 private fun PsiElement.detectSymbolKind(): SymbolKind? {
     val (sourceDeclaration: PsiElement) = preferSourceDeclaration()
     return when (sourceDeclaration) {
@@ -194,11 +219,20 @@ private fun PsiElement.detectSymbolKind(): SymbolKind? {
     }
 }
 
-// Entrypoint for the “semantic slice” aggregation. It converts the declaration into a
-// UAST root (shared model for Kotlin/Java) and feeds it to the usage collector.
+/**
+ * Entrypoint for the "semantic slice" aggregation.
+ * 
+ * It converts the declaration into a UAST root (Universal AST) which allows us to share 
+ * the traversal logic between Java and Kotlin.
+ * 
+ * @param targetSymbol The PSI element to analyze.
+ * @param symbolKind The kind of symbol (Class/Function) determining the UAST root type.
+ */
 private fun collectReferencedDeclarations(
     project: Project, targetSymbol: PsiElement, symbolKind: SymbolKind, maxRefs: Int
 ): ReferencedCollections {
+    // Attempt to convert the PSI element to a UAST element (UDeclaration).
+    // If the direct conversion fails (common with some PSI wrappers), we try the navigation element.
     val uRoot: UElement = targetSymbol.toUDeclarationRoot(symbolKind) ?: targetSymbol.navigationElement?.toUDeclarationRoot(symbolKind)
     ?: return ReferencedCollections(emptyList(), emptyList(), limitReached = false)
 
@@ -216,6 +250,10 @@ private fun PsiElement.toUDeclarationRoot(symbolKind: SymbolKind): UElement? = w
 
 // Walks the target declaration once, recording all referenced types/functions while keeping
 // the output deterministic (LinkedHashMap) and bounded (maxRefs guard).
+//
+// This visitor extends `AbstractUastVisitor`, allowing it to traverse the Universal Abstract Syntax Tree (UAST).
+// UAST provides a unified view over Java and Kotlin (and other JVM languages), simplifying the task
+// of finding "calls", "type references", etc., without writing separate visitors for each language.
 private class SymbolUsageCollector(
     private val project: Project, targetPsi: PsiElement, private val maxRefs: Int
 ) : AbstractUastVisitor() {
@@ -227,11 +265,21 @@ private class SymbolUsageCollector(
     )
 
     private val pointerManager: SmartPointerManager = SmartPointerManager.getInstance(project)
+
+    // Normalize the target to its source declaration to ensure consistent comparison.
     private val targetDeclaration: PsiElement = targetPsi.preferSourceDeclaration().first
+
+    // Storage: LinkedHashMap preserves insertion order for deterministic output.
     private val typeUsages: LinkedHashMap<String, CollectedUsage> = LinkedHashMap()
     private val functionUsages: LinkedHashMap<String, CollectedUsage> = LinkedHashMap()
     private var hasReachedLimit: Boolean = false
 
+    /**
+     * Finalizes the collection process.
+     * 1. Resolves all collected smart pointers.
+     * 2. Filters out redundant declarations (nested within others).
+     * 3. Converts them to serializable `ReferencedDeclaration` objects.
+     */
     fun buildResult(project: Project): ReferencedCollections {
         val resolvedTypes: List<Pair<PsiElement, CollectedUsage>> =
             typeUsages.values.mapNotNull { usage: CollectedUsage -> usage.pointer.element?.let { it to usage } }
@@ -240,6 +288,8 @@ private class SymbolUsageCollector(
 
         // Filter out any referenced declaration if it is structurally contained within another
         // referenced declaration (or the target itself). This avoids redundant noise in the output.
+        // e.g. If we reference class `A` and method `A.foo`, and `A` is already collected, we might suppress `A.foo`
+        // depending on the desired granularity. Here, we suppress if the parent is in the set.
         val suppressionSet: Set<PsiElement> = (resolvedTypes.map { it.first } + resolvedFunctions.map { it.first } + targetDeclaration).toSet()
 
         fun isRedundant(element: PsiElement): Boolean {
@@ -276,18 +326,24 @@ private class SymbolUsageCollector(
         return super.visitElement(node)
     }
 
+    // --- UAST VISITOR METHODS ---
+    // These methods are called for each node in the UAST. We inspect the node
+    // to see if it represents a reference to a type or a function/method.
+
     override fun visitMethod(node: UMethod): Boolean {
         if (shouldStopTraversal()) return true
+        // Check return type
         val resolved = node.returnType?.let { PsiUtil.resolveClassInType(it) } ?: node.returnTypeReference?.resolvePsiClass()
-        ?: node.returnTypeReference?.sourcePsi?.let { resolveClassifierWithAnalysis(it) }
+        ?: node.returnTypeReference?.sourcePsi?.let { resolveClassifierWithAnalysis(it) } // Fallback to Analysis API
         recordType(resolved, UsageKind.TYPE_REFERENCE)
         return super.visitMethod(node)
     }
 
     override fun visitVariable(node: UVariable): Boolean {
         if (shouldStopTraversal()) return true
+        // Check variable type
         val resolved = node.type.let { PsiUtil.resolveClassInType(it) } ?: node.typeReference?.resolvePsiClass()
-        ?: node.typeReference?.sourcePsi?.let { resolveClassifierWithAnalysis(it) }
+        ?: node.typeReference?.sourcePsi?.let { resolveClassifierWithAnalysis(it) } // Fallback to Analysis API
         recordType(resolved, UsageKind.TYPE_REFERENCE)
         return super.visitVariable(node)
     }
@@ -332,6 +388,7 @@ private class SymbolUsageCollector(
         val resolvedCallable: PsiElement? = node.resolve()
         recordFunction(resolvedCallable, usageKind)
 
+        // If it's a constructor call, we also want to record the Type being instantiated.
         if (node.kind == UastCallKind.CONSTRUCTOR_CALL) {
             val constructorOwner: PsiElement? =
                 (resolvedCallable as? PsiMethod)?.containingClass ?: node.classReference?.resolve() ?: node.sourcePsi?.let { resolveClassifierWithAnalysis(it) }
@@ -343,10 +400,12 @@ private class SymbolUsageCollector(
 
     override fun visitSimpleNameReferenceExpression(node: USimpleNameReferenceExpression): Boolean {
         if (shouldStopTraversal()) return true
+        // Avoid double counting calls (which are handled in visitCallExpression)
         if (node.uastParent is UCallExpression) {
             return super.visitSimpleNameReferenceExpression(node)
         }
-        val resolved: PsiElement? = node.resolve() ?: node.sourcePsi?.let { resolveReferenceWithAnalysis(it) }
+        val resolved: PsiElement? = node.resolve() ?: node.sourcePsi?.let { resolveReferenceWithAnalysis(it) } // Fallback to Analysis API
+
         when (resolved) {
             is PsiMethod -> recordFunction(resolved, UsageKind.CALL)
             is KtFunction -> recordFunction(resolved, UsageKind.CALL)
@@ -410,43 +469,80 @@ private fun PsiElement.isSameDeclarationAs(other: PsiElement): Boolean {
     return thisNav == other || this == otherNav || thisNav == otherNav
 }
 
+// =================================================================================================
+// KOTLIN ANALYSIS API HELPERS
+//
+// The following functions bridge the gap between UAST/PSI and the Kotlin Analysis API (K2).
+// UAST is excellent for language-agnostic structural traversal, but it sometimes struggles to
+// resolve complex Kotlin constructs (like `typealias`, inferred types, or specific constructor calls)
+// to their underlying declaration.
+//
+// We use `analyze(element) { ... }` to enter the Analysis API context (`KaSession`).
+// Within this session, we can access semantic information like symbols (`KaSymbol`), types (`KaType`),
+// and call resolution results (`KaCall`).
+// =================================================================================================
+
+/**
+ * Attempts to resolve a Kotlin reference to its target declaration using the Analysis API.
+ * This is a fallback for when standard UAST resolution (`node.resolve()`) fails or returns null.
+ */
 private fun resolveReferenceWithAnalysis(element: PsiElement): PsiElement? {
     val ktElement = element as? KtElement ?: return null
     return ktElement.runAnalysisSafely {
-        // This is inside a `KaSession` context
+        // `KaSession` Context
+        // `mainReference` retrieves the primary reference from the PSI element (e.g., the name in a function call).
         val ref: KtReference = (ktElement as? KtReferenceExpression)?.mainReference ?: return@runAnalysisSafely null
+
+        // `resolveToSymbol()` is a K2 API that resolves the reference to a `KaSymbol`.
+        // We then access `.psi` to get back to the underlying PSI element (source declaration).
         ref.resolveToSymbol()?.psi
     }
 }
 
+/**
+ * A more specialized resolver for classifiers (classes, interfaces, objects) and types.
+ * It handles cases where UAST might see a "TypeReference" but not know exactly what it points to,
+ * especially with type aliases, generics, or constructor calls.
+ */
 private fun resolveClassifierWithAnalysis(element: PsiElement): PsiElement? {
     val ktElement: KtElement = element as? KtElement ?: return null
     return ktElement.runAnalysisSafely {
-        // This is inside a `KaSession` context
+        // `KaSession` Context
         when (ktElement) {
+            // Case 1: Type References (e.g., `val x: MyType`)
             is KtTypeReference -> {
+                // `expandedSymbol` follows type aliases to the final class symbol.
                 ktElement.type.expandedSymbol?.psi
             }
 
+            // Case 2: Function/Constructor Calls (e.g., `MyClass()`)
             is KtCallExpression -> {
+                // `resolveToCall()` returns a `KaCallInfo`. We check if it's a successful function call.
                 val call: KaFunctionCall<*>? = ktElement.resolveToCall()?.successfulCallOrNull<KaFunctionCall<*>>()
                 val symbol: KaFunctionSymbol? = call?.symbol
+
+                // If it's a constructor call, we want the class (containing symbol), not the constructor function itself.
                 if (symbol is KaConstructorSymbol) {
                     symbol.containingSymbol?.psi
                 } else null
             }
 
+            // Case 3: Class Literals (e.g., `MyClass::class`)
             is KtClassLiteralExpression -> {
                 val type: KaClassType? = ktElement.expressionType as? KaClassType
+                // We unwrap the `KClass<T>` to get `T`, then find its expanded symbol.
                 type?.typeArguments?.firstOrNull()?.type?.expandedSymbol?.psi
             }
 
+            // Case 4: Super Types (e.g., `class A : B()`)
             is KtSuperExpression -> {
                 ktElement.superTypeQualifier?.type?.expandedSymbol?.psi
             }
 
+            // Case 5: Simple Name References (e.g., `MyClass.SOME_CONSTANT`)
             is KtNameReferenceExpression -> {
                 val symbol = ktElement.mainReference.resolveToSymbol()
+                // We only care if it resolves to a Class or TypeAlias.
                 if (symbol is KaClassSymbol || symbol is KaTypeAliasSymbol) symbol.psi else null
             }
 
@@ -455,7 +551,15 @@ private fun resolveClassifierWithAnalysis(element: PsiElement): PsiElement? {
     }
 }
 
-// Wrapper that shields us from Analysis API exceptions (e.g., FIR session invalidation).
+/**
+ * Safe execution wrapper for the Kotlin Analysis API.
+ *
+ * `analyze(element)` is the entry point for K2 analysis. It provides a `KaSession` scope.
+ * This wrapper handles exceptions that might occur during analysis (e.g., invalidation)
+ * to prevent the action from crashing.
+ *
+ * @param block The analysis logic to run within the `KaSession`.
+ */
 private inline fun <T> KtElement.runAnalysisSafely(
     crossinline block: KaSession.() -> T?
 ): T? = try {
