@@ -22,9 +22,7 @@ import com.intellij.psi.util.PsiUtil
 import org.insilications.openinsplit.debug
 import org.jetbrains.kotlin.analysis.api.KaSession
 import org.jetbrains.kotlin.analysis.api.analyze
-import org.jetbrains.kotlin.analysis.api.resolution.KaFunctionCall
-import org.jetbrains.kotlin.analysis.api.resolution.successfulCallOrNull
-import org.jetbrains.kotlin.analysis.api.resolution.symbol
+import org.jetbrains.kotlin.analysis.api.resolution.*
 import org.jetbrains.kotlin.analysis.api.symbols.*
 import org.jetbrains.kotlin.analysis.api.types.KaClassType
 import org.jetbrains.kotlin.idea.base.psi.kotlinFqName
@@ -421,10 +419,10 @@ private class SymbolUsageCollector(
             // Directly use Analysis API. Avoids UAST's "LightMethod" wrappers entirely.
             analyze(sourcePsi) {
                 // Resolve the call using K2 semantics
-                val callInfo = sourcePsi.resolveCall()
+                val callInfo: KaCallInfo? = sourcePsi.resolveToCall()
 
                 // Get the target symbol (Function, Constructor, etc.)
-                val symbol = callInfo?.singleFunctionCallOrNull()?.symbol ?: callInfo?.singleConstructorCallOrNull()?.symbol
+                val symbol: KaFunctionSymbol? = callInfo?.singleFunctionCallOrNull()?.symbol ?: callInfo?.singleConstructorCallOrNull()?.symbol
 
                 // symbol.psi returns the ACTUAL source declaration (KtFunction),
                 // or the Decompiled PSI if it's from a library.
