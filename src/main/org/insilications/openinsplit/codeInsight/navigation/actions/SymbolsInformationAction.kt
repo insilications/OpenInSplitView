@@ -403,15 +403,6 @@ private class SymbolUsageCollector(
     }
 
     override fun visitCallExpression(node: UCallExpression): Boolean {
-        LOG.info("visitCallExpression node.asSourceString(): ${node.asSourceString()}")
-        LOG.info("visitCallExpression node.asLogString(): ${node.asLogString()}")
-        LOG.info("visitCallExpression node.asRenderString(): ${node.asRenderString()}")
-        LOG.info("visitCallExpression node.methodName: ${node.methodName}")
-        LOG.info("visitCallExpression node.methodIdentifier?.asRenderString(): ${node.methodIdentifier?.asRenderString()}")
-
-//        val kk = node.methodIdentifier?.
-
-
         if (shouldStopTraversal()) return true
         val usageKind: UsageKind = if (node.kind == UastCallKind.CONSTRUCTOR_CALL) {
             UsageKind.CONSTRUCTOR_CALL
@@ -420,58 +411,6 @@ private class SymbolUsageCollector(
         }
 
         val resolvedCallable: PsiElement? = node.resolve()
-
-        if (resolvedCallable != null) {
-            LOG.info("visitCallExpression resolvedCallable: ${resolvedCallable.kotlinFqName?.asString()}")
-
-            if (resolvedCallable is KtFunction) {
-                LOG.info("visitCallExpression resolvedCallable is KtFunction")
-            }
-            val fqNameTypeString: String = resolvedCallable::class.qualifiedName ?: resolvedCallable.javaClass.name
-            LOG.info("visitCallExpression resolvedCallable - fqNameTypeString: $fqNameTypeString")
-            val ueL = resolvedCallable.toUElement()
-            LOG.info("visitCallExpression resolvedCallable - ueL?.asRenderString(): ${ueL?.asRenderString()}")
-
-        }
-
-
-//        val sourcePsi = node.sourcePsi as? KtCallExpression
-        val sourcePsi: KtElement? = node.sourcePsi as? KtElement
-        if (sourcePsi != null) {
-            sourcePsi.runAnalysisSafely {
-                if (sourcePsi is KtCallExpression) {
-                    LOG.info("visitCallExpression sourcePsi: ${sourcePsi.text}")
-                    val ref = sourcePsi.calleeExpression?.mainReference
-                    val refPsi = ref?.resolveToSymbol()?.psi
-                    val refPsiNav = refPsi?.navigationElement
-                    LOG.info("visitCallExpression sourcePsi refPsi: ${refPsiNav?.kotlinFqName}")
-                    LOG.info("visitCallExpression sourcePsi refPsi.text: ${refPsiNav?.text}")
-                    LOG.info("visitCallExpression sourcePsi refPsi.FILE: ${refPsiNav?.containingFile?.virtualFile?.path}")
-                }
-            }
-        }
-//        val kkK = node.resolve()?.let { resolveClassifierWithAnalysis(it) }
-        val kkK = node.resolve()?.let { resolveClassifierWithAnalysis(it) }
-        if (kkK != null) {
-            LOG.info("visitCallExpression kkK: ${kkK.kotlinFqName?.asString()}")
-            LOG.info("visitCallExpression kkK: ${kkK.navigationElement.text}")
-            LOG.info("visitCallExpression kkK.text: ${kkK.text}")
-            val fqNameTypeString2: String = kkK::class.qualifiedName ?: kkK.javaClass.name
-            LOG.info("visitCallExpression kkK - fqNameTypeString2: $fqNameTypeString2")
-        }
-
-
-        val resolvedCallableSourcePsi = node.methodIdentifier?.sourcePsi?.let { resolveReferenceWithAnalysis(it) }
-
-        for (element: PsiElement? in resolvedCallableSourcePsi.orEmpty()) {
-            if (element != null) {
-                LOG.info("visitCallExpression element: ${element.kotlinFqName?.asString()}")
-                val fqNameTypeString2: String = element::class.qualifiedName ?: element.javaClass.name
-                LOG.info("visitCallExpression element - fqNameTypeString2: $fqNameTypeString2")
-            }
-        }
-
-        LOG.info("\n\n")
         recordFunction(resolvedCallable, usageKind)
 
         // If it's a constructor call, we also want to record the Type being instantiated.
@@ -485,24 +424,15 @@ private class SymbolUsageCollector(
     }
 
     override fun visitSimpleNameReferenceExpression(node: USimpleNameReferenceExpression): Boolean {
-        LOG.info("visitSimpleNameReferenceExpression node.getQualifiedName(): ${node.getQualifiedName()}")
-        LOG.info("visitSimpleNameReferenceExpression node.asSourceString(): ${node.asSourceString()}")
-        LOG.info("visitSimpleNameReferenceExpression node.asLogString(): ${node.asLogString()}")
-        LOG.info("visitSimpleNameReferenceExpression node.asRenderString(): ${node.asRenderString()}")
-
-
         if (shouldStopTraversal()) return true
 
         // Avoid double counting calls (which are handled in visitCallExpression)
         if (node.uastParent is UCallExpression) {
-            LOG.info("visitSimpleNameReferenceExpression node.uastParent is UCallExpression")
-            LOG.info("\n\n")
             return super.visitSimpleNameReferenceExpression(node)
         }
-        LOG.info("\n\n")
+
         // Fallback to Analysis API
         val resolved: List<PsiElement?>? = node.resolve()?.let { listOf(it) } ?: node.sourcePsi?.let { resolveReferenceWithAnalysis(it) }
-//        val resolved: List<PsiElement?>? = node.resolve() ?: node.sourcePsi?.let { resolveReferenceWithAnalysis(it) }
 
         for (element: PsiElement? in resolved.orEmpty()) {
             when (element) {
@@ -514,24 +444,6 @@ private class SymbolUsageCollector(
         }
         return super.visitSimpleNameReferenceExpression(node)
     }
-//    override fun visitSimpleNameReferenceExpression(node: USimpleNameReferenceExpression): Boolean {
-//        if (shouldStopTraversal()) return true
-//
-//        LOG.info("node.getQualifiedName(): ${node.getQualifiedName()}")
-//        // Avoid double counting calls (which are handled in visitCallExpression)
-//        if (node.uastParent is UCallExpression) {
-//            return super.visitSimpleNameReferenceExpression(node)
-//        }
-//        val resolved: PsiElement? = node.resolve() ?: node.sourcePsi?.let { resolveReferenceWithAnalysis(it) } // Fallback to Analysis API
-//
-//        when (resolved) {
-//            is PsiMethod -> recordFunction(resolved, UsageKind.CALL)
-//            is KtFunction -> recordFunction(resolved, UsageKind.CALL)
-//            is PsiClass -> recordType(resolved, UsageKind.TYPE_REFERENCE)
-//            is KtClassOrObject -> recordType(resolved, UsageKind.TYPE_REFERENCE)
-//        }
-//        return super.visitSimpleNameReferenceExpression(node)
-//    }
 
     private fun recordType(element: PsiElement?, usageKind: UsageKind) {
         record(element, usageKind, typeUsages)
@@ -784,16 +696,6 @@ private fun PsiElement.toDeclarationSlice(
     } catch (e: Exception) {
         "<!-- Source code not available (compiled/error: ${e.message}) -->"
     }
-
-    LOG.info("kotlinFqName?.asString(): ${kotlinFqName?.asString()}")
-    LOG.info("psiFilePath: $psiFilePath")
-    LOG.info("packageName: $packageName")
-    LOG.info("ktFqNameRelativeString: $ktFqNameRelativeString")
-    LOG.info("presentableText: $presentableText")
-    LOG.info("name: $name")
-    LOG.info("fqNameTypeString: $fqNameTypeString")
-    LOG.info("sourceCode: $sourceCode")
-    LOG.info("\n\n")
 
     // Pack every attribute that downstream tooling may need to reconstruct a declarative slice
     return DeclarationSlice(
