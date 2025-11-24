@@ -590,7 +590,7 @@ private fun resolveReferenceWithAnalysis(element: PsiElement): List<PsiElement?>
         }
         if (kaSymbols.isEmpty()) return@runAnalysisSafely null
 
-        return@runAnalysisSafely kaSymbols.map { it.locateDeclarationPsi() }
+        return@runAnalysisSafely kaSymbols.map { it.psi }
 
         // `resolveToSymbol()` is a K2 API that resolves the reference to a `KaSymbol`.
         // We then access `.psi` to get back to the underlying PSI element (source declaration).
