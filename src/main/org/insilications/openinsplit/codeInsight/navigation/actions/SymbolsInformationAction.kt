@@ -329,19 +329,28 @@ private class SymbolUsageCollector(
     override fun visitLambdaExpression(node: ULambdaExpression): Boolean {
         if (shouldStopTraversal()) return true
 
-        // Explicitly handle Kotlin destructuring declarations in lambda parameters,
-        // as UAST might not traverse them as standard variables/parameters.
+        // Standard UAST traversal (super.visitLambdaExpression) correctly handles:
+        // 1. Java lambda parameters (treated as UVariables).
+        // 2. Standard Kotlin lambda parameters (treated as UParameters).
+        // 3. The body of the lambda for both languages.
+        //
+        // However, it does NOT traverse Kotlin destructuring declarations in lambda parameters
+        // (e.g., `{ (requestor, _) -> ... }`). These are structurally different in the PSI
+        // and often opaque to UAST's parameter list view.
+        // We must manually inspect the underlying Kotlin PSI to capture types referenced
+        // inside these destructuring entries.
         val ktLambda: KtLambdaExpression? = node.sourcePsi as? KtLambdaExpression
         if (ktLambda != null) {
-            ktLambda.functionLiteral.valueParameters.forEach { parameter ->
-                parameter.destructuringDeclaration?.entries?.forEach { entry ->
-                    entry.typeReference?.let { typeRef ->
-                        val resolved = resolveClassifierWithAnalysis(typeRef)
+            ktLambda.functionLiteral.valueParameters.forEach { parameter: KtParameter ->
+                parameter.destructuringDeclaration?.entries?.forEach { entry: KtDestructuringDeclarationEntry ->
+                    entry.typeReference?.let { typeRef: KtTypeReference ->
+                        val resolved: PsiElement? = resolveClassifierWithAnalysis(typeRef)
                         recordType(resolved, UsageKind.TYPE_REFERENCE)
                     }
                 }
             }
         }
+
         return super.visitLambdaExpression(node)
     }
 
