@@ -378,8 +378,9 @@ private class SymbolUsageCollector(
 
     override fun visitVariable(node: UVariable): Boolean {
         if (shouldStopTraversal()) return true
+
         // Check variable type
-        val sourcePsi = node.sourcePsi
+        val sourcePsi: PsiElement? = node.sourcePsi
         val resolved: PsiElement? = if (sourcePsi is KtDeclaration) {
             sourcePsi.runAnalysisSafely {
                 (sourcePsi.symbol as? KaVariableSymbol)?.returnType?.expandedSymbol?.psi
@@ -393,7 +394,7 @@ private class SymbolUsageCollector(
 
     override fun visitTypeReferenceExpression(node: UTypeReferenceExpression): Boolean {
         if (shouldStopTraversal()) return true
-        val sourcePsi = node.sourcePsi
+        val sourcePsi: PsiElement? = node.sourcePsi
         val resolved: PsiElement? = if (sourcePsi is KtElement) {
             resolveClassifierWithAnalysis(sourcePsi)
         } else {
@@ -405,7 +406,8 @@ private class SymbolUsageCollector(
 
     override fun visitClassLiteralExpression(node: UClassLiteralExpression): Boolean {
         if (shouldStopTraversal()) return true
-        val sourcePsi = node.sourcePsi
+
+        val sourcePsi: PsiElement? = node.sourcePsi
         val resolved: PsiElement? = if (sourcePsi is KtElement) {
             resolveClassifierWithAnalysis(sourcePsi)
         } else {
@@ -417,7 +419,8 @@ private class SymbolUsageCollector(
 
     override fun visitSuperExpression(node: USuperExpression): Boolean {
         if (shouldStopTraversal()) return true
-        val sourcePsi = node.sourcePsi
+
+        val sourcePsi: PsiElement? = node.sourcePsi
         val resolved: PsiElement? = if (sourcePsi is KtElement) {
             resolveClassifierWithAnalysis(sourcePsi)
         } else {
@@ -450,6 +453,7 @@ private class SymbolUsageCollector(
 
     override fun visitCallExpression(node: UCallExpression): Boolean {
         if (shouldStopTraversal()) return true
+
         val usageKind: UsageKind = if (node.kind == UastCallKind.CONSTRUCTOR_CALL) {
             UsageKind.CONSTRUCTOR_CALL
         } else {
@@ -512,6 +516,26 @@ private class SymbolUsageCollector(
                 is KtFunction -> recordFunction(element, UsageKind.CALL)
                 is PsiClass -> recordType(element, UsageKind.TYPE_REFERENCE)
                 is KtClassOrObject -> recordType(element, UsageKind.TYPE_REFERENCE)
+                is PsiField -> {
+                    val typeClass: PsiClass? = PsiUtil.resolveClassInType(element.type)
+                    recordType(typeClass, UsageKind.TYPE_REFERENCE)
+                }
+
+                is KtProperty -> {
+                    val typeClass: PsiElement? = element.runAnalysisSafely {
+                        element.symbol.returnType.expandedSymbol?.psi
+                    }
+                    recordType(typeClass, UsageKind.TYPE_REFERENCE)
+                }
+
+                is KtParameter -> {
+                    if (element.hasValOrVar()) {
+                        val typeClass: PsiElement? = element.runAnalysisSafely {
+                            element.symbol.returnType.expandedSymbol?.psi
+                        }
+                        recordType(typeClass, UsageKind.TYPE_REFERENCE)
+                    }
+                }
             }
         }
         return super.visitSimpleNameReferenceExpression(node)
@@ -585,7 +609,7 @@ private fun PsiElement.isSameDeclarationAs(other: PsiElement): Boolean {
 // =================================================================================================
 
 /**
- * Attempts to resolve a Kotlin reference to its target declaration using the Analysis API.
+ * Attempts to resolve a Kotlin reference to its target referenced declarations using the Analysis API
  */
 private fun resolveReferenceWithAnalysis(element: PsiElement): List<PsiElement?>? {
     val ktReferenceExpr: KtReferenceExpression = element as? KtReferenceExpression ?: return null
@@ -601,7 +625,6 @@ private fun resolveReferenceWithAnalysis(element: PsiElement): List<PsiElement?>
             }
         }
         if (kaSymbols.isEmpty()) return@runAnalysisSafely null
-
         return@runAnalysisSafely kaSymbols.map { it.psi }
     }
 }
@@ -625,8 +648,8 @@ private fun resolveClassifierWithAnalysis(element: PsiElement): PsiElement? {
             // Case 2: Function/Constructor Calls (e.g., `MyClass()`)
             is KtCallExpression -> {
                 // `resolveToCall()` returns a `KaCallInfo`. We check if it's a successful function call.
-                val callInfo = ktElement.resolveToCall()
-                val symbol = callInfo?.successfulFunctionCallOrNull()?.symbol ?: callInfo?.successfulConstructorCallOrNull()?.symbol
+                val callInfo: KaCallInfo? = ktElement.resolveToCall()
+                val symbol: KaFunctionSymbol? = callInfo?.successfulFunctionCallOrNull()?.symbol ?: callInfo?.successfulConstructorCallOrNull()?.symbol
 
                 // If it's a constructor call, we want the class (containing symbol), not the constructor function itself.
                 if (symbol is KaConstructorSymbol) {
@@ -656,8 +679,8 @@ private fun resolveClassifierWithAnalysis(element: PsiElement): PsiElement? {
             // Case 6: Annotations (e.g., `@MyAnnotation`)
             is KtAnnotationEntry -> {
                 // Annotations are constructor calls.
-                val callInfo = ktElement.resolveToCall()
-                val symbol = callInfo?.successfulConstructorCallOrNull()?.symbol ?: callInfo?.singleConstructorCallOrNull()?.symbol
+                val callInfo: KaCallInfo? = ktElement.resolveToCall()
+                val symbol: KaConstructorSymbol? = callInfo?.successfulConstructorCallOrNull()?.symbol ?: callInfo?.singleConstructorCallOrNull()?.symbol
                 symbol?.containingSymbol?.psi
             }
 

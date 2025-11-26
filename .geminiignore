@@ -1,0 +1,10 @@
+.idea/
+sandbox-config/
+.gradle/
+build/
+.intellijPlatform/
+.kotlin/
+assets/
+AGENTS.md
+qodana.yaml
+local.properties
