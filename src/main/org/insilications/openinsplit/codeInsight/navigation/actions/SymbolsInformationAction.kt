@@ -356,8 +356,15 @@ private class SymbolUsageCollector(
     override fun visitMethod(node: UMethod): Boolean {
         if (shouldStopTraversal()) return true
         // Check return type
-        val resolved = node.returnType?.let { PsiUtil.resolveClassInType(it) } ?: node.returnTypeReference?.resolvePsiClass()
-        ?: node.returnTypeReference?.sourcePsi?.let { resolveClassifierWithAnalysis(it) } // Fallback to Analysis API
+        val sourcePsi = node.sourcePsi
+        val resolved: PsiElement? = if (sourcePsi is KtDeclaration) {
+            sourcePsi.runAnalysisSafely {
+                (sourcePsi.symbol as? KaFunctionSymbol)?.returnType?.expandedSymbol?.psi
+            }
+        } else {
+            node.returnType?.let { PsiUtil.resolveClassInType(it) }
+                ?: node.returnTypeReference?.resolvePsiClass()
+        }
         recordType(resolved, UsageKind.TYPE_REFERENCE)
         return super.visitMethod(node)
     }
@@ -365,37 +372,63 @@ private class SymbolUsageCollector(
     override fun visitVariable(node: UVariable): Boolean {
         if (shouldStopTraversal()) return true
         // Check variable type
-        val resolved = node.type.let { PsiUtil.resolveClassInType(it) } ?: node.typeReference?.resolvePsiClass()
-        ?: node.typeReference?.sourcePsi?.let { resolveClassifierWithAnalysis(it) } // Fallback to Analysis API
+        val sourcePsi = node.sourcePsi
+        val resolved: PsiElement? = if (sourcePsi is KtDeclaration) {
+            sourcePsi.runAnalysisSafely {
+                (sourcePsi.symbol as? KaVariableSymbol)?.returnType?.expandedSymbol?.psi
+            }
+        } else {
+            node.type.let { PsiUtil.resolveClassInType(it) }
+                ?: node.typeReference?.resolvePsiClass()
+        }
         recordType(resolved, UsageKind.TYPE_REFERENCE)
         return super.visitVariable(node)
     }
 
     override fun visitTypeReferenceExpression(node: UTypeReferenceExpression): Boolean {
         if (shouldStopTraversal()) return true
-        val resolved: PsiElement? = node.resolvePsiClass() ?: node.sourcePsi?.let { resolveClassifierWithAnalysis(it) }
+        val sourcePsi = node.sourcePsi
+        val resolved: PsiElement? = if (sourcePsi is KtElement) {
+            resolveClassifierWithAnalysis(sourcePsi)
+        } else {
+            node.resolvePsiClass()
+        }
         recordType(resolved, UsageKind.TYPE_REFERENCE)
         return super.visitTypeReferenceExpression(node)
     }
 
     override fun visitClassLiteralExpression(node: UClassLiteralExpression): Boolean {
         if (shouldStopTraversal()) return true
-        val resolved: PsiElement? = node.type?.let { PsiUtil.resolveClassInType(it) } ?: node.sourcePsi?.let { resolveClassifierWithAnalysis(it) }
+        val sourcePsi = node.sourcePsi
+        val resolved: PsiElement? = if (sourcePsi is KtElement) {
+            resolveClassifierWithAnalysis(sourcePsi)
+        } else {
+            node.type?.let { PsiUtil.resolveClassInType(it) }
+        }
         recordType(resolved, UsageKind.TYPE_REFERENCE)
         return super.visitClassLiteralExpression(node)
     }
 
     override fun visitSuperExpression(node: USuperExpression): Boolean {
         if (shouldStopTraversal()) return true
-        val resolved: PsiElement? = node.resolve() ?: node.sourcePsi?.let { resolveClassifierWithAnalysis(it) }
+        val sourcePsi = node.sourcePsi
+        val resolved: PsiElement? = if (sourcePsi is KtElement) {
+            resolveClassifierWithAnalysis(sourcePsi)
+        } else {
+            node.resolve()
+        }
         recordType(resolved, UsageKind.SUPER_TYPE)
         return super.visitSuperExpression(node)
     }
 
     override fun visitAnnotation(node: UAnnotation): Boolean {
         if (shouldStopTraversal()) return true
-        if (node.sourcePsi == null) return super.visitAnnotation(node)
-        val resolved: PsiElement? = node.resolve() ?: node.javaPsi?.nameReferenceElement?.resolve()
+        val sourcePsi = node.sourcePsi
+        val resolved: PsiElement? = if (sourcePsi is KtElement) {
+            resolveClassifierWithAnalysis(sourcePsi)
+        } else {
+            node.resolve() ?: node.javaPsi?.nameReferenceElement?.resolve()
+        }
         recordType(resolved, UsageKind.ANNOTATION)
         return super.visitAnnotation(node)
     }
@@ -451,8 +484,12 @@ private class SymbolUsageCollector(
             return super.visitSimpleNameReferenceExpression(node)
         }
 
-        // Fallback to Analysis API
-        val resolved: List<PsiElement?>? = node.resolve()?.let { listOf(it) } ?: node.sourcePsi?.let { resolveReferenceWithAnalysis(it) }
+        val sourcePsi = node.sourcePsi
+        val resolved: List<PsiElement?>? = if (sourcePsi is KtElement) {
+            resolveReferenceWithAnalysis(sourcePsi)
+        } else {
+            node.resolve()?.let { listOf(it) }
+        }
 
         for (element: PsiElement? in resolved.orEmpty()) {
             when (element) {
@@ -600,6 +637,14 @@ private fun resolveClassifierWithAnalysis(element: PsiElement): PsiElement? {
                 val symbol = ktElement.mainReference.resolveToSymbol()
                 // We only care if it resolves to a Class or TypeAlias.
                 if (symbol is KaClassSymbol || symbol is KaTypeAliasSymbol) symbol.psi else null
+            }
+
+            // Case 6: Annotations (e.g., `@MyAnnotation`)
+            is KtAnnotationEntry -> {
+                // Annotations are constructor calls.
+                val callInfo = ktElement.resolveToCall()
+                val symbol = callInfo?.successfulConstructorCallOrNull()?.symbol ?: callInfo?.singleConstructorCallOrNull()?.symbol
+                symbol?.containingSymbol?.psi
             }
 
             else -> null
