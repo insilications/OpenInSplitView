@@ -355,17 +355,24 @@ private class SymbolUsageCollector(
 
     override fun visitMethod(node: UMethod): Boolean {
         if (shouldStopTraversal()) return true
+
         // Check return type
-        val sourcePsi = node.sourcePsi
+        val sourcePsi: PsiElement? = node.sourcePsi
         val resolved: PsiElement? = if (sourcePsi is KtDeclaration) {
             sourcePsi.runAnalysisSafely {
                 (sourcePsi.symbol as? KaFunctionSymbol)?.returnType?.expandedSymbol?.psi
             }
         } else {
-            node.returnType?.let { PsiUtil.resolveClassInType(it) }
-                ?: node.returnTypeReference?.resolvePsiClass()
+            node.returnType?.let { PsiUtil.resolveClassInType(it) } ?: node.returnTypeReference?.resolvePsiClass()
         }
-        recordType(resolved, UsageKind.TYPE_REFERENCE)
+
+        // Filter out implicit `Unit` return types
+        val isImplicitUnit: Boolean =
+            resolved is KtClassOrObject && resolved.fqName?.asString() == "kotlin.Unit" && (sourcePsi is KtFunction && !sourcePsi.hasDeclaredReturnType())
+
+        if (!isImplicitUnit) {
+            recordType(resolved, UsageKind.TYPE_REFERENCE)
+        }
         return super.visitMethod(node)
     }
 
@@ -378,8 +385,7 @@ private class SymbolUsageCollector(
                 (sourcePsi.symbol as? KaVariableSymbol)?.returnType?.expandedSymbol?.psi
             }
         } else {
-            node.type.let { PsiUtil.resolveClassInType(it) }
-                ?: node.typeReference?.resolvePsiClass()
+            node.type.let { PsiUtil.resolveClassInType(it) } ?: node.typeReference?.resolvePsiClass()
         }
         recordType(resolved, UsageKind.TYPE_REFERENCE)
         return super.visitVariable(node)
@@ -423,8 +429,17 @@ private class SymbolUsageCollector(
 
     override fun visitAnnotation(node: UAnnotation): Boolean {
         if (shouldStopTraversal()) return true
-        val sourcePsi = node.sourcePsi
+
+        // 1. Check for purely synthetic elements (no source at all)
+        val sourcePsi: PsiElement = node.sourcePsi ?: return true
+
         val resolved: PsiElement? = if (sourcePsi is KtElement) {
+            // 2. Check for "Anchored" synthetic elements
+            // If it's Kotlin, it MUST be a `KtAnnotationEntry`
+            // If UAST points to a `KtParameter` or `KtFunction`, it's a synthetic descriptor annotation
+            if (sourcePsi !is KtAnnotationEntry) {
+                return true
+            }
             resolveClassifierWithAnalysis(sourcePsi)
         } else {
             node.resolve() ?: node.javaPsi?.nameReferenceElement?.resolve()
@@ -484,7 +499,7 @@ private class SymbolUsageCollector(
             return super.visitSimpleNameReferenceExpression(node)
         }
 
-        val sourcePsi = node.sourcePsi
+        val sourcePsi: PsiElement? = node.sourcePsi
         val resolved: List<PsiElement?>? = if (sourcePsi is KtElement) {
             resolveReferenceWithAnalysis(sourcePsi)
         } else {
@@ -571,7 +586,6 @@ private fun PsiElement.isSameDeclarationAs(other: PsiElement): Boolean {
 
 /**
  * Attempts to resolve a Kotlin reference to its target declaration using the Analysis API.
- * This is a fallback for when standard UAST resolution (`node.resolve()`) fails or returns null.
  */
 private fun resolveReferenceWithAnalysis(element: PsiElement): List<PsiElement?>? {
     val ktReferenceExpr: KtReferenceExpression = element as? KtReferenceExpression ?: return null
