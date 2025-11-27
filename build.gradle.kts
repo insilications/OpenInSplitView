@@ -16,7 +16,7 @@ val pluginName: String = providers.gradleProperty("pluginName").get()
 val pluginSinceBuild: String = providers.gradleProperty("pluginSinceBuild").get()
 val pluginUntilBuild: String = providers.gradleProperty("pluginUntilBuild").get()
 val changeNotesFromMd: Provider<String> = provider {
-    file("CHANGELOG.md").readText().lineSequence().filterIndexed { index, _ -> index !in 1..3 }.joinToString(System.lineSeparator()).trim()
+    file("CHANGELOG.md").readText().lineSequence().filterIndexed { index: Int, _: String -> index !in 1..3 }.joinToString(System.lineSeparator()).trim()
 }
 val descriptionFromHtml: Provider<String> = provider { file("description.html").readText() }
 val gradleVersion: String = providers.gradleProperty("gradleVersion").get()
@@ -48,6 +48,7 @@ sourceSets {
         // can make the build script easier for others to understand.
         java.srcDirs("src/main")
         kotlin.srcDirs("src/main")
+        resources.srcDirs("src/main/resources")
     }
 
 //    val testIntegration = create("testIntegration")
@@ -97,7 +98,7 @@ dependencies {
         libs.kotlin.analysis.api.fir,
         libs.kotlin.low.level.api.fir,
         libs.kotlin.symbol.light.classes,
-    ).forEach {
+    ).forEach { it: Provider<MinimalExternalModuleDependency> ->
         compileOnly(it) {
             isTransitive = false // see KTIJ-19820
         }

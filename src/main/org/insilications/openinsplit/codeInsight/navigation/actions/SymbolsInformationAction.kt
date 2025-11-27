@@ -866,8 +866,9 @@ private fun TargetSymbolContext.toLogString(): String {
     sb.appendLine()
     sb.appendLine("Target Declaration Source Code:")
     sb.appendLine(declarationSlice.sourceCode)
-    sb.appendLine()
+    sb.appendLine("\n")
     appendReferencedSection(sb, "Referenced Types", referencedTypes)
+    sb.appendLine("\n")
     appendReferencedSection(sb, "Referenced Functions", referencedFunctions)
     if (referenceLimitReached) {
         sb.appendLine("Reference limit reached; output truncated.")
@@ -886,14 +887,20 @@ private fun TargetSymbolContext.appendReferencedSection(
         return
     }
 
-    sb.appendLine("$label (${references.size}):")
+    sb.appendLine("${label}s (${references.size}):")
     references.take(maxEntries).forEach { ref: ReferencedDeclaration ->
-        val usageSummary: String = ref.usageKinds.takeIf { it.isNotEmpty() }?.joinToString { usage -> usage.toClassificationString() } ?: "unknown"
-        val displayName: String = ref.declarationSlice.kotlinFqNameString ?: ref.declarationSlice.presentableText ?: ref.declarationSlice.name ?: "<anonymous>"
+        val declarationSlice: DeclarationSlice = ref.declarationSlice
+        val usageSummary: String = ref.usageKinds.takeIf { it.isNotEmpty() }?.joinToString { usage: UsageKind -> usage.toClassificationString() } ?: "unknown"
+        val displayName: String = declarationSlice.kotlinFqNameString ?: declarationSlice.presentableText ?: declarationSlice.name ?: "<anonymous>"
         sb.appendLine("  - $displayName [$usageSummary]")
-        sb.appendLine("  ktFqNameRelativeString: ${ref.declarationSlice.ktFqNameRelativeString}")
-        sb.appendLine("  psiFilePath: ${ref.declarationSlice.psiFilePath}")
+        sb.appendLine("  ktFqNameRelativeString: ${declarationSlice.ktFqNameRelativeString}")
+        sb.appendLine("  psiFilePath: ${declarationSlice.psiFilePath}")
         sb.appendLine()
+        sb.appendLine("  Source Code:")
+        sb.appendLine(declarationSlice.sourceCode)
+        sb.appendLine("\n")
+        sb.appendLine("  ------------------------------------------------------------")
+        sb.appendLine("\n\n")
     }
     if (references.size > maxEntries) {
         sb.appendLine("  ... (${references.size - maxEntries} more)")
