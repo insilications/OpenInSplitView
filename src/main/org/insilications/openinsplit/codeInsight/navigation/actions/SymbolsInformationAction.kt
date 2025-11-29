@@ -144,18 +144,24 @@ data class ReferencedDeclaration(
     val declarationSlice: DeclarationSlice, val usageKinds: Set<UsageKind>
 )
 
+data class ReferencedFile(
+    val packageDirective: String?,
+    val importsList: List<String>,
+    val referencedTypes: List<ReferencedDeclaration>,
+    val referencedFunctions: List<ReferencedDeclaration>,
+)
+
 data class TargetSymbolContext(
     val packageDirective: String?,
     val importsList: List<String>,
     val declarationSlice: DeclarationSlice,
     val symbolKind: SymbolKind,
-    val referencedTypes: List<ReferencedDeclaration>,
-    val referencedFunctions: List<ReferencedDeclaration>,
+    val referencedFiles: LinkedHashMap<String, ReferencedFile>,
     val referenceLimitReached: Boolean
 )
 
 private data class ReferencedCollections(
-    val typeSlices: List<ReferencedDeclaration>, val functionSlices: List<ReferencedDeclaration>, val limitReached: Boolean
+    val referencedFiles: LinkedHashMap<String, ReferencedFile>, val limitReached: Boolean
 )
 
 //private val SYMBOL_USAGE_LOG: Logger = Logger.getInstance("org.insilications.openinsplit")
@@ -189,8 +195,7 @@ private fun buildSymbolContext(
         importsList = importsList,
         declarationSlice = targetSlice,
         symbolKind = symbolKind,
-        referencedTypes = referencedCollections.typeSlices,
-        referencedFunctions = referencedCollections.functionSlices,
+        referencedFiles = referencedCollections.referencedFiles,
         referenceLimitReached = referencedCollections.limitReached
     )
     LOG.info(targetContext.toLogString())
@@ -229,8 +234,10 @@ private fun collectReferencedDeclarations(
 ): ReferencedCollections {
     // Attempt to convert the PSI element to a UAST element (UDeclaration).
     // If the direct conversion fails (common with some PSI wrappers), we try the navigation element.
-    val uRoot: UElement = targetSymbol.toUDeclarationRoot(symbolKind) ?: targetSymbol.navigationElement?.toUDeclarationRoot(symbolKind)
-    ?: return ReferencedCollections(emptyList(), emptyList(), limitReached = false)
+    val uRoot: UElement =
+        targetSymbol.toUDeclarationRoot(symbolKind) ?: targetSymbol.navigationElement?.toUDeclarationRoot(symbolKind) ?: return ReferencedCollections(
+            LinkedHashMap(), limitReached = false
+        )
 
     val collector = SymbolUsageCollector(project, targetSymbol, maxRefs)
     uRoot.accept(collector)
@@ -274,7 +281,7 @@ private class SymbolUsageCollector(
      * Finalizes the collection process.
      * 1. Resolves all collected smart pointers.
      * 2. Filters out redundant declarations (nested within others).
-     * 3. Converts them to serializable `ReferencedDeclaration` objects.
+     * 3. Groups them by source file and converts them to serializable `ReferencedFile` objects.
      */
     fun buildResult(project: Project): ReferencedCollections {
         val resolvedTypes: List<Pair<PsiElement, CollectedUsage>> =
@@ -298,14 +305,40 @@ private class SymbolUsageCollector(
             return false
         }
 
-        val typeSlices: List<ReferencedDeclaration> = resolvedTypes.mapNotNull { (element: PsiElement, usage: CollectedUsage) ->
-            if (isRedundant(element)) null else usage.toReferencedDeclaration(project, element)
-        }
-        val functionSlices: List<ReferencedDeclaration> = resolvedFunctions.mapNotNull { (element: PsiElement, usage: CollectedUsage) ->
-            if (isRedundant(element)) null else usage.toReferencedDeclaration(project, element)
+        class FileBuilder(val psiFile: PsiFile) {
+            val types = mutableListOf<ReferencedDeclaration>()
+            val functions = mutableListOf<ReferencedDeclaration>()
         }
 
-        return ReferencedCollections(typeSlices, functionSlices, hasReachedLimit)
+        val fileMap = LinkedHashMap<String, FileBuilder>()
+
+        fun process(list: List<Pair<PsiElement, CollectedUsage>>, isType: Boolean) {
+            for ((element, usage) in list) {
+                if (isRedundant(element)) continue
+                val psiFile = element.containingFile ?: continue
+                val path = psiFile.virtualFile?.path ?: continue
+
+                val builder = fileMap.getOrPut(path) { FileBuilder(psiFile) }
+                val declaration = usage.toReferencedDeclaration(project, element)
+
+                if (isType) builder.types.add(declaration) else builder.functions.add(declaration)
+            }
+        }
+
+        process(resolvedTypes, isType = true)
+        process(resolvedFunctions, isType = false)
+
+        val referencedFiles = LinkedHashMap<String, ReferencedFile>()
+        for ((path, builder) in fileMap) {
+            referencedFiles[path] = ReferencedFile(
+                packageDirective = getPackageDirective(builder.psiFile),
+                importsList = getImportsList(builder.psiFile),
+                referencedTypes = builder.types,
+                referencedFunctions = builder.functions
+            )
+        }
+
+        return ReferencedCollections(referencedFiles, hasReachedLimit)
     }
 
     // Re-hydrate a `CollectedUsage` into the serializable payload.
@@ -857,7 +890,7 @@ private fun TargetSymbolContext.toLogString(): String {
     sb.appendLine("Target name: ${declarationSlice.name ?: "<anonymous>"}")
     sb.appendLine("Target caret: offset=${declarationSlice.caretLocation.offset}, line=${declarationSlice.caretLocation.line}, column=${declarationSlice.caretLocation.column}")
     sb.appendLine("Target Symbol Kind: $symbolKind")
-    sb.appendLine("Package: ${packageDirective ?: "<none>"}")
+    sb.appendLine("Package Directive: ${packageDirective ?: "<none>"}")
     if (importsList.isNotEmpty()) {
         sb.appendLine("Imports:")
         importsList.forEach { sb.appendLine("  $it") }
@@ -867,10 +900,29 @@ private fun TargetSymbolContext.toLogString(): String {
     sb.appendLine()
     sb.appendLine("Target Declaration Source Code:")
     sb.appendLine(declarationSlice.sourceCode)
-    sb.appendLine("\n")
-    appendReferencedSection(sb, "Referenced Types", referencedTypes)
-    sb.appendLine("\n")
-    appendReferencedSection(sb, "Referenced Functions", referencedFunctions)
+    sb.appendLine("\n\n")
+
+    if (referencedFiles.isEmpty()) {
+        sb.appendLine("Referenced Files: <none>")
+    } else {
+        sb.appendLine("Referenced Files (${referencedFiles.size}):")
+        sb.appendLine("*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=")
+        referencedFiles.forEach { (path, refFile) ->
+            sb.appendLine("psiFilePath: $path")
+            sb.appendLine("Package Directive: ${refFile.packageDirective ?: "<none>"}")
+            if (refFile.importsList.isNotEmpty()) {
+                sb.appendLine("Imports:")
+                refFile.importsList.forEach { sb.appendLine("  $it") }
+            } else {
+                sb.appendLine("Imports: <none>")
+            }
+            appendReferencedSection(sb, "Types", refFile.referencedTypes)
+            appendReferencedSection(sb, "Functions", refFile.referencedFunctions)
+            sb.appendLine("*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=")
+//            sb.appendLine("\n\n\n")
+        }
+    }
+
     if (referenceLimitReached) {
         sb.appendLine("Reference limit reached; output truncated.")
     }
@@ -883,27 +935,28 @@ private fun TargetSymbolContext.toLogString(): String {
 private fun TargetSymbolContext.appendReferencedSection(
     sb: StringBuilder, label: String, references: List<ReferencedDeclaration>, maxEntries: Int = 100
 ) {
+    sb.appendLine()
     if (references.isEmpty()) {
-        sb.appendLine("$label: <none>")
+//        sb.appendLine("Referenced $label: <none>")
         return
     }
 
-    sb.appendLine("${label}s (${references.size}):")
+    sb.appendLine("Referenced $label (${references.size}):")
     references.take(maxEntries).forEach { ref: ReferencedDeclaration ->
         val declarationSlice: DeclarationSlice = ref.declarationSlice
         val usageSummary: String = ref.usageKinds.takeIf { it.isNotEmpty() }?.joinToString { usage: UsageKind -> usage.toClassificationString() } ?: "unknown"
         val displayName: String = declarationSlice.kotlinFqNameString ?: declarationSlice.presentableText ?: declarationSlice.name ?: "<anonymous>"
-        sb.appendLine("  - $displayName [$usageSummary]")
-        sb.appendLine("  ktFqNameRelativeString: ${declarationSlice.ktFqNameRelativeString}")
-        sb.appendLine("  psiFilePath: ${declarationSlice.psiFilePath}")
+        sb.appendLine("    - $displayName [$usageSummary]")
+        sb.appendLine("    ktFqNameRelativeString: ${declarationSlice.ktFqNameRelativeString}")
+        sb.appendLine("    fqNameTypeString: ${declarationSlice.fqNameTypeString}")
         sb.appendLine()
-        sb.appendLine("  Source Code:")
+        sb.appendLine("    Source Code:")
         sb.appendLine(declarationSlice.sourceCode)
         sb.appendLine("\n")
-        sb.appendLine("  ------------------------------------------------------------")
+        sb.appendLine("    ----------------------------------------------")
         sb.appendLine("\n\n")
     }
     if (references.size > maxEntries) {
-        sb.appendLine("  ... (${references.size - maxEntries} more)")
+        sb.appendLine("    ... (${references.size - maxEntries} more)")
     }
 }
