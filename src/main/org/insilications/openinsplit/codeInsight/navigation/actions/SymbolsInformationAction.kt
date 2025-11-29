@@ -390,8 +390,16 @@ private class SymbolUsageCollector(
     override fun visitMethod(node: UMethod): Boolean {
         if (shouldStopTraversal()) return true
 
-        // Check return type
         val sourcePsi: PsiElement? = node.sourcePsi
+
+        // Extension Receiver (Kotlin)
+        if (sourcePsi is KtFunction) {
+            sourcePsi.runAnalysisSafely {
+                (sourcePsi.symbol as? KaFunctionSymbol)?.receiverParameter?.returnType?.expandedSymbol?.psi
+            }?.let { recordType(it, UsageKind.EXTENSION_RECEIVER) }
+        }
+
+        // Check return type
         val resolved: PsiElement? = if (sourcePsi is KtDeclaration) {
             sourcePsi.runAnalysisSafely {
                 (sourcePsi.symbol as? KaFunctionSymbol)?.returnType?.expandedSymbol?.psi
@@ -413,8 +421,28 @@ private class SymbolUsageCollector(
     override fun visitVariable(node: UVariable): Boolean {
         if (shouldStopTraversal()) return true
 
-        // Check variable type
         val sourcePsi: PsiElement? = node.sourcePsi
+
+        if (sourcePsi is KtProperty) {
+            // Extension Receiver
+            sourcePsi.runAnalysisSafely {
+                sourcePsi.symbol.receiverParameter?.returnType?.expandedSymbol?.psi
+            }?.let { recordType(it, UsageKind.EXTENSION_RECEIVER) }
+//            sourcePsi.runAnalysisSafely {
+//                (sourcePsi.symbol as? KaVariableSymbol)?.receiverParameter?.returnType?.expandedSymbol?.psi
+//            }?.let { recordType(it, UsageKind.EXTENSION_RECEIVER) }
+
+            // Delegated Property
+            if (sourcePsi.hasDelegate()) {
+                sourcePsi.runAnalysisSafely {
+                    sourcePsi.delegate?.expression?.resolveToCall()?.let { call ->
+                        call.successfulFunctionCallOrNull()?.symbol ?: call.successfulConstructorCallOrNull()?.symbol
+                    }?.psi
+                }?.let { recordFunction(it, UsageKind.DELEGATED_PROPERTY) }
+            }
+        }
+
+        // Check variable type
         val resolved: PsiElement? = if (sourcePsi is KtDeclaration) {
             sourcePsi.runAnalysisSafely {
                 (sourcePsi.symbol as? KaVariableSymbol)?.returnType?.expandedSymbol?.psi
@@ -553,6 +581,8 @@ private class SymbolUsageCollector(
                 is PsiField -> {
                     val typeClass: PsiClass? = PsiUtil.resolveClassInType(element.type)
                     recordType(typeClass, UsageKind.TYPE_REFERENCE)
+                    val kind = if (isLValue(node)) UsageKind.PROPERTY_ACCESS_SET else UsageKind.PROPERTY_ACCESS_GET
+                    recordFunction(element, kind)
                 }
 
                 is KtProperty -> {
@@ -560,6 +590,8 @@ private class SymbolUsageCollector(
                         element.symbol.returnType.expandedSymbol?.psi
                     }
                     recordType(typeClass, UsageKind.TYPE_REFERENCE)
+                    val kind = if (isLValue(node)) UsageKind.PROPERTY_ACCESS_SET else UsageKind.PROPERTY_ACCESS_GET
+                    recordFunction(element, kind)
                 }
 
                 is KtParameter -> {
@@ -568,11 +600,62 @@ private class SymbolUsageCollector(
                             element.symbol.returnType.expandedSymbol?.psi
                         }
                         recordType(typeClass, UsageKind.TYPE_REFERENCE)
+                        val kind = if (isLValue(node)) UsageKind.PROPERTY_ACCESS_SET else UsageKind.PROPERTY_ACCESS_GET
+                        recordFunction(element, kind)
                     }
                 }
             }
         }
         return super.visitSimpleNameReferenceExpression(node)
+    }
+
+    override fun visitBinaryExpression(node: UBinaryExpression): Boolean {
+        if (shouldStopTraversal()) return true
+        val sourcePsi = node.sourcePsi
+        val resolved: PsiElement? = if (sourcePsi is KtElement) {
+            sourcePsi.runAnalysisSafely {
+                sourcePsi.resolveToCall()?.successfulFunctionCallOrNull()?.symbol?.psi
+            }
+        } else {
+            node.resolveOperator()
+        }
+        recordFunction(resolved, UsageKind.OPERATOR_CALL)
+        return super.visitBinaryExpression(node)
+    }
+
+    override fun visitUnaryExpression(node: UUnaryExpression): Boolean {
+        if (shouldStopTraversal()) return true
+        val sourcePsi = node.sourcePsi
+        val resolved: PsiElement? = if (sourcePsi is KtElement) {
+            sourcePsi.runAnalysisSafely {
+                sourcePsi.resolveToCall()?.successfulFunctionCallOrNull()?.symbol?.psi
+            }
+        } else {
+            node.resolveOperator()
+        }
+        recordFunction(resolved, UsageKind.OPERATOR_CALL)
+        return super.visitUnaryExpression(node)
+    }
+
+    override fun visitArrayAccessExpression(node: UArrayAccessExpression): Boolean {
+        if (shouldStopTraversal()) return true
+        val sourcePsi = node.sourcePsi
+        if (sourcePsi is KtElement) {
+            val resolved = sourcePsi.runAnalysisSafely {
+                sourcePsi.resolveToCall()?.successfulFunctionCallOrNull()?.symbol?.psi
+            }
+            recordFunction(resolved, UsageKind.OPERATOR_CALL)
+        }
+        return super.visitArrayAccessExpression(node)
+    }
+
+    private fun isLValue(node: USimpleNameReferenceExpression): Boolean {
+        val parent = node.uastParent
+        if (parent is UBinaryExpression && parent.leftOperand == node) {
+            val op = parent.operator
+            if (op == UastBinaryOperator.ASSIGN) return true
+        }
+        return false
     }
 
     private fun recordType(element: PsiElement?, usageKind: UsageKind) {
@@ -906,19 +989,19 @@ private fun TargetSymbolContext.toLogString(): String {
         sb.appendLine("Referenced Files: <none>")
     } else {
         sb.appendLine("Referenced Files (${referencedFiles.size}):")
-        sb.appendLine("*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=")
+        sb.appendLine("*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*")
         referencedFiles.forEach { (path, refFile) ->
             sb.appendLine("psiFilePath: $path")
             sb.appendLine("Package Directive: ${refFile.packageDirective ?: "<none>"}")
-            if (refFile.importsList.isNotEmpty()) {
-                sb.appendLine("Imports:")
-                refFile.importsList.forEach { sb.appendLine("  $it") }
-            } else {
-                sb.appendLine("Imports: <none>")
-            }
+//            if (refFile.importsList.isNotEmpty()) {
+//                sb.appendLine("Imports:")
+//                refFile.importsList.forEach { sb.appendLine("  $it") }
+//            } else {
+//                sb.appendLine("Imports: <none>")
+//            }
             appendReferencedSection(sb, "Types", refFile.referencedTypes)
             appendReferencedSection(sb, "Functions", refFile.referencedFunctions)
-            sb.appendLine("*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=")
+            sb.appendLine("*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*")
 //            sb.appendLine("\n\n\n")
         }
     }
@@ -950,9 +1033,9 @@ private fun TargetSymbolContext.appendReferencedSection(
         sb.appendLine("    ktFqNameRelativeString: ${declarationSlice.ktFqNameRelativeString}")
         sb.appendLine("    fqNameTypeString: ${declarationSlice.fqNameTypeString}")
         sb.appendLine()
-        sb.appendLine("    Source Code:")
-        sb.appendLine(declarationSlice.sourceCode)
-        sb.appendLine("\n")
+//        sb.appendLine("    Source Code:")
+//        sb.appendLine(declarationSlice.sourceCode)
+//        sb.appendLine("\n")
         sb.appendLine("    ----------------------------------------------")
         sb.appendLine("\n\n")
     }
