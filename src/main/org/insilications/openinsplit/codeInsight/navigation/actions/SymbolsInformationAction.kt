@@ -36,6 +36,8 @@ import org.jetbrains.kotlin.psi.psiUtil.getParentOfType
 import org.jetbrains.uast.*
 import org.jetbrains.uast.visitor.AbstractUastVisitor
 
+private val SYMBOL_USAGE_LOG: Logger = Logger.getInstance("org.insilications.openinsplit")
+
 /**
  * Action that collects and logs detailed semantic information about the symbol under the caret.
  *
@@ -44,7 +46,6 @@ import org.jetbrains.uast.visitor.AbstractUastVisitor
  */
 class SymbolsInformationAction : DumbAwareAction() {
     companion object {
-        private val LOG: Logger = Logger.getInstance("org.insilications.openinsplit")
         private const val GETTING_SYMBOL_INFO = "Getting symbol information..."
     }
 
@@ -52,11 +53,11 @@ class SymbolsInformationAction : DumbAwareAction() {
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
-        e.presentation.setEnabledAndVisible(e.project != null)
+        e.presentation.isEnabledAndVisible = e.project != null
     }
 
     override fun actionPerformed(e: AnActionEvent) {
-        LOG.debug { "actionPerformed" }
+        SYMBOL_USAGE_LOG.debug { "actionPerformed" }
 
         val dataContext: DataContext = e.dataContext
         val project: Project = dataContext.project
@@ -64,7 +65,7 @@ class SymbolsInformationAction : DumbAwareAction() {
         val psiFile: PsiFile? = CommonDataKeys.PSI_FILE.getData(dataContext)
 
         if (psiFile == null || editor == null) {
-            LOG.debug { "No file or editor in context - File: $psiFile - Editor: $editor" }
+            SYMBOL_USAGE_LOG.debug { "No file or editor in context - File: $psiFile - Editor: $editor" }
             e.presentation.isEnabled = false
             return
         }
@@ -74,7 +75,7 @@ class SymbolsInformationAction : DumbAwareAction() {
         runWithModalProgressBlocking(project, GETTING_SYMBOL_INFO) {
             // Early exit if indices are not ready. The Analysis API relies heavily on indices.
             if (DumbService.isDumb(project)) {
-                LOG.warn("Dumb mode active; aborting semantic resolution.")
+                SYMBOL_USAGE_LOG.warn("Dumb mode active; aborting semantic resolution.")
                 return@runWithModalProgressBlocking
             }
 
@@ -85,7 +86,7 @@ class SymbolsInformationAction : DumbAwareAction() {
                 val offset: Int = editor.caretModel.offset
 
                 return@readAction TargetElementUtil.getInstance().findTargetElement(editor, TargetElementUtil.ELEMENT_NAME_ACCEPTED, offset) ?: run {
-                    LOG.info("No declaration element found at caret")
+                    SYMBOL_USAGE_LOG.info("No declaration element found at caret")
                     return@readAction null
                 }
             }
@@ -94,7 +95,7 @@ class SymbolsInformationAction : DumbAwareAction() {
                 return@runWithModalProgressBlocking
             }
 
-            LOG.info("Analyzing...")
+            SYMBOL_USAGE_LOG.info("Analyzing...")
 
             // Step 2: Build the full context (references, types, etc.) for the found symbol.
             readAction {
@@ -157,7 +158,7 @@ private data class ReferencedCollections(
     val typeSlices: List<ReferencedDeclaration>, val functionSlices: List<ReferencedDeclaration>, val limitReached: Boolean
 )
 
-private val SYMBOL_USAGE_LOG: Logger = Logger.getInstance("org.insilications.openinsplit")
+//private val SYMBOL_USAGE_LOG: Logger = Logger.getInstance("org.insilications.openinsplit")
 
 /* ============================= CONTEXT BUILDERS ============================= */
 
