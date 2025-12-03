@@ -1,6 +1,6 @@
-[submodule "intellij-community"]
-	path = intellij-community
-	url = https://github.com/JetBrains/intellij-community.git
 [submodule "kotlin-src"]
 	path = kotlin-src
 	url = https://github.com/JetBrains/kotlin.git
+[submodule "intellij-community"]
+	path = intellij-community
+	url = https://github.com/JetBrains/intellij-community.git
