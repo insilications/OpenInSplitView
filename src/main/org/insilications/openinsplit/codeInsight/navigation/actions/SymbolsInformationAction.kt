@@ -41,6 +41,28 @@ private val SYMBOL_USAGE_LOG: Logger = Logger.getInstance("org.insilications.ope
 /**
  * Action that collects and logs detailed semantic information about the symbol under the caret.
  *
+ * **Architecture & Logic:**
+ * This action acts as a symbol-centric context provider that extracts semantically enriched code slices from
+ * Kotlin and Java target symbols. It employs a **Hybrid UAST + Kotlin K2 Analysis API approach**:
+ *
+ * 1.  **Entry Point & Target Identification:**
+ *     - Identifies target symbols (Functions, Classes/Objects) using `TargetElementUtil`.
+ *     - Normalizes targets using `preferSourceDeclaration()` to ensure analysis runs on definitions, not usages.
+ *
+ * 2.  **Traversal Layer (UAST):**
+ *     - Uses a unified `SymbolUsageCollector` (extending `AbstractUastVisitor`) to walk the AST.
+ *     - Applies manual overrides for constructs where UAST is opaque (e.g., Kotlin destructuring in lambdas).
+ *
+ * 3.  **Semantic Resolution Layer:**
+ *     - **Kotlin Path (K2):** Triggers when `sourcePsi` is a `KtElement`. Uses `analyze(element)` to enter a `KaSession`
+ *       and resolve calls, types, and annotations using the K2 Analysis API.
+ *     - **Java Path (PSI/UAST):** Triggers when `sourcePsi` is not a `KtElement`. Uses standard UAST/PSI resolution.
+ *
+ * 4.  **Data Aggregation:**
+ *     - Collects referenced symbols grouped by their defining **Source File** (`ReferencedFile`).
+ *     - Filters redundancies (child declarations whose parents are also collected).
+ *     - Classifies usages into specific kinds (e.g., `CALL`, `TYPE_REFERENCE`, `CONSTRUCTOR_CALL`).
+ *
  * It is marked as `DumbAware` so it can be invoked even during indexing, although the core logic
  * checks `DumbService` to avoid expensive or inaccurate resolution when indices are incomplete.
  */
@@ -107,6 +129,10 @@ class SymbolsInformationAction : DumbAwareAction() {
 
 /* ============================= DATA MODELS ============================= */
 
+/**
+ * Categorizes the specific manner in which a symbol is used within the target's scope.
+ * Used during **Data Aggregation** to distinguish between calls, type references, property access, etc.
+ */
 enum class UsageKind {
     CALL,
     PROPERTY_ACCESS_GET,
@@ -120,6 +146,10 @@ enum class UsageKind {
     EXTENSION_RECEIVER
 }
 
+/**
+ * Coarse classification of the target symbol (Function vs Class) used to determine
+ * the depth and strategy of the AST traversal.
+ */
 enum class SymbolKind {
     FUNCTION,
     CLASS
@@ -129,6 +159,10 @@ data class CaretLocation(
     val offset: Int, val line: Int, val column: Int
 )
 
+/**
+ * A comprehensive snapshot of a declaration, extracted during the **Information Extracted** phase.
+ * Contains identity (FQN, names), location, and the full source code text.
+ */
 data class DeclarationSlice(
     val psiFilePath: String,
     val caretLocation: CaretLocation,
@@ -140,10 +174,21 @@ data class DeclarationSlice(
     val sourceCode: String
 )
 
+/**
+ * Represents a dependency found within the target symbol's AST.
+ * Wraps the [DeclarationSlice] of the referenced symbol and the set of ways it was used.
+ */
 data class ReferencedDeclaration(
     val declarationSlice: DeclarationSlice, val usageKinds: Set<UsageKind>
 )
 
+/**
+ * Groups collected referenced symbols by their defining source file.
+ * This structure supports the "File-Based Grouping" strategy in the Data Aggregation layer.
+ *
+ * @property referencedTypes Collected classes, interfaces, objects, and structural types.
+ * @property referencedFunctions Collected function calls, constructor calls, and method references.
+ */
 data class ReferencedFile(
     val packageDirective: String?,
     val importsList: List<String>,
@@ -151,6 +196,12 @@ data class ReferencedFile(
     val referencedFunctions: List<ReferencedDeclaration>,
 )
 
+/**
+ * The root container for all extracted information about the target symbol.
+ *
+ * @property declarationSlice The comprehensive snapshot of the target symbol itself.
+ * @property referencedFiles A map of dependencies grouped by their source file, preserving insertion order.
+ */
 data class TargetSymbolContext(
     val packageDirective: String?,
     val importsList: List<String>,
@@ -249,12 +300,21 @@ private fun PsiElement.toUDeclarationRoot(symbolKind: SymbolKind): UElement? = w
     SymbolKind.CLASS -> this.toUElementOfType<UClass>()
 }
 
-// Walks the target declaration once, recording all referenced types/functions while keeping
-// the output deterministic (LinkedHashMap) and bounded (maxRefs guard).
-//
-// This visitor extends `AbstractUastVisitor`, allowing it to traverse the Universal Abstract Syntax Tree (UAST).
-// UAST provides a unified view over Java and Kotlin (and other JVM languages), simplifying the task
-// of finding "calls", "type references", etc., without writing separate visitors for each language.
+/**
+ * **Traversal Layer (UAST):**
+ *
+ * Walks the target declaration's AST once, recording all referenced types and functions while keeping
+ * the output deterministic (LinkedHashMap) and bounded (maxRefs guard).
+ *
+ * This visitor implements the **Hybrid Resolution Strategy**:
+ * 1.  **Unified Visitor:** Extends `AbstractUastVisitor` to handle standard nodes (`visitMethod`, `visitCallExpression`)
+ *     uniformly across Java and Kotlin.
+ * 2.  **Manual Overrides:** Implements explicit checks (e.g., in `visitLambdaExpression`) for constructs where
+ *     UAST is too opaque (like Kotlin destructuring declarations).
+ * 3.  **Split Resolution:** Decides the semantic resolution strategy based on the source language:
+ *     - Uses **K2 Analysis API** (`analyze` session) for Kotlin elements.
+ *     - Uses standard **PSI/UAST resolution** for Java elements.
+ */
 private class SymbolUsageCollector(
     private val project: Project, targetPsi: PsiElement, private val maxRefs: Int
 ) : AbstractUastVisitor() {
@@ -361,7 +421,8 @@ private class SymbolUsageCollector(
         // 2. Standard Kotlin lambda parameters (treated as UParameters).
         // 3. The body of the lambda for both languages.
         //
-        // However, it does NOT traverse Kotlin destructuring declarations in lambda parameters
+        // **Manual Override (Traversal Layer):**
+        // UAST does NOT traverse Kotlin destructuring declarations in lambda parameters
         // (e.g., `{ (requestor, _) -> ... }`). These are structurally different in the PSI
         // and often opaque to UAST's parameter list view.
         // We must manually inspect the underlying Kotlin PSI to capture types referenced
@@ -390,7 +451,8 @@ private class SymbolUsageCollector(
 
         val sourcePsi: PsiElement? = node.sourcePsi
 
-        // Extension Receiver (Kotlin)
+        // **Extension Receiver (Kotlin):**
+        // Explicitly extract the receiver type (e.g., `fun String.foo()`) which is a structural dependency.
         if (sourcePsi is KtFunction) {
             sourcePsi.runAnalysisSafely {
                 (sourcePsi.symbol as? KaFunctionSymbol)?.receiverParameter?.returnType?.expandedSymbol?.psi
@@ -406,7 +468,9 @@ private class SymbolUsageCollector(
             node.returnType?.let { PsiUtil.resolveClassInType(it) } ?: node.returnTypeReference?.resolvePsiClass()
         }
 
-        // Filter out implicit `Unit` return types
+        // **Implicit Type Filter:**
+        // Explicitly filter out implicit `kotlin.Unit` return types.
+        // This reduces noise in the collected data, as `Unit` is ubiquitous and often inferred.
         val isImplicitUnit: Boolean =
             resolved is KtClassOrObject && resolved.fqName?.asString() == "kotlin.Unit" && (sourcePsi is KtFunction && !sourcePsi.hasDeclaredReturnType())
 
@@ -518,21 +582,24 @@ private class SymbolUsageCollector(
         }
 
         val sourcePsi: PsiElement? = node.sourcePsi
-        // Base the strategy on the CALL SITE language with a type check, since every implementation of `KtElement` is inherently part of Kotlin
+        // **Semantic Resolution Layer (Hybrid Strategy):**
+        // Base the strategy on the CALL SITE language with a type check.
         val resolvedCallable: PsiElement? = if (sourcePsi is KtElement) {
             // === K2 PATH (Kotlin) ===
+            // Standard UAST resolution (`node.resolve()`) is unreliable for Kotlin (often returns Light Classes).
+            // We use `analyze(element)` and `resolveToCall()` to get accurate K2 symbols.
             sourcePsi.runAnalysisSafely {
                 // Resolve the call using K2 semantics
                 val callInfo: KaCallInfo? = sourcePsi.resolveToCall()
 
-                // Get the target symbol (Function, Constructor, etc.)
+                // Get the target symbol. Explicitly distinguishing between successful function and constructor calls.
                 val symbol: KaFunctionSymbol? = callInfo?.successfulFunctionCallOrNull()?.symbol ?: callInfo?.successfulConstructorCallOrNull()?.symbol
                 ?: callInfo?.singleFunctionCallOrNull()?.symbol ?: callInfo?.singleConstructorCallOrNull()?.symbol
                 symbol?.psi
             }
         } else {
             // === JAVA/UAST PATH ===
-            // For Java files, `node.resolve()` returns the real `PsiMethod`
+            // For Java files, standard UAST `node.resolve()` works correctly and returns the real `PsiMethod`.
             node.resolve()
         }
 
