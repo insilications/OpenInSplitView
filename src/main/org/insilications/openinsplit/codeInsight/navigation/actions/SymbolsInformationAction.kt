@@ -41,28 +41,6 @@ private val SYMBOL_USAGE_LOG: Logger = Logger.getInstance("org.insilications.ope
 /**
  * Action that collects and logs detailed semantic information about the symbol under the caret.
  *
- * **Architecture & Logic:**
- * This action acts as a symbol-centric context provider that extracts semantically enriched code slices from
- * Kotlin and Java target symbols. It employs a **Hybrid UAST + Kotlin K2 Analysis API approach**:
- *
- * 1.  **Entry Point & Target Identification:**
- *     - Identifies target symbols (Functions, Classes/Objects) using `TargetElementUtil`.
- *     - Normalizes targets using `preferSourceDeclaration()` to ensure analysis runs on definitions, not usages.
- *
- * 2.  **Traversal Layer (UAST):**
- *     - Uses a unified `SymbolUsageCollector` (extending `AbstractUastVisitor`) to walk the AST.
- *     - Applies manual overrides for constructs where UAST is opaque (e.g., Kotlin destructuring in lambdas).
- *
- * 3.  **Semantic Resolution Layer:**
- *     - **Kotlin Path (K2):** Triggers when `sourcePsi` is a `KtElement`. Uses `analyze(element)` to enter a `KaSession`
- *       and resolve calls, types, and annotations using the K2 Analysis API.
- *     - **Java Path (PSI/UAST):** Triggers when `sourcePsi` is not a `KtElement`. Uses standard UAST/PSI resolution.
- *
- * 4.  **Data Aggregation:**
- *     - Collects referenced symbols grouped by their defining **Source File** (`ReferencedFile`).
- *     - Filters redundancies (child declarations whose parents are also collected).
- *     - Classifies usages into specific kinds (e.g., `CALL`, `TYPE_REFERENCE`, `CONSTRUCTOR_CALL`).
- *
  * It is marked as `DumbAware` so it can be invoked even during indexing, although the core logic
  * checks `DumbService` to avoid expensive or inaccurate resolution when indices are incomplete.
  */
@@ -184,7 +162,8 @@ data class ReferencedDeclaration(
 
 /**
  * Groups collected referenced symbols by their defining source file.
- * This structure supports the "File-Based Grouping" strategy in the Data Aggregation layer.
+ * This structure supports the "File-Based Grouping" strategy in the Data Aggregation layer,
+ * ensuring all symbols are attributed to their *defining* file, not the file where they are used.
  *
  * @property referencedTypes Collected classes, interfaces, objects, and structural types.
  * @property referencedFunctions Collected function calls, constructor calls, and method references.
@@ -199,8 +178,8 @@ data class ReferencedFile(
 /**
  * The root container for all extracted information about the target symbol.
  *
- * @property declarationSlice The comprehensive snapshot of the target symbol itself.
- * @property referencedFiles A map of dependencies grouped by their source file, preserving insertion order.
+ * @property declarationSlice The comprehensive snapshot of the target symbol itself (Identity, Location, Context, Content).
+ * @property referencedFiles A map of dependencies grouped by their source file (Data Aggregation), preserving insertion order.
  */
 data class TargetSymbolContext(
     val packageDirective: String?,
@@ -251,8 +230,10 @@ private fun buildSymbolContext(
 }
 
 /**
- * Normalize the caret element into a coarse symbol kind so we know how deep the traversal
- * must go (only the function body vs. the entire class hierarchy of declarations).
+ * Normalize the caret element into a coarse symbol kind to determine the **Traversal Scope**.
+ * This is a crucial architectural decision affecting performance and depth:
+ * - **FUNCTION:** Limits traversal to the function body.
+ * - **CLASS:** Traverses the entire class hierarchy and member declarations.
  * 
  * We check `preferSourceDeclaration` first because we might be at a usage site (reference)
  * and want to analyze the definition.
@@ -425,8 +406,11 @@ private class SymbolUsageCollector(
         // UAST does NOT traverse Kotlin destructuring declarations in lambda parameters
         // (e.g., `{ (requestor, _) -> ... }`). These are structurally different in the PSI
         // and often opaque to UAST's parameter list view.
-        // We must manually inspect the underlying Kotlin PSI to capture types referenced
-        // inside these destructuring entries.
+        //
+        // **Constraint - UAST Limitations:**
+        // This is a concrete example where manual PSI inspection is mandatory. We must manually 
+        // inspect the underlying `KtParameter` and `KtDestructuringDeclarationEntry` to capture 
+        // types referenced inside.
         val ktLambda: KtLambdaExpression? = node.sourcePsi as? KtLambdaExpression
         if (ktLambda != null) {
             ktLambda.functionLiteral.valueParameters.forEach { parameter: KtParameter ->
@@ -452,7 +436,8 @@ private class SymbolUsageCollector(
         val sourcePsi: PsiElement? = node.sourcePsi
 
         // **Extension Receiver (Kotlin):**
-        // Explicitly extract the receiver type (e.g., `fun String.foo()`) which is a structural dependency.
+        // Explicitly extract the receiver type (e.g., `fun String.foo()`). This is a "Structural Type"
+        // dependency that UAST might miss or miscategorize, so we use K2 to resolve the expanded symbol.
         if (sourcePsi is KtFunction) {
             sourcePsi.runAnalysisSafely {
                 (sourcePsi.symbol as? KaFunctionSymbol)?.receiverParameter?.returnType?.expandedSymbol?.psi
@@ -470,7 +455,8 @@ private class SymbolUsageCollector(
 
         // **Implicit Type Filter:**
         // Explicitly filter out implicit `kotlin.Unit` return types.
-        // This reduces noise in the collected data, as `Unit` is ubiquitous and often inferred.
+        // This significantly reduces noise in the collected data, as `Unit` is ubiquitous, often inferred,
+        // and rarely provides semantic value for this type of analysis.
         val isImplicitUnit: Boolean =
             resolved is KtClassOrObject && resolved.fqName?.asString() == "kotlin.Unit" && (sourcePsi is KtFunction && !sourcePsi.hasDeclaredReturnType())
 
@@ -487,6 +473,8 @@ private class SymbolUsageCollector(
 
         if (sourcePsi is KtProperty) {
             // Extension Receiver
+            // Explicitly extract the receiver type for properties (e.g., `val String.lastChar: Char`).
+            // This is a "Structural Type" dependency that requires K2 resolution.
             sourcePsi.runAnalysisSafely {
                 sourcePsi.symbol.receiverParameter?.returnType?.expandedSymbol?.psi
             }?.let { recordType(it, UsageKind.EXTENSION_RECEIVER) }
@@ -585,14 +573,19 @@ private class SymbolUsageCollector(
         // **Semantic Resolution Layer (Hybrid Strategy):**
         // Base the strategy on the CALL SITE language with a type check.
         val resolvedCallable: PsiElement? = if (sourcePsi is KtElement) {
+            // [STRATEGY: K2 ANALYSIS]
             // === K2 PATH (Kotlin) ===
-            // Standard UAST resolution (`node.resolve()`) is unreliable for Kotlin (often returns Light Classes).
-            // We use `analyze(element)` and `resolveToCall()` to get accurate K2 symbols.
+            // **CRITICAL WARNING:** Standard UAST resolution (`node.resolve()`) is **never trusted** for Kotlin.
+            // It often returns "Light Classes" (Java-views) that lose Kotlin-specific semantics (suspend, inline, aliases).
+            //
+            // We use `analyze(element)` to enter the K2 session and `resolveToCall()` for high-fidelity resolution.
             sourcePsi.runAnalysisSafely {
                 // Resolve the call using K2 semantics
                 val callInfo: KaCallInfo? = sourcePsi.resolveToCall()
 
-                // Get the target symbol. Explicitly distinguishing between successful function and constructor calls.
+                // Get the target symbol. We hierarchically check for successful calls to ensure precision.
+                // `successfulFunctionCallOrNull` ensures we match a valid function signature.
+                // `successfulConstructorCallOrNull` handles object instantiation.
                 val symbol: KaFunctionSymbol? = callInfo?.successfulFunctionCallOrNull()?.symbol ?: callInfo?.successfulConstructorCallOrNull()?.symbol
                 ?: callInfo?.singleFunctionCallOrNull()?.symbol ?: callInfo?.singleConstructorCallOrNull()?.symbol
                 symbol?.psi
@@ -629,6 +622,7 @@ private class SymbolUsageCollector(
 
         val sourcePsi: PsiElement? = node.sourcePsi
         val resolved: List<PsiElement?>? = if (sourcePsi is KtElement) {
+            // [STRATEGY: K2 ANALYSIS]
             resolveReferenceWithAnalysis(sourcePsi)
         } else {
             node.resolve()?.let { listOf(it) }
@@ -675,6 +669,7 @@ private class SymbolUsageCollector(
         if (shouldStopTraversal()) return true
         val sourcePsi: PsiElement? = node.sourcePsi
         val resolved: PsiElement? = if (sourcePsi is KtElement) {
+            // [STRATEGY: K2 ANALYSIS]
             sourcePsi.runAnalysisSafely {
                 sourcePsi.resolveToCall()?.successfulFunctionCallOrNull()?.symbol?.psi
             }
@@ -689,6 +684,7 @@ private class SymbolUsageCollector(
         if (shouldStopTraversal()) return true
         val sourcePsi: PsiElement? = node.sourcePsi
         val resolved: PsiElement? = if (sourcePsi is KtElement) {
+            // [STRATEGY: K2 ANALYSIS]
             sourcePsi.runAnalysisSafely {
                 sourcePsi.resolveToCall()?.successfulFunctionCallOrNull()?.symbol?.psi
             }
@@ -703,6 +699,7 @@ private class SymbolUsageCollector(
         if (shouldStopTraversal()) return true
         val sourcePsi: PsiElement? = node.sourcePsi
         if (sourcePsi is KtElement) {
+            // [STRATEGY: K2 ANALYSIS]
             val resolved: PsiElement? = sourcePsi.runAnalysisSafely {
                 sourcePsi.resolveToCall()?.successfulFunctionCallOrNull()?.symbol?.psi
             }
@@ -809,9 +806,14 @@ private fun resolveReferenceWithAnalysis(element: PsiElement): List<PsiElement?>
 }
 
 /**
- * A more specialized resolver for classifiers (classes, interfaces, objects) and types.
- * It handles cases where UAST might see a "TypeReference" but not know exactly what it points to,
- * especially with type aliases, generics, or constructor calls.
+ * A more specialized resolver for classifiers (classes, interfaces, objects) and types using the **K2 Analysis API**.
+ *
+ * **Why is this needed?**
+ * UAST is often unable to resolve complex Kotlin constructs to their canonical declarations.
+ * This function addresses specific limitations:
+ * 1.  **Type Aliases:** UAST might return the alias itself; we use `expandedSymbol` to find the underlying class.
+ * 2.  **Class Literals:** UAST sees `KClass<T>`; we need to unwrap `T`.
+ * 3.  **Constructors:** UAST might not link the constructor call back to the containing class reliably in all cases.
  */
 private fun resolveClassifierWithAnalysis(element: PsiElement): PsiElement? {
     val ktElement: KtElement = element as? KtElement ?: return null
@@ -871,9 +873,12 @@ private fun resolveClassifierWithAnalysis(element: PsiElement): PsiElement? {
 /**
  * Safe execution wrapper for the Kotlin Analysis API.
  *
- * `analyze(element)` is the entry point for K2 analysis. It provides a `KaSession` scope.
- * This wrapper handles exceptions that might occur during analysis (e.g., invalidation)
- * to prevent the action from crashing.
+ * **Primary Gatekeeper:** This function is the single entry point for K2 analysis (`analyze(element)`).
+ * It provides the required `KaSession` scope for all semantic operations.
+ *
+ * **Safety:** It catches generic `Throwable` to handle potential Analysis API instability or PSI invalidation
+ * (e.g. `PsiInvalidElementAccessException`), ensuring the action fails gracefully (returning null)
+ * rather than crashing the IDE.
  *
  * @param block The analysis logic to run within the `KaSession`.
  */
