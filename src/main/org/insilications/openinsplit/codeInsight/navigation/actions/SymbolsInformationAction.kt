@@ -121,7 +121,8 @@ enum class UsageKind {
     ANNOTATION,
     DELEGATED_PROPERTY,
     OPERATOR_CALL,
-    EXTENSION_RECEIVER
+    EXTENSION_RECEIVER,
+    EXTENSION_CALL
 }
 
 /**
@@ -563,7 +564,7 @@ private class SymbolUsageCollector(
     override fun visitCallExpression(node: UCallExpression): Boolean {
         if (shouldStopTraversal()) return true
 
-        val usageKind: UsageKind = if (node.kind == UastCallKind.CONSTRUCTOR_CALL) {
+        val initialKind: UsageKind = if (node.kind == UastCallKind.CONSTRUCTOR_CALL) {
             UsageKind.CONSTRUCTOR_CALL
         } else {
             UsageKind.CALL
@@ -572,7 +573,7 @@ private class SymbolUsageCollector(
         val sourcePsi: PsiElement? = node.sourcePsi
         // **Semantic Resolution Layer (Hybrid Strategy):**
         // Base the strategy on the CALL SITE language with a type check.
-        val resolvedCallable: PsiElement? = if (sourcePsi is KtElement) {
+        val (resolvedCallable: PsiElement?, finalKind: UsageKind) = if (sourcePsi is KtElement) {
             // [STRATEGY: K2 ANALYSIS]
             // === K2 PATH (Kotlin) ===
             // **CRITICAL WARNING:** Standard UAST resolution (`node.resolve()`) is **never trusted** for Kotlin.
@@ -583,20 +584,25 @@ private class SymbolUsageCollector(
                 // Resolve the call using K2 semantics
                 val callInfo: KaCallInfo? = sourcePsi.resolveToCall()
 
+                val functionCall: KaFunctionCall<out KaFunctionSymbol>? = callInfo?.successfulFunctionCallOrNull() ?: callInfo?.singleFunctionCallOrNull()
+                val constructorCall: KaFunctionCall<KaConstructorSymbol>? =
+                    callInfo?.successfulConstructorCallOrNull() ?: callInfo?.singleConstructorCallOrNull()
+
                 // Get the target symbol. We hierarchically check for successful calls to ensure precision.
                 // `successfulFunctionCallOrNull` ensures we match a valid function signature.
                 // `successfulConstructorCallOrNull` handles object instantiation.
-                val symbol: KaFunctionSymbol? = callInfo?.successfulFunctionCallOrNull()?.symbol ?: callInfo?.successfulConstructorCallOrNull()?.symbol
-                ?: callInfo?.singleFunctionCallOrNull()?.symbol ?: callInfo?.singleConstructorCallOrNull()?.symbol
-                symbol?.psi
-            }
+                val symbol: KaFunctionSymbol? = functionCall?.symbol ?: constructorCall?.symbol
+
+                val kind: UsageKind = if (symbol != null && symbol.isExtension) UsageKind.EXTENSION_CALL else initialKind
+                symbol?.psi to kind
+            } ?: (null to initialKind)
         } else {
             // === JAVA/UAST PATH ===
             // For Java files, standard UAST `node.resolve()` works correctly and returns the real `PsiMethod`.
-            node.resolve()
+            node.resolve() to initialKind
         }
 
-        recordFunction(resolvedCallable, usageKind)
+        recordFunction(resolvedCallable, finalKind)
 
         // If it's a constructor call, we also want to record the Type being instantiated.
         if (node.kind == UastCallKind.CONSTRUCTOR_CALL) {
@@ -1026,6 +1032,7 @@ private inline fun UsageKind.toClassificationString(): String = when (this) {
     UsageKind.DELEGATED_PROPERTY -> "delegated_property"
     UsageKind.OPERATOR_CALL -> "operator_call"
     UsageKind.EXTENSION_RECEIVER -> "extension_receiver"
+    UsageKind.EXTENSION_CALL -> "extension_call"
 }
 
 @Suppress("LongLine")
@@ -1033,13 +1040,13 @@ private fun TargetSymbolContext.toLogString(): String {
     val sb = StringBuilder()
     sb.appendLine()
     sb.appendLine("============ Target PSI Type: ${declarationSlice.fqNameTypeString} ============")
-    sb.appendLine("Target kotlinFqNameString: ${declarationSlice.kotlinFqNameString ?: "<anonymous>"}")
+//    sb.appendLine("Target kotlinFqNameString: ${declarationSlice.kotlinFqNameString ?: "<anonymous>"}")
     sb.appendLine("Target ktFqNameRelativeString: ${declarationSlice.ktFqNameRelativeString ?: "<anonymous>"}")
     sb.appendLine("Target psiFilePath: ${declarationSlice.psiFilePath}")
-    sb.appendLine("Target presentableText: ${declarationSlice.presentableText ?: "<anonymous>"}")
-    sb.appendLine("Target name: ${declarationSlice.name ?: "<anonymous>"}")
-    sb.appendLine("Target caret: offset=${declarationSlice.caretLocation.offset}, line=${declarationSlice.caretLocation.line}, column=${declarationSlice.caretLocation.column}")
-    sb.appendLine("Target Symbol Kind: $symbolKind")
+//    sb.appendLine("Target presentableText: ${declarationSlice.presentableText ?: "<anonymous>"}")
+//    sb.appendLine("Target name: ${declarationSlice.name ?: "<anonymous>"}")
+//    sb.appendLine("Target caret: offset=${declarationSlice.caretLocation.offset}, line=${declarationSlice.caretLocation.line}, column=${declarationSlice.caretLocation.column}")
+//    sb.appendLine("Target Symbol Kind: $symbolKind")
     sb.appendLine("Package Directive: ${packageDirective ?: "<none>"}")
     if (importsList.isNotEmpty()) {
         sb.appendLine("Imports:")
