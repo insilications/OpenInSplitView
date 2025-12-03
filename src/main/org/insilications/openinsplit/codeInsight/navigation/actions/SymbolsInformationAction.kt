@@ -164,8 +164,6 @@ private data class ReferencedCollections(
     val referencedFiles: LinkedHashMap<String, ReferencedFile>, val limitReached: Boolean
 )
 
-//private val SYMBOL_USAGE_LOG: Logger = Logger.getInstance("org.insilications.openinsplit")
-
 /* ============================= CONTEXT BUILDERS ============================= */
 
 /**
@@ -306,20 +304,20 @@ private class SymbolUsageCollector(
         }
 
         class FileBuilder(val psiFile: PsiFile) {
-            val types = mutableListOf<ReferencedDeclaration>()
-            val functions = mutableListOf<ReferencedDeclaration>()
+            val types: MutableList<ReferencedDeclaration> = mutableListOf<ReferencedDeclaration>()
+            val functions: MutableList<ReferencedDeclaration> = mutableListOf<ReferencedDeclaration>()
         }
 
         val fileMap = LinkedHashMap<String, FileBuilder>()
 
         fun process(list: List<Pair<PsiElement, CollectedUsage>>, isType: Boolean) {
-            for ((element, usage) in list) {
+            for ((element: PsiElement, usage: CollectedUsage) in list) {
                 if (isRedundant(element)) continue
-                val psiFile = element.containingFile ?: continue
-                val path = psiFile.virtualFile?.path ?: continue
+                val psiFile: PsiFile = element.containingFile ?: continue
+                val path: String = psiFile.virtualFile?.path ?: continue
 
-                val builder = fileMap.getOrPut(path) { FileBuilder(psiFile) }
-                val declaration = usage.toReferencedDeclaration(project, element)
+                val builder: FileBuilder = fileMap.getOrPut(path) { FileBuilder(psiFile) }
+                val declaration: ReferencedDeclaration = usage.toReferencedDeclaration(project, element)
 
                 if (isType) builder.types.add(declaration) else builder.functions.add(declaration)
             }
@@ -428,14 +426,11 @@ private class SymbolUsageCollector(
             sourcePsi.runAnalysisSafely {
                 sourcePsi.symbol.receiverParameter?.returnType?.expandedSymbol?.psi
             }?.let { recordType(it, UsageKind.EXTENSION_RECEIVER) }
-//            sourcePsi.runAnalysisSafely {
-//                (sourcePsi.symbol as? KaVariableSymbol)?.receiverParameter?.returnType?.expandedSymbol?.psi
-//            }?.let { recordType(it, UsageKind.EXTENSION_RECEIVER) }
 
             // Delegated Property
             if (sourcePsi.hasDelegate()) {
                 sourcePsi.runAnalysisSafely {
-                    sourcePsi.delegate?.expression?.resolveToCall()?.let { call ->
+                    sourcePsi.delegate?.expression?.resolveToCall()?.let { call: KaCallInfo ->
                         call.successfulFunctionCallOrNull()?.symbol ?: call.successfulConstructorCallOrNull()?.symbol
                     }?.psi
                 }?.let { recordFunction(it, UsageKind.DELEGATED_PROPERTY) }
@@ -581,7 +576,7 @@ private class SymbolUsageCollector(
                 is PsiField -> {
                     val typeClass: PsiClass? = PsiUtil.resolveClassInType(element.type)
                     recordType(typeClass, UsageKind.TYPE_REFERENCE)
-                    val kind = if (isLValue(node)) UsageKind.PROPERTY_ACCESS_SET else UsageKind.PROPERTY_ACCESS_GET
+                    val kind: UsageKind = if (isLValue(node)) UsageKind.PROPERTY_ACCESS_SET else UsageKind.PROPERTY_ACCESS_GET
                     recordFunction(element, kind)
                 }
 
@@ -590,7 +585,7 @@ private class SymbolUsageCollector(
                         element.symbol.returnType.expandedSymbol?.psi
                     }
                     recordType(typeClass, UsageKind.TYPE_REFERENCE)
-                    val kind = if (isLValue(node)) UsageKind.PROPERTY_ACCESS_SET else UsageKind.PROPERTY_ACCESS_GET
+                    val kind: UsageKind = if (isLValue(node)) UsageKind.PROPERTY_ACCESS_SET else UsageKind.PROPERTY_ACCESS_GET
                     recordFunction(element, kind)
                 }
 
@@ -600,7 +595,7 @@ private class SymbolUsageCollector(
                             element.symbol.returnType.expandedSymbol?.psi
                         }
                         recordType(typeClass, UsageKind.TYPE_REFERENCE)
-                        val kind = if (isLValue(node)) UsageKind.PROPERTY_ACCESS_SET else UsageKind.PROPERTY_ACCESS_GET
+                        val kind: UsageKind = if (isLValue(node)) UsageKind.PROPERTY_ACCESS_SET else UsageKind.PROPERTY_ACCESS_GET
                         recordFunction(element, kind)
                     }
                 }
@@ -611,7 +606,7 @@ private class SymbolUsageCollector(
 
     override fun visitBinaryExpression(node: UBinaryExpression): Boolean {
         if (shouldStopTraversal()) return true
-        val sourcePsi = node.sourcePsi
+        val sourcePsi: PsiElement? = node.sourcePsi
         val resolved: PsiElement? = if (sourcePsi is KtElement) {
             sourcePsi.runAnalysisSafely {
                 sourcePsi.resolveToCall()?.successfulFunctionCallOrNull()?.symbol?.psi
@@ -625,7 +620,7 @@ private class SymbolUsageCollector(
 
     override fun visitUnaryExpression(node: UUnaryExpression): Boolean {
         if (shouldStopTraversal()) return true
-        val sourcePsi = node.sourcePsi
+        val sourcePsi: PsiElement? = node.sourcePsi
         val resolved: PsiElement? = if (sourcePsi is KtElement) {
             sourcePsi.runAnalysisSafely {
                 sourcePsi.resolveToCall()?.successfulFunctionCallOrNull()?.symbol?.psi
@@ -639,9 +634,9 @@ private class SymbolUsageCollector(
 
     override fun visitArrayAccessExpression(node: UArrayAccessExpression): Boolean {
         if (shouldStopTraversal()) return true
-        val sourcePsi = node.sourcePsi
+        val sourcePsi: PsiElement? = node.sourcePsi
         if (sourcePsi is KtElement) {
-            val resolved = sourcePsi.runAnalysisSafely {
+            val resolved: PsiElement? = sourcePsi.runAnalysisSafely {
                 sourcePsi.resolveToCall()?.successfulFunctionCallOrNull()?.symbol?.psi
             }
             recordFunction(resolved, UsageKind.OPERATOR_CALL)
@@ -650,9 +645,9 @@ private class SymbolUsageCollector(
     }
 
     private fun isLValue(node: USimpleNameReferenceExpression): Boolean {
-        val parent = node.uastParent
+        val parent: UElement? = node.uastParent
         if (parent is UBinaryExpression && parent.leftOperand == node) {
-            val op = parent.operator
+            val op: UastBinaryOperator = parent.operator
             if (op == UastBinaryOperator.ASSIGN) return true
         }
         return false
@@ -990,7 +985,7 @@ private fun TargetSymbolContext.toLogString(): String {
     } else {
         sb.appendLine("Referenced Files (${referencedFiles.size}):")
         sb.appendLine("*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*")
-        referencedFiles.forEach { (path, refFile) ->
+        referencedFiles.forEach { (path: String, refFile: ReferencedFile) ->
             sb.appendLine("psiFilePath: $path")
             sb.appendLine("Package Directive: ${refFile.packageDirective ?: "<none>"}")
 //            if (refFile.importsList.isNotEmpty()) {
@@ -1002,7 +997,6 @@ private fun TargetSymbolContext.toLogString(): String {
             appendReferencedSection(sb, "Types", refFile.referencedTypes)
             appendReferencedSection(sb, "Functions", refFile.referencedFunctions)
             sb.appendLine("*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*")
-//            sb.appendLine("\n\n\n")
         }
     }
 
@@ -1020,7 +1014,6 @@ private fun TargetSymbolContext.appendReferencedSection(
 ) {
     sb.appendLine()
     if (references.isEmpty()) {
-//        sb.appendLine("Referenced $label: <none>")
         return
     }
 
