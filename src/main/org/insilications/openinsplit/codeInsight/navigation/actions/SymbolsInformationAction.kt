@@ -139,8 +139,20 @@ data class CaretLocation(
 )
 
 /**
+ * Represents a container in the declaration's hierarchy (e.g. a Class, Interface, or Object).
+ * Used to reconstruct the file structure in the output summary.
+ *
+ * @property signature The declaration header text (e.g. "class MyClass : Base", "companion object").
+ * @property kind The kind of container ("class", "interface", "object", etc.).
+ */
+data class StructureNode(
+    val signature: String,
+    val kind: String
+)
+
+/**
  * A comprehensive snapshot of a declaration, extracted during the **Information Extracted** phase.
- * Contains identity (FQN, names), location, and the full source code text.
+ * Contains identity (FQN, names), location, the full source code text, and its structural ancestry.
  */
 data class DeclarationSlice(
     val psiFilePath: String,
@@ -150,7 +162,8 @@ data class DeclarationSlice(
     val ktFqNameRelativeString: String?,
     val fqNameTypeString: String,
     val kotlinFqNameString: String?,
-    val sourceCode: String
+    val sourceCode: String,
+    val structurePath: List<StructureNode>
 )
 
 /**
@@ -955,6 +968,8 @@ private fun PsiElement.toDeclarationSlice(
         "<!-- Source code not available (compiled/error: ${e.message}) -->"
     }
 
+    val structurePath: List<StructureNode> = sourceDeclaration.computeStructurePath()
+
     // Pack every attribute that downstream tooling may need to reconstruct a declarative slice
     return DeclarationSlice(
         psiFilePath,
@@ -965,7 +980,55 @@ private fun PsiElement.toDeclarationSlice(
         fqNameTypeString,
         kotlinFqNameString = kotlinFqName?.asString(),
         sourceCode = sourceCode,
+        structurePath = structurePath
     )
+}
+
+private fun PsiElement.computeStructurePath(): List<StructureNode> {
+    val path = mutableListOf<StructureNode>()
+    var current: PsiElement? = this.parent
+    while (current != null) {
+        if (current is PsiFile) break
+        
+        val node: StructureNode? = when (current) {
+            is KtClassOrObject -> {
+                val header = getContainerHeader(current)
+                val kind = if (current is KtObjectDeclaration) "object" else "class"
+                StructureNode(header, kind)
+            }
+            is PsiClass -> {
+                val header = getContainerHeader(current)
+                val kind = if (current.isInterface) "interface" else "class"
+                StructureNode(header, kind)
+            }
+            else -> null
+        }
+
+        if (node != null) {
+            path.add(node)
+        }
+        current = current.parent
+    }
+    // We traversed Inside -> Out, so reverse to get Out -> In order
+    return path.reversed()
+}
+
+private fun getContainerHeader(element: PsiElement): String {
+    // We want the text of the declaration *up to* the opening brace of the body.
+    val text: String = element.text
+    val bodyStartOffset: Int = when (element) {
+        is KtClassOrObject -> element.body?.startOffsetInParent ?: -1
+        is PsiClass -> element.lBrace?.startOffsetInParent ?: -1
+        else -> -1
+    }
+
+    return if (bodyStartOffset > 0) {
+        text.substring(0, bodyStartOffset).trim()
+    } else {
+        // No body (e.g. abstract method or interface without body? classes usually have bodies or at least braces)
+        // Fallback for one-liners or weird formatting
+        text.substringBefore('{').trim()
+    }
 }
 
 /**
@@ -1038,80 +1101,137 @@ private inline fun UsageKind.toClassificationString(): String = when (this) {
 @Suppress("LongLine")
 private fun TargetSymbolContext.toLogString(): String {
     val sb = StringBuilder()
+    
+    // --- 1. Target File Reconstruction ---
+    sb.appendLine("============ Target File Reconstruction ============")
+    sb.appendLine("Target Symbol: ${declarationSlice.ktFqNameRelativeString ?: declarationSlice.name}")
+    sb.appendLine("Source File: ${declarationSlice.psiFilePath}")
     sb.appendLine()
-    sb.appendLine("============ Target PSI Type: ${declarationSlice.fqNameTypeString} ============")
-//    sb.appendLine("Target kotlinFqNameString: ${declarationSlice.kotlinFqNameString ?: "<anonymous>"}")
-    sb.appendLine("Target ktFqNameRelativeString: ${declarationSlice.ktFqNameRelativeString ?: "<anonymous>"}")
-    sb.appendLine("Target psiFilePath: ${declarationSlice.psiFilePath}")
-//    sb.appendLine("Target presentableText: ${declarationSlice.presentableText ?: "<anonymous>"}")
-//    sb.appendLine("Target name: ${declarationSlice.name ?: "<anonymous>"}")
-//    sb.appendLine("Target caret: offset=${declarationSlice.caretLocation.offset}, line=${declarationSlice.caretLocation.line}, column=${declarationSlice.caretLocation.column}")
-//    sb.appendLine("Target Symbol Kind: $symbolKind")
-    sb.appendLine("Package Directive: ${packageDirective ?: "<none>"}")
-    if (importsList.isNotEmpty()) {
-        sb.appendLine("Imports:")
-        importsList.forEach { sb.appendLine("  $it") }
-    } else {
-        sb.appendLine("Imports: <none>")
-    }
+    
+    // Reconstruct the target file containing the target symbol
+    // We treat the target symbol as the single slice to render for this file view
+    val targetFileRender: String = renderReconstructedFile(
+        packageDirective,
+        importsList,
+        listOf(declarationSlice)
+    )
+    sb.appendLine(targetFileRender)
     sb.appendLine()
-    sb.appendLine("Target Declaration Source Code:")
-    sb.appendLine(declarationSlice.sourceCode)
-    sb.appendLine("\n\n")
 
+    // --- 2. Referenced Files Reconstruction ---
     if (referencedFiles.isEmpty()) {
         sb.appendLine("Referenced Files: <none>")
     } else {
-        sb.appendLine("Referenced Files (${referencedFiles.size}):")
-        sb.appendLine("*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*")
+        sb.appendLine("============ Referenced Files (${referencedFiles.size}) ============")
         referencedFiles.forEach { (path: String, refFile: ReferencedFile) ->
-            sb.appendLine("psiFilePath: $path")
-            sb.appendLine("Package Directive: ${refFile.packageDirective ?: "<none>"}")
-//            if (refFile.importsList.isNotEmpty()) {
-//                sb.appendLine("Imports:")
-//                refFile.importsList.forEach { sb.appendLine("  $it") }
-//            } else {
-//                sb.appendLine("Imports: <none>")
-//            }
-            appendReferencedSection(sb, "Types", refFile.referencedTypes)
-            appendReferencedSection(sb, "Functions", refFile.referencedFunctions)
-            sb.appendLine("*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*")
+            sb.appendLine("Source File: $path")
+            
+            // Collect all slices for this file (Types + Functions)
+            val allSlices: List<DeclarationSlice> = refFile.referencedTypes.map { it.declarationSlice } + 
+                                                    refFile.referencedFunctions.map { it.declarationSlice }
+            
+            val reconstructedContent: String = renderReconstructedFile(
+                refFile.packageDirective,
+                refFile.importsList,
+                allSlices
+            )
+            
+            sb.appendLine(reconstructedContent)
+            sb.appendLine("----------------------------------------------------------------") // File separator
+            sb.appendLine()
         }
     }
 
     if (referenceLimitReached) {
         sb.appendLine("Reference limit reached; output truncated.")
     }
-    sb.appendLine()
     sb.appendLine("==============================================================")
     return sb.toString()
 }
 
-// Pretty-prints referenced declarations in logs while keeping verbosity in check.
-private fun TargetSymbolContext.appendReferencedSection(
-    sb: StringBuilder, label: String, references: List<ReferencedDeclaration>, maxEntries: Int = 100
-) {
-    sb.appendLine()
-    if (references.isEmpty()) {
-        return
+/**
+ * Reconstructs a valid source file view from a list of isolated declaration slices.
+ *
+ * Algorithm (Tree Merger):
+ * 1. Sorts all declarations by their original offset in the file (restoring declaration order).
+ * 2. Iterates through the sorted list, maintaining a "Current Scope Stack".
+ * 3. Compares the ancestry path of the next symbol with the current stack.
+ * 4. Closes scopes that no longer match (printing `}`).
+ * 5. Opens new scopes that are required (printing `class ... {`).
+ * 6. Prints the declaration source code.
+ */
+private fun renderReconstructedFile(
+    packageDirective: String?,
+    importsList: List<String>,
+    slices: List<DeclarationSlice>
+): String {
+    val sb = StringBuilder()
+
+    // Header
+    if (packageDirective != null) {
+        sb.appendLine(packageDirective)
+        sb.appendLine()
+    }
+    
+    if (importsList.isNotEmpty()) {
+        importsList.forEach { sb.appendLine(it) }
+        sb.appendLine()
     }
 
-    sb.appendLine("Referenced $label (${references.size}):")
-    references.take(maxEntries).forEach { ref: ReferencedDeclaration ->
-        val declarationSlice: DeclarationSlice = ref.declarationSlice
-        val usageSummary: String = ref.usageKinds.takeIf { it.isNotEmpty() }?.joinToString { usage: UsageKind -> usage.toClassificationString() } ?: "unknown"
-        val displayName: String = declarationSlice.kotlinFqNameString ?: declarationSlice.presentableText ?: declarationSlice.name ?: "<anonymous>"
-        sb.appendLine("    - $displayName [$usageSummary]")
-        sb.appendLine("    ktFqNameRelativeString: ${declarationSlice.ktFqNameRelativeString}")
-        sb.appendLine("    fqNameTypeString: ${declarationSlice.fqNameTypeString}")
-        sb.appendLine()
-//        sb.appendLine("    Source Code:")
-//        sb.appendLine(declarationSlice.sourceCode)
-//        sb.appendLine("\n")
-        sb.appendLine("    ----------------------------------------------")
-        sb.appendLine("\n\n")
+    // Sort by offset to ensure we traverse the file from top to bottom
+    val sortedSlices: List<DeclarationSlice> = slices.sortedBy { it.caretLocation.offset }
+    
+    // The current stack of open containers (from outer to inner)
+    // We store the StructureNode to check equality
+    var currentPath: List<StructureNode> = emptyList()
+
+    for (slice: DeclarationSlice in sortedSlices) {
+        val nextPath: List<StructureNode> = slice.structurePath
+        
+        // 1. Determine common prefix (how many levels of nesting are shared?)
+        var commonDepth = 0
+        val minLen = minOf(currentPath.size, nextPath.size)
+        while (commonDepth < minLen && currentPath[commonDepth] == nextPath[commonDepth]) {
+            commonDepth++
+        }
+        
+        // 2. Close scopes that are no longer valid (from deep to shallow)
+        // e.g. Current: [A, B], Next: [A, C]. Close B.
+        for (i in currentPath.lastIndex downTo commonDepth) {
+            val indentation = "    ".repeat(i)
+            sb.appendLine("$indentation    // ...")
+            sb.appendLine("$indentation}")
+        }
+        
+        // 3. Open new scopes (from shallow to deep)
+        // e.g. Current: [A], Next: [A, C]. Open C.
+        for (i in commonDepth until nextPath.size) {
+            val node: StructureNode = nextPath[i]
+            val indentation = "    ".repeat(i)
+            sb.appendLine()
+            sb.appendLine("$indentation${node.signature} {")
+            // Note: We don't print "..." immediately at start; only at end or between members
+        }
+        
+        // 4. Print the symbol source code
+        // We need to indent the entire source block to match the current nesting depth
+        val contentIndentation = "    ".repeat(nextPath.size)
+        val indentedSource: String = slice.sourceCode.prependIndent(contentIndentation)
+        
+        // Add a visual separator if this isn't the first item in a shared scope? 
+        // For now, just print the code.
+        sb.appendLine(indentedSource)
+        
+        // Update stack
+        currentPath = nextPath
     }
-    if (references.size > maxEntries) {
-        sb.appendLine("    ... (${references.size - maxEntries} more)")
+
+    // 5. Close any remaining open scopes
+    for (i in currentPath.lastIndex downTo 0) {
+        val indentation = "    ".repeat(i)
+        sb.appendLine("$indentation    // ...")
+        sb.appendLine("$indentation}")
     }
+
+    return sb.toString()
 }
