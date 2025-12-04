@@ -25,13 +25,16 @@ import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.analysis.api.resolution.*
 import org.jetbrains.kotlin.analysis.api.symbols.*
 import org.jetbrains.kotlin.analysis.api.types.KaClassType
+import org.jetbrains.kotlin.idea.base.psi.getLineCount
 import org.jetbrains.kotlin.idea.base.psi.kotlinFqName
+import org.jetbrains.kotlin.idea.debugger.core.stepping.getLineRange
 import org.jetbrains.kotlin.idea.refactoring.project
 import org.jetbrains.kotlin.idea.references.KtReference
 import org.jetbrains.kotlin.idea.references.mainReference
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.tail
 import org.jetbrains.kotlin.psi.*
+import org.jetbrains.kotlin.psi.psiUtil.getElementTextWithContext
 import org.jetbrains.kotlin.psi.psiUtil.getParentOfType
 import org.jetbrains.uast.*
 import org.jetbrains.uast.visitor.AbstractUastVisitor
@@ -1000,6 +1003,17 @@ private fun PsiElement.toDeclarationSlice(
         "<!-- Source code not available (compiled/error: ${e.message}) -->"
     }
 
+    SYMBOL_USAGE_LOG.info("\nkotlinFqName: $kotlinFqName\n${sourceCode}\n")
+//    SYMBOL_USAGE_LOG.info("sourceDeclaration.getLineCount: ${sourceDeclaration.startLine()}")
+//    SYMBOL_USAGE_LOG.info("sourceDeclaration.getLineCount: ${sourceDeclaration.endLine()}")
+//    SYMBOL_USAGE_LOG.info("sourceDeclaration.getLineCount: ${sourceDeclaration.getLineCountByDocument()}")
+    SYMBOL_USAGE_LOG.info("sourceDeclaration.getElementTextWithContext: ${sourceDeclaration.getElementTextWithContext()}")
+    SYMBOL_USAGE_LOG.info("sourceDeclaration.textRange: ${sourceDeclaration.textRange}")
+    SYMBOL_USAGE_LOG.info("sourceDeclaration.getLineRange: ${sourceDeclaration.getLineRange()}")
+    SYMBOL_USAGE_LOG.info("sourceDeclaration.getLineCount: ${sourceDeclaration.getLineCount()}")
+
+    SYMBOL_USAGE_LOG.info("=====================================================")
+
     val structurePath: List<StructureNode> = sourceDeclaration.computeStructurePath()
 
     // Pack every attribute that downstream tooling may need to reconstruct a declarative slice
@@ -1256,19 +1270,22 @@ private fun renderReconstructedFile(
         for (i: Int in commonDepth until nextPath.size) {
             val node: StructureNode = nextPath[i]
             val indentation: String = "    ".repeat(i)
-            sb.appendLine()
+//            sb.appendLine()
             sb.appendLine("$indentation${node.signature} {")
             // Note: We don't print "..." immediately at start; only at end or between members
         }
 
         // 4. Print the symbol source code
         // We need to indent the entire source block to match the current nesting depth
-        val contentIndentation: String = "    ".repeat(nextPath.size)
-        val indentedSource: String = slice.sourceCode.prependIndent(contentIndentation)
+//        val contentIndentation: String = "    ".repeat(nextPath.size)
+//        val indentedSource: String = slice.sourceCode.prependIndent(contentIndentation)
+        val indentedSource: String = slice.sourceCode
 
         // Add a visual separator if this isn't the first item in a shared scope? 
         // For now, just print the code.
-        sb.appendLine(indentedSource)
+        sb.appendLine(indentedSource.trimStart { it == '\r' || it == '\n' })
+//        sb.appendLine(indentedSource)
+//        sb.append(indentedSource)
 
         // Update stack
         currentPath = nextPath
@@ -1317,7 +1334,8 @@ fun PsiElement.appendTextWithSurroundingWhitespace(
  */
 fun PsiElement.getTextWithSurroundingWhitespace(): String {
     val first = findFirstWhitespace()
-    val last = findLastWhitespace()
+//    val last = findLastWhitespace()
+    val last = this
 
     val startOffset = first.textRange.startOffset
     val endOffset = last.textRange.endOffset
