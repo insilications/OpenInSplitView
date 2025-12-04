@@ -140,19 +140,23 @@ data class CaretLocation(
 
 /**
  * Represents a container in the declaration's hierarchy (e.g. a Class, Interface, or Object).
- * Used to reconstruct the file structure in the output summary.
+ * Used during the "Tree Merger" reconstruction phase to recreate the nesting structure of the original file.
  *
  * @property signature The declaration header text (e.g. "class MyClass : Base", "companion object").
+ *                     This string is used to re-open the scope in the generated summary.
  * @property kind The kind of container ("class", "interface", "object", etc.).
  */
 data class StructureNode(
-    val signature: String,
-    val kind: String
+    val signature: String, val kind: String
 )
 
 /**
  * A comprehensive snapshot of a declaration, extracted during the **Information Extracted** phase.
  * Contains identity (FQN, names), location, the full source code text, and its structural ancestry.
+ *
+ * @property structurePath The list of parent containers (from outermost to immediate parent) required to
+ *                         reach this declaration. Used by [renderReconstructedFile] to reconstruct the
+ *                         file's nesting structure.
  */
 data class DeclarationSlice(
     val psiFilePath: String,
@@ -382,7 +386,7 @@ private class SymbolUsageCollector(
         process(resolvedFunctions, isType = false)
 
         val referencedFiles = LinkedHashMap<String, ReferencedFile>()
-        for ((path, builder) in fileMap) {
+        for ((path: String, builder: FileBuilder) in fileMap) {
             referencedFiles[path] = ReferencedFile(
                 packageDirective = getPackageDirective(builder.psiFile),
                 importsList = getImportsList(builder.psiFile),
@@ -871,7 +875,7 @@ private fun resolveClassifierWithAnalysis(element: PsiElement): PsiElement? {
 
             // Case 5: Simple Name References (e.g., `MyClass.SOME_CONSTANT`)
             is KtNameReferenceExpression -> {
-                val symbol = ktElement.mainReference.resolveToSymbol()
+                val symbol: KaSymbol? = ktElement.mainReference.resolveToSymbol()
                 // We only care if it resolves to a Class or TypeAlias.
                 if (symbol is KaClassSymbol || symbol is KaTypeAliasSymbol) symbol.psi else null
             }
@@ -984,23 +988,35 @@ private fun PsiElement.toDeclarationSlice(
     )
 }
 
+/**
+ * Computes the structural ancestry of this PSI element.
+ *
+ * It traverses up the PSI tree from the current element to the file root, collecting "Container" nodes
+ * (Classes, Objects, Interfaces) along the way.
+ *
+ * @return A list of [StructureNode]s ordered from **Outermost** (root) to **Innermost** (immediate parent).
+ *         This order is critical for the top-down reconstruction in [renderReconstructedFile].
+ */
 private fun PsiElement.computeStructurePath(): List<StructureNode> {
-    val path = mutableListOf<StructureNode>()
+    val path: MutableList<StructureNode> = mutableListOf<StructureNode>()
     var current: PsiElement? = this.parent
     while (current != null) {
+        // Stop when we hit the file level; we only care about declarations inside the file.
         if (current is PsiFile) break
-        
+
         val node: StructureNode? = when (current) {
             is KtClassOrObject -> {
-                val header = getContainerHeader(current)
-                val kind = if (current is KtObjectDeclaration) "object" else "class"
+                val header: String = getContainerHeader(current)
+                val kind: String = if (current is KtObjectDeclaration) "object" else "class"
                 StructureNode(header, kind)
             }
+
             is PsiClass -> {
-                val header = getContainerHeader(current)
-                val kind = if (current.isInterface) "interface" else "class"
+                val header: String = getContainerHeader(current)
+                val kind: String = if (current.isInterface) "interface" else "class"
                 StructureNode(header, kind)
             }
+
             else -> null
         }
 
@@ -1009,12 +1025,20 @@ private fun PsiElement.computeStructurePath(): List<StructureNode> {
         }
         current = current.parent
     }
-    // We traversed Inside -> Out, so reverse to get Out -> In order
+    // We traversed Inside -> Out (Parent -> Grandparent), so reverse to get Out -> In order (Grandparent -> Parent)
     return path.reversed()
 }
 
+/**
+ * Extracts the "Header" or "Signature" of a container element.
+ *
+ * The header is defined as the text of the declaration **up to** the opening brace of its body.
+ * - Example: `class MyClass : Base { ... }` -> `class MyClass : Base`
+ * - Example: `companion object { ... }` -> `companion object`
+ *
+ * This allows us to reconstruct the container's shell without including its original content.
+ */
 private fun getContainerHeader(element: PsiElement): String {
-    // We want the text of the declaration *up to* the opening brace of the body.
     val text: String = element.text
     val bodyStartOffset: Int = when (element) {
         is KtClassOrObject -> element.body?.startOffsetInParent ?: -1
@@ -1025,8 +1049,8 @@ private fun getContainerHeader(element: PsiElement): String {
     return if (bodyStartOffset > 0) {
         text.substring(0, bodyStartOffset).trim()
     } else {
-        // No body (e.g. abstract method or interface without body? classes usually have bodies or at least braces)
-        // Fallback for one-liners or weird formatting
+        // Fallback for cases without a body (e.g. abstract methods, interfaces without braces, or parsing errors)
+        // We take everything before the first '{'
         text.substringBefore('{').trim()
     }
 }
@@ -1101,19 +1125,18 @@ private inline fun UsageKind.toClassificationString(): String = when (this) {
 @Suppress("LongLine")
 private fun TargetSymbolContext.toLogString(): String {
     val sb = StringBuilder()
-    
+
     // --- 1. Target File Reconstruction ---
+    sb.appendLine()
     sb.appendLine("============ Target File Reconstruction ============")
     sb.appendLine("Target Symbol: ${declarationSlice.ktFqNameRelativeString ?: declarationSlice.name}")
     sb.appendLine("Source File: ${declarationSlice.psiFilePath}")
     sb.appendLine()
-    
+
     // Reconstruct the target file containing the target symbol
     // We treat the target symbol as the single slice to render for this file view
     val targetFileRender: String = renderReconstructedFile(
-        packageDirective,
-        importsList,
-        listOf(declarationSlice)
+        packageDirective, importsList, listOf(declarationSlice)
     )
     sb.appendLine(targetFileRender)
     sb.appendLine()
@@ -1125,17 +1148,16 @@ private fun TargetSymbolContext.toLogString(): String {
         sb.appendLine("============ Referenced Files (${referencedFiles.size}) ============")
         referencedFiles.forEach { (path: String, refFile: ReferencedFile) ->
             sb.appendLine("Source File: $path")
-            
+            sb.appendLine()
+
             // Collect all slices for this file (Types + Functions)
-            val allSlices: List<DeclarationSlice> = refFile.referencedTypes.map { it.declarationSlice } + 
-                                                    refFile.referencedFunctions.map { it.declarationSlice }
-            
+            val allSlices: List<DeclarationSlice> =
+                refFile.referencedTypes.map { it.declarationSlice } + refFile.referencedFunctions.map { it.declarationSlice }
+
             val reconstructedContent: String = renderReconstructedFile(
-                refFile.packageDirective,
-                refFile.importsList,
-                allSlices
+                refFile.packageDirective, refFile.importsList, allSlices
             )
-            
+
             sb.appendLine(reconstructedContent)
             sb.appendLine("----------------------------------------------------------------") // File separator
             sb.appendLine()
@@ -1150,20 +1172,32 @@ private fun TargetSymbolContext.toLogString(): String {
 }
 
 /**
- * Reconstructs a valid source file view from a list of isolated declaration slices.
+ * Reconstructs a syntactically valid source file view from a list of isolated declaration slices.
  *
- * Algorithm (Tree Merger):
- * 1. Sorts all declarations by their original offset in the file (restoring declaration order).
- * 2. Iterates through the sorted list, maintaining a "Current Scope Stack".
- * 3. Compares the ancestry path of the next symbol with the current stack.
- * 4. Closes scopes that no longer match (printing `}`).
- * 5. Opens new scopes that are required (printing `class ... {`).
- * 6. Prints the declaration source code.
+ * **The Problem:** collected symbols are isolated "leaf" nodes (e.g., a single function).
+ * To provide useful context to an LLM, we must present them within their original class hierarchy
+ * (parents, companion objects, etc.) so that scope and visibility are clear.
+ *
+ * **The Solution (Tree Merger Algorithm):**
+ * This function takes a flat list of slices and "merges" their ancestry paths to reconstruct
+ * the skeleton of the file.
+ *
+ * 1.  **Sort:** Slices are sorted by their original `textOffset`. This restores the natural "reading order"
+ *     of the file, ensuring classes and methods appear where they belong.
+ * 2.  **Traverse & Diff:** We iterate through the sorted slices. For each slice, we compare its
+ *     `structurePath` (ancestry) with the `currentPath` (the stack of currently open scopes).
+ * 3.  **Close Scopes:** If the new path diverges from the old one (e.g., we moved from `ClassA` to `ClassB`),
+ *     we close the scopes that are no longer valid (`ClassA`).
+ * 4.  **Open Scopes:** We then open the new scopes required by the new path (`ClassB`) that weren't already open.
+ * 5.  **Render:** Finally, we print the source code of the slice itself, indented to the correct depth.
+ *
+ * @param packageDirective The package declaration of the file.
+ * @param importsList The list of imports to include at the top.
+ * @param slices The list of [DeclarationSlice]s to render.
+ * @return A string containing the reconstructed source code.
  */
 private fun renderReconstructedFile(
-    packageDirective: String?,
-    importsList: List<String>,
-    slices: List<DeclarationSlice>
+    packageDirective: String?, importsList: List<String>, slices: List<DeclarationSlice>
 ): String {
     val sb = StringBuilder()
 
@@ -1172,7 +1206,7 @@ private fun renderReconstructedFile(
         sb.appendLine(packageDirective)
         sb.appendLine()
     }
-    
+
     if (importsList.isNotEmpty()) {
         importsList.forEach { sb.appendLine(it) }
         sb.appendLine()
@@ -1180,55 +1214,55 @@ private fun renderReconstructedFile(
 
     // Sort by offset to ensure we traverse the file from top to bottom
     val sortedSlices: List<DeclarationSlice> = slices.sortedBy { it.caretLocation.offset }
-    
+
     // The current stack of open containers (from outer to inner)
     // We store the StructureNode to check equality
     var currentPath: List<StructureNode> = emptyList()
 
     for (slice: DeclarationSlice in sortedSlices) {
         val nextPath: List<StructureNode> = slice.structurePath
-        
+
         // 1. Determine common prefix (how many levels of nesting are shared?)
         var commonDepth = 0
-        val minLen = minOf(currentPath.size, nextPath.size)
+        val minLen: Int = minOf(currentPath.size, nextPath.size)
         while (commonDepth < minLen && currentPath[commonDepth] == nextPath[commonDepth]) {
             commonDepth++
         }
-        
+
         // 2. Close scopes that are no longer valid (from deep to shallow)
         // e.g. Current: [A, B], Next: [A, C]. Close B.
-        for (i in currentPath.lastIndex downTo commonDepth) {
-            val indentation = "    ".repeat(i)
+        for (i: Int in currentPath.lastIndex downTo commonDepth) {
+            val indentation: String = "    ".repeat(i)
             sb.appendLine("$indentation    // ...")
             sb.appendLine("$indentation}")
         }
-        
+
         // 3. Open new scopes (from shallow to deep)
         // e.g. Current: [A], Next: [A, C]. Open C.
-        for (i in commonDepth until nextPath.size) {
+        for (i: Int in commonDepth until nextPath.size) {
             val node: StructureNode = nextPath[i]
-            val indentation = "    ".repeat(i)
+            val indentation: String = "    ".repeat(i)
             sb.appendLine()
             sb.appendLine("$indentation${node.signature} {")
             // Note: We don't print "..." immediately at start; only at end or between members
         }
-        
+
         // 4. Print the symbol source code
         // We need to indent the entire source block to match the current nesting depth
-        val contentIndentation = "    ".repeat(nextPath.size)
+        val contentIndentation: String = "    ".repeat(nextPath.size)
         val indentedSource: String = slice.sourceCode.prependIndent(contentIndentation)
-        
+
         // Add a visual separator if this isn't the first item in a shared scope? 
         // For now, just print the code.
         sb.appendLine(indentedSource)
-        
+
         // Update stack
         currentPath = nextPath
     }
 
     // 5. Close any remaining open scopes
-    for (i in currentPath.lastIndex downTo 0) {
-        val indentation = "    ".repeat(i)
+    for (i: Int in currentPath.lastIndex downTo 0) {
+        val indentation: String = "    ".repeat(i)
         sb.appendLine("$indentation    // ...")
         sb.appendLine("$indentation}")
     }
