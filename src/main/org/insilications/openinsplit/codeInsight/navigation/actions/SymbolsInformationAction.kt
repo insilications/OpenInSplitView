@@ -200,10 +200,7 @@ data class ReferencedFile(
  * @property files A map of all files (target + referenced) involved in the context, preserving insertion order.
  */
 data class TargetSymbolContext(
-    val declarationSlice: DeclarationSlice,
-    val symbolKind: SymbolKind,
-    val files: LinkedHashMap<String, ReferencedFile>,
-    val referenceLimitReached: Boolean
+    val declarationSlice: DeclarationSlice, val symbolKind: SymbolKind, val files: LinkedHashMap<String, ReferencedFile>, val referenceLimitReached: Boolean
 )
 
 private data class ReferencedCollections(
@@ -268,10 +265,7 @@ private fun buildSymbolContext(
     }
 
     val targetContext = TargetSymbolContext(
-        declarationSlice = targetSlice,
-        symbolKind = symbolKind,
-        files = mergedFiles,
-        referenceLimitReached = referencedCollections.limitReached
+        declarationSlice = targetSlice, symbolKind = symbolKind, files = mergedFiles, referenceLimitReached = referencedCollections.limitReached
     )
     SYMBOL_USAGE_LOG.info(targetContext.toLogString())
 }
@@ -995,8 +989,13 @@ private fun PsiElement.toDeclarationSlice(
     val name: String? = sourceDeclaration.computeName()
     val fqNameTypeString: String = sourceDeclaration::class.qualifiedName ?: sourceDeclaration.javaClass.name
 
+//    val sourceCode: String = try {
+//        sourceDeclaration.text ?: "<!-- Source code not available (text is null) -->"
+//    } catch (e: Exception) {
+//        "<!-- Source code not available (compiled/error: ${e.message}) -->"
+//    }
     val sourceCode: String = try {
-        sourceDeclaration.text ?: "<!-- Source code not available (text is null) -->"
+        sourceDeclaration.getTextWithSurroundingWhitespace() ?: "<!-- Source code not available (text is null) -->"
     } catch (e: Exception) {
         "<!-- Source code not available (compiled/error: ${e.message}) -->"
     }
@@ -1283,4 +1282,92 @@ private fun renderReconstructedFile(
     }
 
     return sb.toString()
+}
+
+/**
+ * Appends the text of this PsiElement along with its surrounding PsiWhiteSpace siblings
+ * to the provided StringBuilder.
+ *
+ * @param sb the StringBuilder to append to
+ * @param includeLeading whether to include leading whitespace
+ * @param includeTrailing whether to include trailing whitespace
+ */
+fun PsiElement.appendTextWithSurroundingWhitespace(
+    sb: StringBuilder, includeLeading: Boolean = true, includeTrailing: Boolean = true
+) {
+    val first = if (includeLeading) findFirstWhitespace() else this
+    val last = if (includeTrailing) findLastWhitespace() else this
+
+    // Pre-allocate capacity to avoid reallocations
+    val startOffset = first.textRange.startOffset
+    val endOffset = last.textRange.endOffset
+    sb.ensureCapacity(sb.length + (endOffset - startOffset))
+
+    // Append all elements in range
+    var current: PsiElement? = first
+    while (current != null) {
+        sb.append(current.text)
+        if (current === last) break
+        current = current.nextSibling
+    }
+}
+
+/**
+ * Returns the text of this PsiElement with its surrounding whitespace.
+ */
+fun PsiElement.getTextWithSurroundingWhitespace(): String {
+    val first = findFirstWhitespace()
+    val last = findLastWhitespace()
+
+    val startOffset = first.textRange.startOffset
+    val endOffset = last.textRange.endOffset
+
+    // Direct substring from file text - most efficient for large elements
+    val fileText = containingFile.viewProvider.contents
+    return fileText.subSequence(startOffset, endOffset).toString()
+}
+
+/**
+ * Returns the text of this PsiElement with surrounding whitespace as a CharSequence.
+ * Avoids string allocation when only CharSequence is needed.
+ */
+fun PsiElement.getTextWithSurroundingWhitespaceAsSequence(): CharSequence {
+    val first = findFirstWhitespace()
+    val last = findLastWhitespace()
+
+    val startOffset = first.textRange.startOffset
+    val endOffset = last.textRange.endOffset
+
+    return containingFile.viewProvider.contents.subSequence(startOffset, endOffset)
+}
+
+/**
+ * Builds a string containing this element's text with surrounding whitespace.
+ */
+inline fun PsiElement.buildTextWithSurroundingWhitespace(
+    includeLeading: Boolean = true, includeTrailing: Boolean = true, additionalCapacity: Int = 0, block: StringBuilder.() -> Unit = {}
+): String = buildString {
+    appendTextWithSurroundingWhitespace(this, includeLeading, includeTrailing)
+    ensureCapacity(length + additionalCapacity)
+    block()
+}
+
+private fun PsiElement.findFirstWhitespace(): PsiElement {
+    var first = this
+    var prev = prevSibling
+    while (prev is PsiWhiteSpace) {
+        first = prev
+        prev = prev.prevSibling
+    }
+    return first
+}
+
+private fun PsiElement.findLastWhitespace(): PsiElement {
+    var last = this
+    var next = nextSibling
+    while (next is PsiWhiteSpace) {
+        last = next
+        next = next.nextSibling
+    }
+    return last
 }
