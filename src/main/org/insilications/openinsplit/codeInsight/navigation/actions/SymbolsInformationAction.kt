@@ -197,14 +197,12 @@ data class ReferencedFile(
  * The root container for all extracted information about the target symbol.
  *
  * @property declarationSlice The comprehensive snapshot of the target symbol itself (Identity, Location, Context, Content).
- * @property referencedFiles A map of dependencies grouped by their source file (Data Aggregation), preserving insertion order.
+ * @property files A map of all files (target + referenced) involved in the context, preserving insertion order.
  */
 data class TargetSymbolContext(
-    val packageDirective: String?,
-    val importsList: List<String>,
     val declarationSlice: DeclarationSlice,
     val symbolKind: SymbolKind,
-    val referencedFiles: LinkedHashMap<String, ReferencedFile>,
+    val files: LinkedHashMap<String, ReferencedFile>,
     val referenceLimitReached: Boolean
 )
 
@@ -221,13 +219,9 @@ private data class ReferencedCollections(
 private fun buildSymbolContext(
     project: Project, targetSymbol: PsiElement, maxRefs: Int = 5000
 ) {
-    val targetPsiFile: PsiFile = targetSymbol.containingFile
-    val packageDirective: String? = getPackageDirective(targetPsiFile)
-    val importsList: List<String> = getImportsList(targetPsiFile)
-
     // Determine if we are looking at a Function or a Class to decide the scope of traversal.
     val symbolKind: SymbolKind = targetSymbol.detectSymbolKind() ?: run {
-        LOG.warn("Unsupported target symbol: ${targetSymbol::class.qualifiedName}")
+        SYMBOL_USAGE_LOG.warn("Unsupported target symbol: ${targetSymbol::class.qualifiedName}")
         return
     }
 
@@ -236,15 +230,50 @@ private fun buildSymbolContext(
     // Collect references (types, calls, etc.) used WITHIN the target symbol's scope.
     val referencedCollections: ReferencedCollections = collectReferencedDeclarations(project, targetSymbol, symbolKind, maxRefs)
 
+    // Merge Target File into the Referenced Files map
+    // We want the target file to be the FIRST entry in the map for clarity.
+    val mergedFiles = LinkedHashMap<String, ReferencedFile>()
+    val targetPath: String = targetSlice.psiFilePath
+    val existingTargetFile: ReferencedFile? = referencedCollections.referencedFiles[targetPath]
+
+    val isTargetType: Boolean = symbolKind == SymbolKind.CLASS
+    // Wrap target slice. We use empty usage kinds as it's the definition, not a usage.
+    val targetRefDecl = ReferencedDeclaration(targetSlice, emptySet())
+
+    val targetFileEntry: ReferencedFile = if (existingTargetFile != null) {
+        ReferencedFile(
+            packageDirective = existingTargetFile.packageDirective,
+            importsList = existingTargetFile.importsList,
+            referencedTypes = if (isTargetType) existingTargetFile.referencedTypes + targetRefDecl else existingTargetFile.referencedTypes,
+            referencedFunctions = if (!isTargetType) existingTargetFile.referencedFunctions + targetRefDecl else existingTargetFile.referencedFunctions
+        )
+    } else {
+        val targetPsiFile: PsiFile = targetSymbol.containingFile
+        ReferencedFile(
+            packageDirective = getPackageDirective(targetPsiFile),
+            importsList = getImportsList(targetPsiFile),
+            referencedTypes = if (isTargetType) listOf(targetRefDecl) else emptyList(),
+            referencedFunctions = if (!isTargetType) listOf(targetRefDecl) else emptyList()
+        )
+    }
+
+    // 1. Add Target File first
+    mergedFiles[targetPath] = targetFileEntry
+
+    // 2. Add remaining referenced files
+    for ((path, file) in referencedCollections.referencedFiles) {
+        if (path != targetPath) {
+            mergedFiles[path] = file
+        }
+    }
+
     val targetContext = TargetSymbolContext(
-        packageDirective = packageDirective,
-        importsList = importsList,
         declarationSlice = targetSlice,
         symbolKind = symbolKind,
-        referencedFiles = referencedCollections.referencedFiles,
+        files = mergedFiles,
         referenceLimitReached = referencedCollections.limitReached
     )
-    LOG.info(targetContext.toLogString())
+    SYMBOL_USAGE_LOG.info(targetContext.toLogString())
 }
 
 /**
@@ -1126,27 +1155,13 @@ private inline fun UsageKind.toClassificationString(): String = when (this) {
 private fun TargetSymbolContext.toLogString(): String {
     val sb = StringBuilder()
 
-    // --- 1. Target File Reconstruction ---
-    sb.appendLine()
-    sb.appendLine("============ Target File Reconstruction ============")
+    sb.appendLine("============ Target Symbol ============")
     sb.appendLine("Target Symbol: ${declarationSlice.ktFqNameRelativeString ?: declarationSlice.name}")
-    sb.appendLine("Source File: ${declarationSlice.psiFilePath}")
-    sb.appendLine()
 
-    // Reconstruct the target file containing the target symbol
-    // We treat the target symbol as the single slice to render for this file view
-    val targetFileRender: String = renderReconstructedFile(
-        packageDirective, importsList, listOf(declarationSlice)
-    )
-    sb.appendLine(targetFileRender)
-    sb.appendLine()
-
-    // --- 2. Referenced Files Reconstruction ---
-    if (referencedFiles.isEmpty()) {
-        sb.appendLine("Referenced Files: <none>")
+    if (files.isEmpty()) {
+        sb.appendLine("Files: <none>")
     } else {
-        sb.appendLine("============ Referenced Files (${referencedFiles.size}) ============")
-        referencedFiles.forEach { (path: String, refFile: ReferencedFile) ->
+        files.forEach { (path: String, refFile: ReferencedFile) ->
             sb.appendLine("Source File: $path")
             sb.appendLine()
 
