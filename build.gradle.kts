@@ -4,10 +4,13 @@ import com.github.benmanes.gradle.versions.updates.DependencyUpdatesTask
 import org.gradle.internal.extensions.core.serviceOf
 import org.jetbrains.changelog.markdownToHTML
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
+import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.jetbrains.intellij.platform.gradle.tasks.PrepareSandboxTask
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+
+//import org.gradle.kotlin.dsl.testImplementation
 
 val pluginGroup: String = providers.gradleProperty("pluginGroup").get()
 val pluginVersion: String = providers.gradleProperty("pluginVersion").get()
@@ -51,6 +54,10 @@ sourceSets {
         resources.srcDirs("src/main/resources")
     }
 
+    test {
+        kotlin.srcDirs("src/test")
+//        java.srcDirs("src/test")
+    }
 //    val testIntegration = create("testIntegration")
 //    testIntegration.apply {
 //        compileClasspath += sourceSets.main.get().output
@@ -77,12 +84,24 @@ dependencies {
 
         pluginVerifier()
 
+        testFramework(TestFrameworkType.Bundled)
+//        testFramework(TestFrameworkType.Platform)
+//        testFramework(TestFrameworkType.Plugin.Java)
+//        testFramework(TestFrameworkType.JUnit5)
+//        testPlugins("com.intellij.java", "org.jetbrains.kotlin")
 //        testFramework(TestFrameworkType.Starter, version = "latest", configurationName = testIntegrationImplementation.name)
     }
 
+//    testImplementation(platform(libs.junit5.bom))
+//    testImplementation(libs.junit5.jupiter)
+    testImplementation(libs.kotlin.test)
+//    testImplementation(libs.kotlin.test.common)
+//    testImplementation(libs.kotlin.test.junit5)
+//    testImplementation(kotlin("test"))
+//    testFixturesImplementation(libs.kotlin.test)
 //    testIntegrationImplementation(libs.kodein.di.jvm)
 //    testIntegrationImplementation(platform(libs.junit5.bom))
-//    testIntegrationImplementation(libs.junit5.jupiter)
+
 //    testIntegrationImplementation(libs.kotlin.coroutines.jvm)
 //    testIntegrationRuntimeOnly(libs.junit.platform.launcher)
 
@@ -147,6 +166,10 @@ intellijPlatform {
         password = providers.environmentVariable("PRIVATE_KEY_PASSWORD")
     }
 }
+
+//intellijPlatformTesting {
+//    testIde
+//}
 
 idea {
     module {
@@ -275,6 +298,13 @@ tasks.named<DependencyUpdatesTask>("dependencyUpdates").configure {
     outputDir = "build/dependencyUpdates"
     reportfileName = "report"
 }
+//
+//tasks.named<Test>("testGeneration").configure {
+//val testGeneration: TaskProvider<Test> = tasks.register<Test>("testGeneration") {
+//    dependsOn(tasks.buildPlugin)
+//    dependsOn(tasks.prepareSandbox)
+//    useJUnitPlatform()
+//}
 
 //val testIntegration: TaskProvider<Test> = tasks.register<Test>("testIntegration") {
 ////    outputs.upToDateWhen { false }
