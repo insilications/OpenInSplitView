@@ -1,11 +1,9 @@
 @file:Suppress("LongLine")
 
 import com.github.benmanes.gradle.versions.updates.DependencyUpdatesTask
-import org.gradle.internal.extensions.core.serviceOf
 import org.jetbrains.changelog.markdownToHTML
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
-import org.jetbrains.intellij.platform.gradle.tasks.PrepareSandboxTask
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
@@ -84,19 +82,22 @@ dependencies {
 
         pluginVerifier()
 
-        testFramework(TestFrameworkType.Bundled)
-//        testFramework(TestFrameworkType.Platform)
-//        testFramework(TestFrameworkType.Plugin.Java)
+//        testFramework(TestFrameworkType.Bundled)
+        testFramework(TestFrameworkType.Platform)
+        testFramework(TestFrameworkType.Plugin.Java)
 //        testFramework(TestFrameworkType.JUnit5)
 //        testPlugins("com.intellij.java", "org.jetbrains.kotlin")
 //        testFramework(TestFrameworkType.Starter, version = "latest", configurationName = testIntegrationImplementation.name)
     }
 
+    testImplementation("junit:junit:4.13.2")
 //    testImplementation(platform(libs.junit5.bom))
 //    testImplementation(libs.junit5.jupiter)
     testImplementation(libs.kotlin.test)
 //    testImplementation(libs.kotlin.test.common)
 //    testImplementation(libs.kotlin.test.junit5)
+//    testImplementation("org.jetbrains.kotlin:kotlin-test-junit5:2.2.21")
+//    testRuntimeOnly(libs.junit.platform.launcher)
 //    testImplementation(kotlin("test"))
 //    testFixturesImplementation(libs.kotlin.test)
 //    testIntegrationImplementation(libs.kodein.di.jvm)
@@ -205,42 +206,43 @@ tasks {
         gradleVersion = gradleVersion
     }
 
-    withType<PrepareSandboxTask> {
-        sandboxDirectory.set(file("/king/.config/JetBrains/IC/"))
-        sandboxSuffix.set("")
-        println("Sandbox directory set to: ${sandboxDirectory.get().asFile}")
+//    withType<PrepareSandboxTask> {
+//        sandboxDirectory.set(file("/king/.config/JetBrains/IC/"))
+//        sandboxSuffix.set("")
+//        println("Sandbox directory set to: ${sandboxDirectory.get().asFile}")
+//
+//
+//        // Resolve the source directory during the configuration phase.
+//        val sourceConfigDir: File = project.file("sandbox-config")
+//        val execOps: ExecOperations = project.serviceOf<ExecOperations>()
+//
+//        doLast {
+//            // Resolve the DirectoryProperty to a concrete File at execution time.
+//            val destinationDir: File = sandboxDirectory.get().asFile
+//
+//            if (sourceConfigDir.exists() && sourceConfigDir.isDirectory) {
+//                println("Copying custom IDE configuration from '${sourceConfigDir.path}' to sandbox folder '${destinationDir.path}'.")
+//                execOps.exec {
+//                    commandLine("rsync", "-avc", "--no-times", "${sourceConfigDir.path}/", "${destinationDir.path}/")
+//                }
+//                // Use standard Kotlin I/O, which is configuration-cache-safe.
+//                // sourceConfigDir.copyRecursively(destinationDir, overwrite = true)
+//            } else {
+//                println("Skipping custom IDE configuration copy: '${sourceConfigDir.path}' does not exist.")
+//            }
+//
+//            // --- Start: Truncate idea.log ---
+//            val ideaLogFile: File = destinationDir.resolve("log/idea.log")
+//
+//            if (ideaLogFile.exists()) {
+//                println("Truncating log file: ${ideaLogFile.path}")
+//                ideaLogFile.writeText("") // Overwrites the file with an empty string.
+//            } else {
+//                println("Log file not found, skipping truncation: ${ideaLogFile.path}")
+//            }
+//        }
+//    }
 
-
-        // Resolve the source directory during the configuration phase.
-        val sourceConfigDir: File = project.file("sandbox-config")
-        val execOps: ExecOperations = project.serviceOf<ExecOperations>()
-
-        doLast {
-            // Resolve the DirectoryProperty to a concrete File at execution time.
-            val destinationDir: File = sandboxDirectory.get().asFile
-
-            if (sourceConfigDir.exists() && sourceConfigDir.isDirectory) {
-                println("Copying custom IDE configuration from '${sourceConfigDir.path}' to sandbox folder '${destinationDir.path}'.")
-                execOps.exec {
-                    commandLine("rsync", "-avc", "--no-times", "${sourceConfigDir.path}/", "${destinationDir.path}/")
-                }
-                // Use standard Kotlin I/O, which is configuration-cache-safe.
-                // sourceConfigDir.copyRecursively(destinationDir, overwrite = true)
-            } else {
-                println("Skipping custom IDE configuration copy: '${sourceConfigDir.path}' does not exist.")
-            }
-
-            // --- Start: Truncate idea.log ---
-            val ideaLogFile: File = destinationDir.resolve("log/idea.log")
-
-            if (ideaLogFile.exists()) {
-                println("Truncating log file: ${ideaLogFile.path}")
-                ideaLogFile.writeText("") // Overwrites the file with an empty string.
-            } else {
-                println("Log file not found, skipping truncation: ${ideaLogFile.path}")
-            }
-        }
-    }
 
     runIde {
         jvmArgs = listOf(
@@ -286,6 +288,8 @@ tasks {
 
         args(listOf("nosplash"))
     }
+
+
 }
 
 tasks.named<DependencyUpdatesTask>("dependencyUpdates").configure {
@@ -298,13 +302,13 @@ tasks.named<DependencyUpdatesTask>("dependencyUpdates").configure {
     outputDir = "build/dependencyUpdates"
     reportfileName = "report"
 }
-//
-//tasks.named<Test>("testGeneration").configure {
-//val testGeneration: TaskProvider<Test> = tasks.register<Test>("testGeneration") {
+
+tasks.named<Test>("test").configure {
+//val testGeneration: TaskProvider<Test> = tasks.register<Test>("test") {
 //    dependsOn(tasks.buildPlugin)
-//    dependsOn(tasks.prepareSandbox)
+    dependsOn(tasks.prepareTestSandbox)
 //    useJUnitPlatform()
-//}
+}
 
 //val testIntegration: TaskProvider<Test> = tasks.register<Test>("testIntegration") {
 ////    outputs.upToDateWhen { false }

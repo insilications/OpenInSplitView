@@ -4,7 +4,9 @@ package org.insilications.openinsplit
 //import org.jetbrains.kotlin.idea.test.KotlinLightCodeInsightFixtureTestCase
 
 //import org.jetbrains.kotlin.idea.test.KotlinLightCodeInsightFixtureTestCase
+
 import com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase
+import org.junit.Test
 
 class TestGeneration : LightJavaCodeInsightFixtureTestCase() {
 
@@ -22,6 +24,7 @@ class TestGeneration : LightJavaCodeInsightFixtureTestCase() {
 //        System.clearProperty("idea.kotlin.plugin.use.k2")
 //    }
 
+    @Test
     fun testGenerate() {
         // 1. Configure a Kotlin file
         myFixture.configureByText(
@@ -32,12 +35,14 @@ class TestGeneration : LightJavaCodeInsightFixtureTestCase() {
         """.trimIndent()
         )
 
+
         // 2. Perform your action
         // If it's a registered action:
         // myFixture.performEditorAction("MyActionID")
 
         // Or if you want to test the logic directly:
         val element = myFixture.elementAtCaret
+        println("PORRA: ${element.text}")
         assertNotNull(element)
 
         // Your custom logic assertion here
