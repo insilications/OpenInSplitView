@@ -6,6 +6,7 @@ import org.jetbrains.changelog.markdownToHTML
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.jetbrains.intellij.platform.gradle.tasks.PrepareSandboxTask
+import org.jetbrains.intellij.platform.gradle.tasks.PrepareTestTask
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
@@ -51,10 +52,11 @@ sourceSets {
         // can make the build script easier for others to understand.
         java.srcDirs("src/main")
         kotlin.srcDirs("src/main")
-        resources.srcDirs("src/main/resources")
+//        resources.srcDirs("src/main/resources")
     }
 
     test {
+        java.srcDirs("src/test")
         kotlin.srcDirs("src/test")
 
     }
@@ -122,7 +124,7 @@ intellijPlatform {
     sandboxContainer = file("/king/.config/JetBrains/IC")
     intellijPlatform.caching.ides.enabled = true
 
-    println("Sandbox container set to: ${sandboxContainer.get().asFile}")
+//    println("Sandbox container set to: ${sandboxContainer.get().asFile}")
 
     pluginConfiguration {
         id = pluginGroup
@@ -193,8 +195,57 @@ tasks {
     withType<PrepareSandboxTask> {
         sandboxDirectory.set(file("/king/.config/JetBrains/IC/"))
         sandboxSuffix.set("")
-        println("Sandbox directory set to: ${sandboxDirectory.get().asFile}")
+//        println("Sandbox directory set to: ${sandboxDirectory.get().asFile}")
+        if (name == "prepareSandbox") {
+            // Resolve the source directory during the configuration phase.
+            val sourceConfigDir: File = project.file("sandbox-config")
+            val execOps: ExecOperations = project.serviceOf<ExecOperations>()
 
+            doLast {
+                // Resolve the DirectoryProperty to a concrete File at execution time.
+                val destinationDir: File = sandboxDirectory.get().asFile
+
+                if (sourceConfigDir.exists() && sourceConfigDir.isDirectory) {
+                    println("Copying custom IDE configuration from '${sourceConfigDir.path}' to sandbox folder '${destinationDir.path}'.")
+                    execOps.exec {
+                        commandLine("rsync", "-avc", "--no-times", "${sourceConfigDir.path}/", "${destinationDir.path}/")
+                    }
+
+                } else {
+                    println("Skipping custom IDE configuration copy: '${sourceConfigDir.path}' does not exist.")
+                }
+
+                // --- Start: Truncate idea.log ---
+                val ideaLogFile: File = destinationDir.resolve("log/idea.log")
+
+                if (ideaLogFile.exists()) {
+                    println("Truncating log file: ${ideaLogFile.path}")
+                    ideaLogFile.writeText("") // Overwrites the file with an empty string.
+                } else {
+                    println("Log file not found, skipping truncation: ${ideaLogFile.path}")
+                }
+            }
+        } else {
+            doLast {
+                // Resolve the DirectoryProperty to a concrete File at execution time.
+                val destinationDir: File = sandboxDirectory.get().asFile
+
+                // --- Start: Truncate idea.log ---
+                val ideaLogFile: File = destinationDir.resolve("log/idea.log")
+
+                if (ideaLogFile.exists()) {
+//                    println("Truncating log file: ${ideaLogFile.path}")
+                    ideaLogFile.writeText("") // Overwrites the file with an empty string.
+                } else {
+//                    println("Log file not found, skipping truncation: ${ideaLogFile.path}")
+                }
+            }
+        }
+    }
+
+    withType<PrepareTestTask> {
+        sandboxDirectory.set(file("/king/.config/JetBrains/IC/"))
+//        println("Test sandbox directory set to: ${sandboxDirectory.get().asFile}")
 
         // Resolve the source directory during the configuration phase.
         val sourceConfigDir: File = project.file("sandbox-config")
@@ -204,26 +255,69 @@ tasks {
             // Resolve the DirectoryProperty to a concrete File at execution time.
             val destinationDir: File = sandboxDirectory.get().asFile
 
-            if (sourceConfigDir.exists() && sourceConfigDir.isDirectory) {
-                println("Copying custom IDE configuration from '${sourceConfigDir.path}' to sandbox folder '${destinationDir.path}'.")
-                execOps.exec {
-                    commandLine("rsync", "-avc", "--no-times", "${sourceConfigDir.path}/", "${destinationDir.path}/")
-                }
-
-            } else {
-                println("Skipping custom IDE configuration copy: '${sourceConfigDir.path}' does not exist.")
-            }
-
             // --- Start: Truncate idea.log ---
             val ideaLogFile: File = destinationDir.resolve("log/idea.log")
 
             if (ideaLogFile.exists()) {
-                println("Truncating log file: ${ideaLogFile.path}")
+//                println("Truncating log file: ${ideaLogFile.path}")
                 ideaLogFile.writeText("") // Overwrites the file with an empty string.
             } else {
-                println("Log file not found, skipping truncation: ${ideaLogFile.path}")
+//                println("Log file not found, skipping truncation: ${ideaLogFile.path}")
             }
         }
+    }
+
+    test {
+        outputs.upToDateWhen { false }
+
+        testLogging {
+            showStandardStreams = true
+        }
+
+        jvmArgs = listOf(
+            "-Xms256m",
+            "-Xmx8096m",
+            "-Dawt.useSystemAAFontSettings=lcd_hbgr",
+            "-Dswing.aatext=true",
+            "-XX:+UnlockDiagnosticVMOptions",
+            "-XX:+DebugNonSafepoints",
+            "-Dignore.ide.script.launcher.used=true",
+            "-Dide.slow.operations.assertion=true",
+            "-Didea.is.internal=true",
+            "-Didea.logger.exception.expiration.minutes=0",
+            "-Dsnapshots.path=/king/stuff/snapshots",
+            "-Djdk.gtk.verbose=true",
+            "-Djdk.gtk.version=3",
+            "-Didea.diagnostic.opentelemetry.metrics.file=",
+            "-Didea.diagnostic.opentelemetry.meters.file.json=",
+            "-Didea.diagnostic.opentelemetry.file=",
+            "-Didea.diagnostic.opentelemetry.otlp=false",
+            "-Xlog:disable"
+        )
+        jvmArgumentProviders += CommandLineArgumentProvider {
+            listOf(
+                "-Xms256m",
+                "-Xmx8096m",
+                "-Dawt.useSystemAAFontSettings=lcd_hbgr",
+                "-Dswing.aatext=true",
+                "-XX:+UnlockDiagnosticVMOptions",
+                "-XX:+DebugNonSafepoints",
+                "-Dignore.ide.script.launcher.used=true",
+                "-Dide.slow.operations.assertion=true",
+                "-Didea.is.internal=true",
+                "-Didea.logger.exception.expiration.minutes=0",
+                "-Dsnapshots.path=/king/stuff/snapshots",
+                "-Djdk.gtk.verbose=true",
+                "-Djdk.gtk.version=3",
+                "-Didea.diagnostic.opentelemetry.metrics.file=",
+                "-Didea.diagnostic.opentelemetry.meters.file.json=",
+                "-Didea.diagnostic.opentelemetry.file=",
+                "-Didea.diagnostic.opentelemetry.otlp=false",
+                "-Xlog:disable"
+            )
+        }
+
+        systemProperty("idea.log.debug.categories", "org.insilications.openinsplit:all")
     }
 
 
