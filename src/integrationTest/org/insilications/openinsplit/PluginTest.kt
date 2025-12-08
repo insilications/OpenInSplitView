@@ -11,16 +11,13 @@ import com.intellij.driver.sdk.ActionManager
 import com.intellij.driver.sdk.AnAction
 import com.intellij.driver.sdk.ui.components.common.JEditorUiComponent
 import com.intellij.driver.sdk.ui.components.common.ideFrame
-import com.intellij.driver.sdk.ui.components.elements.table
-import com.intellij.driver.sdk.ui.remote.Component
-import com.intellij.driver.sdk.ui.remote.Robot
-import com.intellij.driver.sdk.waitForIndicators
 import com.intellij.ide.starter.ci.CIServer
 import com.intellij.ide.starter.ci.NoCIServer
 import com.intellij.ide.starter.config.ConfigurationStorage
 import com.intellij.ide.starter.di.di
 import com.intellij.ide.starter.driver.engine.BackgroundRun
 import com.intellij.ide.starter.driver.engine.runIdeWithDriver
+import com.intellij.ide.starter.driver.execute
 import com.intellij.ide.starter.ide.IdeDistributionFactory
 import com.intellij.ide.starter.ide.IdeDownloader
 import com.intellij.ide.starter.ide.IdeProductProvider
@@ -37,8 +34,8 @@ import com.intellij.ide.starter.project.NoProject
 import com.intellij.ide.starter.runner.CurrentTestMethod
 import com.intellij.ide.starter.runner.IDEHandle
 import com.intellij.ide.starter.runner.Starter
-import com.intellij.openapi.diagnostic.Logger
-import com.intellij.openapi.diagnostic.fileLogger
+import com.intellij.tools.ide.performanceTesting.commands.CommandChain
+import com.intellij.tools.ide.performanceTesting.commands.waitForSmartMode
 import com.intellij.tools.ide.util.common.logError
 import com.intellij.tools.ide.util.common.logOutput
 import kotlinx.coroutines.runBlocking
@@ -48,13 +45,11 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.fail
 import org.kodein.di.DI
 import org.kodein.di.bindSingleton
-import java.awt.event.KeyEvent
 import java.io.File
 import java.nio.file.Path
 import java.nio.file.Paths
 import kotlin.io.path.Path
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
@@ -70,7 +65,7 @@ class PluginTest {
                     override fun reportTestFailure(
                         testName: String, message: String, details: String, linkToLogs: String?
                     ) {
-                        fail { "$testName fails: $message. \n$details" }
+                        fail { "$testName fails: $message\n$details" }
                     }
 
                     override fun ignoreTestFailure(testName: String, message: String, details: String?) {
@@ -82,7 +77,7 @@ class PluginTest {
             bindSingleton<IdeDownloader>(overrides = true) {
                 @Suppress("PathAnnotationInspection") IdeNotDownloader(Paths.get(platformPath))
             }
-            val defaults = ConfigurationStorage.instance().defaults.toMutableMap().apply {
+            val defaults: MutableMap<String, String> = ConfigurationStorage.instance().defaults.toMutableMap().apply {
                 put("MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
             }
             bindSingleton<ConfigurationStorage>(overrides = true) {
@@ -91,7 +86,6 @@ class PluginTest {
             ConfigurationStorage.instance().put("MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
         }
     }
-
 
     private val platformPath: String = System.getProperty("path.to.platform")
 
@@ -104,7 +98,7 @@ class PluginTest {
 
     private fun createInstallerFactory(): IdeInstallerFactory = object : IdeInstallerFactory() {
         @Suppress("PathAnnotationInspection")
-        override fun createInstaller(ideInfo: IdeInfo, downloader: IdeDownloader) = ExistingIdeInstaller(Paths.get(platformPath))
+        override fun createInstaller(ideInfo: IdeInfo, downloader: IdeDownloader): ExistingIdeInstaller = ExistingIdeInstaller(Paths.get(platformPath))
     }
 
     // This helpers are required to run locally installed IDE instead of downloading one
@@ -115,25 +109,22 @@ class PluginTest {
     }
 
     companion object {
-        private val LOG: Logger get() = fileLogger()
         private const val EDITOR_COMPONENT_IMPL: String = "EditorComponentImpl"
         private const val EDITOR_FOR_GOTODECLARATION: String = "Editor for GotoDeclarationOrUsageHandler2Split.kt"
-        private const val GO_TO_DECLARATION_ACTION: String = "GotoDeclarationActionSplit"
-        private const val DIV_CLASS_SHOW_USAGES_TABLE: String = "//div[@class='ShowUsagesTable']"
-        private const val MESSAGE_SHOW_USAGES_TABLE_POPULATED: String = "Usages table is populated"
+        private const val SYMBOLS_INFORMATION_ACTION: String = "SymbolsInformationAction"
     }
 
     @Test
     fun simpleTestWithoutProject() {
-        ConfigurationStorage.Companion.instance().put("MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
         Starter.newContext(
             CurrentTestMethod.hyphenateWithClass(), TestCase(IdeProductProvider.IC, projectInfo = NoProject)
-//                .withVersion("2025.2.1")
+            //            CurrentTestMethod.hyphenateWithClass(), TestCase(IdeProductProvider.IC, LocalProjectInfo(Path("/aot/stuff/dev/OpenInSplitTab/")))
         ).applyVMOptionsPatch {
             addSystemProperty("idea.system.path", "/king/.config/JetBrains/IC/system")
             addSystemProperty("idea.config.path", "/king/.config/JetBrains/IC/config")
             addSystemProperty("idea.plugins.path", "/king/.config/JetBrains/IC/plugins")
-//            addSystemProperty("idea.log.path", "/king/.config/JetBrains/IC/system/log")
+            addSystemProperty("idea.plugins.path", "/king/.config/JetBrains/IC/plugins")
+            addSystemProperty("idea.log.path", "/king/.config/JetBrains/IC/log")
             addLine("-Xms4096m")
             withXmx(8096)
             addSystemProperty("-Dawt.useSystemAAFontSettings", "lcd_hbgr")
@@ -145,6 +136,7 @@ class PluginTest {
             addSystemProperty("snapshots.path", "/king/stuff/snapshots")
             addSystemProperty("performance.watcher.unresponsive.interval.ms", "3600000")
             addSystemProperty("performance.watcher.sampling.interval.ms", "3600000")
+            addSystemProperty("idea.log.debug.categories", "org.insilications.openinsplit")
 
             addLine("-XX:+UnlockDiagnosticVMOptions")
             addLine("-XX:+DebugNonSafepoints")
@@ -172,106 +164,38 @@ class PluginTest {
             // Use new UI for testing
             addSystemProperty("ide.experimental.ui", true)
 
-            // Ensure it does not open any project on startup
-            addSystemProperty("ide.open.project.at.startup", false)
-        }.enableAsyncProfiler().suppressStatisticsReport().withKotlinPluginK2().executeDuringIndexing(false).apply {
+        }.enableAsyncProfiler().suppressStatisticsReport().withKotlinPluginK2().apply {
             val pathToPlugin: String = System.getProperty("path.to.build.plugin")
-            LOG.info("Path to plugin: $pathToPlugin")
+//            logOutput("Path to plugin: $pathToPlugin")
+//            val pathToPlatform: String = System.getProperty("path.to.platform")
+//            logOutput("pathToPlatform: $pathToPlatform")
             PluginConfigurator(this).installPluginFromDir(Path(pathToPlugin))
             ConfigurationStorage.Companion.instance().put("MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
         }.runIdeWithDriver().apply {
             try {
                 driver.withContext {
-                    waitForIndicators(3.minutes)
-//                        Thread.sleep(30.minutes.inWholeMilliseconds)
-//                        execute(CommandChain().waitForSmartMode())
+//                    waitForIndicators(3.minutes, false)
                     ideFrame {
+                        execute(CommandChain().waitForSmartMode())
                         val firstEditor: JEditorUiComponent = xx(JEditorUiComponent::class.java) {
                             and(
                                 byClass(EDITOR_COMPONENT_IMPL), byAccessibleName(EDITOR_FOR_GOTODECLARATION)
                             )
                         }.list().first()
-                        val firstEditorComponent: Component = firstEditor.component
-                        val robot: Robot = robotProvider.defaultRobot
+//                        val firstEditorComponent: Component = firstEditor.component
+//                        val robot: Robot = robotProvider.defaultRobot
+
                         val actionManager: ActionManager = service<ActionManager>(RdTarget.DEFAULT)
                         val action: AnAction = withContext(OnDispatcher.EDT) {
-                            actionManager.getAction(GO_TO_DECLARATION_ACTION)
+                            actionManager.getAction(SYMBOLS_INFORMATION_ACTION)
                         } ?: return@ideFrame
-//                            var showUsagesTableRowCount = 0
 
-                        firstEditor.goToPosition(68, 22)
+                        firstEditor.goToPosition(283, 18)
                         withContext(OnDispatcher.EDT, semantics = LockSemantics.READ_ACTION) {
                             actionManager.tryToExecute(action, null, null, null, true)
                         }
-
-                        table(DIV_CLASS_SHOW_USAGES_TABLE).apply {
-                            waitForIt(MESSAGE_SHOW_USAGES_TABLE_POPULATED, 1.minutes, 50.milliseconds) {
-                                this.rowCount() > 0
-                            }
-                            robot.pressAndReleaseKey(KeyEvent.VK_ENTER)
-                        }
-
-                        repeat(4) {
-                            robot.focus(firstEditorComponent)
-                            withContext(OnDispatcher.EDT, semantics = LockSemantics.READ_ACTION) {
-                                actionManager.tryToExecute(action, null, null, null, true)
-                            }
-
-                            table(DIV_CLASS_SHOW_USAGES_TABLE).apply {
-                                waitForIt(MESSAGE_SHOW_USAGES_TABLE_POPULATED, 1.minutes, 50.milliseconds) {
-                                    this.rowCount() > 0
-                                }
-                                robot.pressAndReleaseKey(KeyEvent.VK_ENTER)
-                            }
-                        }
-
-//                            firstEditor.apply {
-//                                goToPosition(68, 22)
-//                            }
-//                            invokeAction(GO_TO_DECLARATION_ACTION)
-//                            table(DIV_CLASS_SHOW_USAGES_TABLE).apply {
-//                                waitForIt(MESSAGE_SHOW_USAGES_TABLE_POPULATED, 1.minutes, 200.milliseconds) {
-//                                    this.rowCount() > 0
-//                                }
-//                                showUsagesTableRowCount = this.rowCount() - 1
-//                                LOG.info("Row count: ${this.rowCount()}")
-//                                clickCell(showUsagesTableRowCount, 0)
-//                                showUsagesTableRowCount -= 1
-//                            }
-//
-//                            firstEditor.apply {
-//                                goToPosition(68, 22)
-//                            }
-//                            invokeAction(GO_TO_DECLARATION_ACTION)
-//
-//                            table(DIV_CLASS_SHOW_USAGES_TABLE).apply {
-//                                waitForIt(MESSAGE_SHOW_USAGES_TABLE_POPULATED, 1.minutes, 200.milliseconds) {
-//                                    this.rowCount() > 0
-//                                }
-//                                clickCell(showUsagesTableRowCount, 0)
-//                                showUsagesTableRowCount -= 1
-//                            }
-//
-//                            firstEditor.apply {
-//                                goToPosition(68, 22)
-//                            }
-//                            invokeAction(GO_TO_DECLARATION_ACTION)
-//
-//                            table(DIV_CLASS_SHOW_USAGES_TABLE).apply {
-//                                waitForIt(MESSAGE_SHOW_USAGES_TABLE_POPULATED, 1.minutes, 200.milliseconds) {
-//                                    this.rowCount() > 0
-//                                }
-//                                clickCell(showUsagesTableRowCount, 0)
-//                                showUsagesTableRowCount -= 1
-//                            }
                     }
-                    Thread.sleep(30.minutes.inWholeMilliseconds)
-                    // event=wall,interval=100000ns,jstackdepth=36384,jfrsync=profile
-//                        val commands =
-//                            CommandChain().startProfile("indexing", "event=wall,interval=100000ns,jstackdepth=36384,jfrsync=profile").waitForSmartMode()
-//                                .stopProfile()
-//                        execute(commands)
-
+//                    Thread.sleep(5.seconds.inWholeMilliseconds)
                 }
             } finally {
                 myCloseIdeAndWait(this, driver, 1.minutes)

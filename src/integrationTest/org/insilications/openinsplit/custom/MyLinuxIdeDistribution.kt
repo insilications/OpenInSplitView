@@ -57,27 +57,25 @@ class MyLinuxIdeDistribution : IdeDistribution() {
     override fun installIde(unpackDir: Path, executableFileName: String): InstalledIde {
         require(SystemInfo.isLinux) { "Can only run on Linux, docker is possible, please PR" }
 
-        val appHome = (unpackDir.listDirectoryEntriesQuietly()?.singleOrNull { it.isDirectory() } ?: unpackDir).toAbsolutePath()
-        val (productCode, build) = readProductCodeAndBuildNumberFromBuildTxt(appHome.resolve("build.txt"))
+        val appHome: Path = (unpackDir.listDirectoryEntriesQuietly()?.singleOrNull { it.isDirectory() } ?: unpackDir).toAbsolutePath()
+        val (productCode: String, build: String) = readProductCodeAndBuildNumberFromBuildTxt(appHome.resolve("build.txt"))
 
-        val executablePath = listOf(appHome / "bin" / executableFileName, appHome / "bin" / "$executableFileName.sh")
-            .firstOrNull { it.exists() && it.isExecutable() }
-            ?: error("Neither ${appHome / "bin" / executableFileName} nor ${appHome / "bin" / "$executableFileName.sh"} is executable or exists")
+        val executablePath: Path =
+            listOf(appHome / "bin" / executableFileName, appHome / "bin" / "$executableFileName.sh").firstOrNull { it.exists() && it.isExecutable() }
+                ?: error("Neither ${appHome / "bin" / executableFileName} nor ${appHome / "bin" / "$executableFileName.sh"} is executable or exists")
 
         return object : InstalledIde {
-            override val bundledPluginsDir = appHome.resolve("plugins")
+            override val bundledPluginsDir: Path = appHome.resolve("plugins")
 
             private val vmOptionsFinal: VMOptions = VMOptions(
-                ide = this,
-                data = emptyList(),
-                env = emptyMap()
+                ide = this, data = emptyList(), env = emptyMap()
             )
 
             override val vmOptions: VMOptions
                 get() = vmOptionsFinal
 
             @Suppress("PathAnnotationInspection")
-            override val patchedVMOptionsFile = appHome.parent.resolve("${appHome.fileName}.vmoptions")
+            override val patchedVMOptionsFile: Path = appHome.parent.resolve("${appHome.fileName}.vmoptions")
 
             override fun startConfig(vmOptions: VMOptions, logsDir: Path): IDEStartConfig {
                 vmOptions.clearSystemProperty("ide.performance.screenshot")
@@ -85,15 +83,20 @@ class MyLinuxIdeDistribution : IdeDistribution() {
                 vmOptions.clearSystemProperty("idea.diagnostic.opentelemetry.metrics.file")
                 vmOptions.clearSystemProperty("idea.diagnostic.opentelemetry.meters.file.json")
                 vmOptions.clearSystemProperty("idea.diagnostic.opentelemetry.file")
+                vmOptions.clearSystemProperty("idea.log.path")
+                vmOptions.clearSystemProperty("memory.snapshots.path")
+                vmOptions.addSystemProperty("idea.log.path", "/king/.config/JetBrains/IC/log")
                 vmOptions.addSystemProperty("idea.diagnostic.opentelemetry.metrics.file", "")
                 vmOptions.addSystemProperty("idea.diagnostic.opentelemetry.meters.file.json", "")
                 vmOptions.addSystemProperty("idea.diagnostic.opentelemetry.file", "")
                 vmOptions.addSystemProperty(
-                    "idea.diagnostic.opentelemetry.otlp",
-                    false
+                    "idea.diagnostic.opentelemetry.otlp", false
                 )
                 vmOptions.withEnv("ENV_MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
                 vmOptions.withEnv("MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
+                vmOptions.removeLine("-Xlog:gc*:file=/aot/stuff/dev/OpenInSplitView/out/ide-tests/tests/IC-locally-installed-ide/plugin-test/simple-test-without-project/reports/gcLog.log")
+                vmOptions.removeLine("-XX:ErrorFile=/aot/stuff/dev/OpenInSplitView/out/ide-tests/tests/IC-locally-installed-ide/plugin-test/simple-test-without-project/log/jvm-crash/java_error_in_idea_%p.log")
+                vmOptions.removeLine("-XX:HeapDumpPath=/aot/stuff/dev/OpenInSplitView/out/ide-tests/tests/IC-locally-installed-ide/plugin-test/simple-test-without-project/log/heap-dump/heap-dump.hprof")
                 val xvfbRunLog: Path = createXvfbRunLog(logsDir)
                 return object : InstalledBackedIDEStartConfig(patchedVMOptionsFile, vmOptions) {
                     override val errorDiagnosticFiles: List<Path> = listOf(xvfbRunLog)
@@ -127,8 +130,7 @@ class MyLinuxIdeDistribution : IdeDistribution() {
 }
 
 abstract class InstalledBackedIDEStartConfig(
-    private val patchedVMOptionsFile: Path,
-    private val finalVMOptions: VMOptions
+    private val patchedVMOptionsFile: Path, private val finalVMOptions: VMOptions
 ) : IDEStartConfig {
     init {
         finalVMOptions.writeIntelliJVmOptionFile(patchedVMOptionsFile)

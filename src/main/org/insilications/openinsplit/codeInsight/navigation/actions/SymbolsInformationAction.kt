@@ -25,16 +25,13 @@ import org.jetbrains.kotlin.analysis.api.analyze
 import org.jetbrains.kotlin.analysis.api.resolution.*
 import org.jetbrains.kotlin.analysis.api.symbols.*
 import org.jetbrains.kotlin.analysis.api.types.KaClassType
-import org.jetbrains.kotlin.idea.base.psi.getLineCount
 import org.jetbrains.kotlin.idea.base.psi.kotlinFqName
-import org.jetbrains.kotlin.idea.debugger.core.stepping.getLineRange
 import org.jetbrains.kotlin.idea.refactoring.project
 import org.jetbrains.kotlin.idea.references.KtReference
 import org.jetbrains.kotlin.idea.references.mainReference
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.tail
 import org.jetbrains.kotlin.psi.*
-import org.jetbrains.kotlin.psi.psiUtil.getElementTextWithContext
 import org.jetbrains.kotlin.psi.psiUtil.getParentOfType
 import org.jetbrains.uast.*
 import org.jetbrains.uast.visitor.AbstractUastVisitor
@@ -1003,16 +1000,16 @@ private fun PsiElement.toDeclarationSlice(
         "<!-- Source code not available (compiled/error: ${e.message}) -->"
     }
 
-    SYMBOL_USAGE_LOG.info("\nkotlinFqName: $kotlinFqName\n${sourceCode}\n")
+//    SYMBOL_USAGE_LOG.info("\nkotlinFqName: $kotlinFqName\n${sourceCode}\n")
 //    SYMBOL_USAGE_LOG.info("sourceDeclaration.getLineCount: ${sourceDeclaration.startLine()}")
 //    SYMBOL_USAGE_LOG.info("sourceDeclaration.getLineCount: ${sourceDeclaration.endLine()}")
 //    SYMBOL_USAGE_LOG.info("sourceDeclaration.getLineCount: ${sourceDeclaration.getLineCountByDocument()}")
-    SYMBOL_USAGE_LOG.info("sourceDeclaration.getElementTextWithContext: ${sourceDeclaration.getElementTextWithContext()}")
-    SYMBOL_USAGE_LOG.info("sourceDeclaration.textRange: ${sourceDeclaration.textRange}")
-    SYMBOL_USAGE_LOG.info("sourceDeclaration.getLineRange: ${sourceDeclaration.getLineRange()}")
-    SYMBOL_USAGE_LOG.info("sourceDeclaration.getLineCount: ${sourceDeclaration.getLineCount()}")
-
-    SYMBOL_USAGE_LOG.info("=====================================================")
+//    SYMBOL_USAGE_LOG.info("sourceDeclaration.getElementTextWithContext: ${sourceDeclaration.getElementTextWithContext()}")
+//    SYMBOL_USAGE_LOG.info("sourceDeclaration.textRange: ${sourceDeclaration.textRange}")
+//    SYMBOL_USAGE_LOG.info("sourceDeclaration.getLineRange: ${sourceDeclaration.getLineRange()}")
+//    SYMBOL_USAGE_LOG.info("sourceDeclaration.getLineCount: ${sourceDeclaration.getLineCount()}")
+//
+//    SYMBOL_USAGE_LOG.info("=====================================================")
 
     val structurePath: List<StructureNode> = sourceDeclaration.computeStructurePath()
 

@@ -79,7 +79,9 @@ dependencies {
         pluginVerifier()
 
         testFramework(TestFrameworkType.Starter, version = "latest", configurationName = integrationTestImplementation.name)
+//        testFramework(TestFrameworkType.Bundled)
     }
+
     integrationTestImplementation(libs.kodein.di.jvm)
     integrationTestImplementation(platform(libs.junit5.bom))
     integrationTestImplementation(libs.junit5.jupiter)
@@ -97,7 +99,7 @@ dependencies {
         libs.kotlin.analysis.api.platform,
         libs.kotlin.analysis.api.fir,
         libs.kotlin.low.level.api.fir,
-        libs.kotlin.symbol.light.classes,
+        libs.kotlin.symbol.light.classes
     ).forEach { it: Provider<MinimalExternalModuleDependency> ->
         compileOnly(it) {
             isTransitive = false // see KTIJ-19820
@@ -171,6 +173,32 @@ kotlin {
     jvmToolchain(21)
 }
 
+val truncateLogsTask: TaskProvider<DefaultTask> = tasks.register<DefaultTask>("truncateLogsTask") {
+    outputs.upToDateWhen { false }
+    // 1. Capture the 'sandboxDirectory' property lazily during the Configuration phase.
+    // We use 'named' and 'flatMap' so we don't hold a reference to the entire Task object,
+    // only to the specific property we need.
+    val sandboxDirProvider = tasks.named<PrepareSandboxTask>("prepareSandbox").flatMap { it.sandboxDirectory }
+
+    doLast {
+        // 2. Resolve the value during the Execution phase.
+        // Gradle can serialize this Provider chain, solving the error.
+        val destinationDir: File? = sandboxDirProvider.orNull?.asFile
+
+        if (destinationDir != null) {
+            // --- Start: Truncate idea.log ---
+            val ideaLogFile: File = destinationDir.resolve("log/idea.log")
+
+            if (ideaLogFile.exists()) {
+                println("Truncating log file: ${ideaLogFile.path}")
+                ideaLogFile.writeText("")
+            } else {
+                println("Log file not found, skipping truncation: ${ideaLogFile.path}")
+            }
+        }
+    }
+}
+
 tasks {
     withType<KotlinCompile> {
         compilerOptions.jvmTarget.set(JvmTarget.JVM_21)
@@ -203,17 +231,9 @@ tasks {
             } else {
                 println("Skipping custom IDE configuration copy: '${sourceConfigDir.path}' does not exist.")
             }
-
-            // --- Start: Truncate idea.log ---
-            val ideaLogFile: File = destinationDir.resolve("log/idea.log")
-
-            if (ideaLogFile.exists()) {
-                println("Truncating log file: ${ideaLogFile.path}")
-                ideaLogFile.writeText("") // Overwrites the file with an empty string.
-            } else {
-                println("Log file not found, skipping truncation: ${ideaLogFile.path}")
-            }
         }
+
+        finalizedBy(truncateLogsTask)
     }
 
     runIde {
@@ -235,7 +255,8 @@ tasks {
             "-Didea.diagnostic.opentelemetry.meters.file.json=",
             "-Didea.diagnostic.opentelemetry.file=",
             "-Didea.diagnostic.opentelemetry.otlp=false",
-            "-Xlog:disable"
+            "-Didea.log.debug.categories=org.insilications.openinsplit",
+//            "-Xlog:disable"
         )
         jvmArgumentProviders += CommandLineArgumentProvider {
             listOf(
@@ -256,7 +277,8 @@ tasks {
                 "-Didea.diagnostic.opentelemetry.meters.file.json=",
                 "-Didea.diagnostic.opentelemetry.file=",
                 "-Didea.diagnostic.opentelemetry.otlp=false",
-                "-Xlog:disable"
+                "-Didea.log.debug.categories=org.insilications.openinsplit",
+//                "-Xlog:disable"
             )
         }
 
@@ -278,13 +300,11 @@ tasks.named<DependencyUpdatesTask>("dependencyUpdates").configure {
 }
 
 val integrationTestTask: TaskProvider<Test> = tasks.register<Test>("integrationTest") {
-//    outputs.upToDateWhen { false }
+    outputs.upToDateWhen { false }
 
-    testLogging {
-        showStandardStreams = true
-    }
-    dependsOn(tasks.buildPlugin)
-    dependsOn(tasks.prepareSandbox)
+//    testLogging {
+//        showStandardStreams = false
+//    }
 
     val integrationTestSourceSet: SourceSet = sourceSets.getByName("integrationTest")
     testClassesDirs = integrationTestSourceSet.output.classesDirs
@@ -294,7 +314,8 @@ val integrationTestTask: TaskProvider<Test> = tasks.register<Test>("integrationT
     environment("MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
     environment("ENV_MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
     useJUnitPlatform()
-
+    dependsOn(tasks.buildPlugin)
+    dependsOn(tasks.prepareSandbox)
 }
 
 fun isStable(version: String): Boolean {
