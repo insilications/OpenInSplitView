@@ -106,19 +106,16 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
          * of "stable" scope display names to the corresponding SearchScope instance.
          * We only populate it when the display name exactly matches one of our invariant scopes.
          */
-        private val stableScopeCache: MutableMap<Project, MutableMap<String, SearchScope>> =
-            Collections.synchronizedMap(WeakHashMap())
+        private val stableScopeCache: MutableMap<Project, MutableMap<String, SearchScope>> = Collections.synchronizedMap(WeakHashMap())
 
         private fun resolveStableSearchScope(project: Project, scopeName: String?): SearchScope? {
             if (scopeName.isNullOrEmpty()) return null
             val projectCache: MutableMap<String, SearchScope> = stableScopeCache.getOrPut(project) { mutableMapOf() }
             projectCache[scopeName]?.let { return it }
 
-            val stableScope: SearchScope = stableScopeSuppliers
-                .asSequence()
+            val stableScope: SearchScope = stableScopeSuppliers.asSequence()
                 .map { supplier: (Project) -> SearchScope -> supplier(project) }
-                .firstOrNull { scope: SearchScope -> scope.displayName == scopeName }
-                ?: return null
+                .firstOrNull { scope: SearchScope -> scope.displayName == scopeName } ?: return null
 
             projectCache[scopeName] = stableScope
             return stableScope
@@ -177,8 +174,7 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
                     nextLookupRetryAtMillis = 0
                     invoker
                 } catch (t: Throwable) {
-                    @Suppress("LongLine")
-                    LOG.warn(
+                    @Suppress("LongLine") LOG.warn(
                         "Failed to resolve com.intellij.codeInsight.navigation.actions.GotoDeclarationOrUsageHandler2.Companion.gotoDeclarationOrUsages via reflection",
                         t,
                     )
@@ -219,7 +215,8 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
                 val actionDataClass: Class<Any> = actionData.javaClass
                 val resultMethod: MethodHandle =
                     actionDataResultMethodCache[actionDataClass] ?: actionDataClass.methods.firstOrNull { it.name == "result" && it.parameterCount == 0 }
-                        ?.also { it.isAccessible = true }?.let { MethodHandles.lookup().unreflect(it) }
+                        ?.also { it.isAccessible = true }
+                        ?.let { MethodHandles.lookup().unreflect(it) }
                         ?.also { actionDataResultMethodCache[actionDataClass] = it } ?: return@underModalProgress null
                 // Call GTDUActionData.result(): GTDUActionResult?
                 val rawResult = try {
@@ -235,10 +232,13 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
                 val resultClass: Class<Any> = rawResult.javaClass
                 val navMethod: MethodHandle? =
                     resultNavGetterCache[resultClass] ?: resultClass.methods.firstOrNull { it.name == "getNavigationActionResult" && it.parameterCount == 0 }
-                        ?.also { it.isAccessible = true }?.let { MethodHandles.lookup().unreflect(it) }?.also { resultNavGetterCache[resultClass] = it }
+                        ?.also { it.isAccessible = true }
+                        ?.let { MethodHandles.lookup().unreflect(it) }
+                        ?.also { resultNavGetterCache[resultClass] = it }
                 val tvMethod: MethodHandle? =
                     resultTargetVariantsGetterCache[resultClass] ?: resultClass.methods.firstOrNull { it.name == "getTargetVariants" && it.parameterCount == 0 }
-                        ?.also { it.isAccessible = true }?.let { MethodHandles.lookup().unreflect(it) }
+                        ?.also { it.isAccessible = true }
+                        ?.let { MethodHandles.lookup().unreflect(it) }
                         ?.also { resultTargetVariantsGetterCache[resultClass] = it }
 
                 when {
@@ -255,8 +255,7 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
 
                     tvMethod != null -> {
                         // Get the `targetVariants` property value, a `List<TargetVariant>`
-                        @Suppress("UNCHECKED_CAST")
-                        val variants: List<Any?> = try {
+                        @Suppress("UNCHECKED_CAST") val variants: List<Any?> = try {
                             tvMethod.invoke(rawResult) as? List<Any?>
                         } catch (t: Throwable) {
                             LOG.warn("Failed to obtain targetVariants", t)
@@ -267,8 +266,7 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
                             if (item == null) return@underModalProgress null
                         }
 
-                        @Suppress("UNCHECKED_CAST")
-                        val nonNullVariants: List<Any> = variants as List<Any>
+                        @Suppress("UNCHECKED_CAST") val nonNullVariants: List<Any> = variants as List<Any>
 
                         GTDUActionResultMirror.SU(nonNullVariants) // non-empty
                     }
@@ -385,19 +383,21 @@ class GotoDeclarationOrUsageHandler2Split : CodeInsightActionHandler {
     ) {
 
         // Build DataContext for scope resolution
-        val dataContext: DataContext = SimpleDataContext.builder().add(CommonDataKeys.PSI_FILE, file).add(CommonDataKeys.EDITOR, editor)
-            .add(PlatformCoreDataKeys.CONTEXT_COMPONENT, editor.contentComponent).build()
+        val dataContext: DataContext = SimpleDataContext.builder()
+            .add(CommonDataKeys.PSI_FILE, file)
+            .add(CommonDataKeys.EDITOR, editor)
+            .add(PlatformCoreDataKeys.CONTEXT_COMPONENT, editor.contentComponent)
+            .build()
 
         try {
             val popupPosition: RelativePoint = JBPopupFactory.getInstance().guessBestPopupLocation(editor)
             val defaultScopeName: String? = FindUsagesSettings.getInstance().defaultScopeName
 
-            val searchScope: SearchScope = resolveStableSearchScope(project, defaultScopeName)
-                ?: FindUsagesOptions.findScopeByName(
-                    project,
-                    dataContext,
-                    defaultScopeName,
-                )
+            val searchScope: SearchScope = resolveStableSearchScope(project, defaultScopeName) ?: FindUsagesOptions.findScopeByName(
+                project,
+                dataContext,
+                defaultScopeName,
+            )
 
             findShowUsagesSplit(
                 project, editor, popupPosition, targetVariants, SHOW_USAGES_AMBIGUOUS_TITLE,

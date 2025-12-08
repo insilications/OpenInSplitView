@@ -1,12 +1,8 @@
 package org.insilications.openinsplit.custom
 
 import com.intellij.driver.sdk.WaitForException
-import com.intellij.openapi.diagnostic.Logger
-import com.intellij.openapi.diagnostic.fileLogger
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
-
-val LOG: Logger get() = fileLogger()
 
 fun waitForIt(
     message: String? = null,
@@ -15,11 +11,7 @@ fun waitForIt(
     condition: () -> Boolean,
 ) {
     waitForIt2(
-        message = message,
-        timeout = timeout,
-        interval = interval,
-        getter = condition,
-        checker = { it })
+        message = message, timeout = timeout, interval = interval, getter = condition, checker = { it })
 }
 
 private inline fun <T> waitForIt2(
@@ -39,9 +31,8 @@ private inline fun <T> waitForIt2(
     }
     if (checker(result).not()) {
         throw WaitForException(
-            timeout,
-            errorMessage = ("Failed: $message" + if (result !is Boolean) ". Actual: $result" else "")
-        ).also { LOG.warn(it) }
+            timeout, errorMessage = ("Failed: $message" + if (result !is Boolean) ". Actual: $result" else "")
+        ).also { println(it) }
     } else {
 //        val passedTime = (System.currentTimeMillis() - startTime).milliseconds
 //        if (result !is Boolean || passedTime > 10.seconds) {

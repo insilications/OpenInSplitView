@@ -110,7 +110,7 @@ class PluginTest {
 
     companion object {
         private const val EDITOR_COMPONENT_IMPL: String = "EditorComponentImpl"
-        private const val EDITOR_FOR_GOTODECLARATION: String = "Editor for GotoDeclarationOrUsageHandler2Split.kt"
+        private const val EDITOR_FOR_GOTODECLARATION: String = "Editor for GotoDeclarationOrUsageHandler2SplitTest.kt"
         private const val SYMBOLS_INFORMATION_ACTION: String = "SymbolsInformationAction"
     }
 
@@ -158,9 +158,6 @@ class PluginTest {
             addSystemProperty("junit.jupiter.extensions.autodetection.enabled", true)
             addSystemProperty("shared.indexes.download.auto.consent", true)
 
-            // UI testing specific
-            // Enable UI hierarchy inspection
-            addSystemProperty("expose.ui.hierarchy.url", true)
             // Use new UI for testing
             addSystemProperty("ide.experimental.ui", true)
 
@@ -170,8 +167,12 @@ class PluginTest {
 //            val pathToPlatform: String = System.getProperty("path.to.platform")
 //            logOutput("pathToPlatform: $pathToPlatform")
             PluginConfigurator(this).installPluginFromDir(Path(pathToPlugin))
-            ConfigurationStorage.Companion.instance().put("MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
-        }.runIdeWithDriver().apply {
+//            ConfigurationStorage.Companion.instance().put("MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
+        }.runIdeWithDriver(configure = {
+            addVMOptionsPatch {
+                clearSystemProperty("expose.ui.hierarchy.url")
+            }
+        }).apply {
             try {
                 driver.withContext {
 //                    waitForIndicators(3.minutes, false)
@@ -190,7 +191,7 @@ class PluginTest {
                             actionManager.getAction(SYMBOLS_INFORMATION_ACTION)
                         } ?: return@ideFrame
 
-                        firstEditor.goToPosition(283, 18)
+                        firstEditor.goToPosition(18, 8)
                         withContext(OnDispatcher.EDT, semantics = LockSemantics.READ_ACTION) {
                             actionManager.tryToExecute(action, null, null, null, true)
                         }

@@ -11,47 +11,36 @@ import com.intellij.ide.starter.utils.JvmUtils
 import com.intellij.openapi.util.SystemInfo
 import com.intellij.tools.ide.util.common.logOutput
 import com.intellij.util.system.OS
-import java.nio.file.Files
 import java.nio.file.Path
-import kotlin.io.path.*
+import kotlin.io.path.div
+import kotlin.io.path.exists
+import kotlin.io.path.isDirectory
+import kotlin.io.path.isExecutable
 
-//const val DEFAULT_DISPLAY_ID: String = "88"
+//const val DEFAULT_DISPLAY_ID = "88"
 
 class MyLinuxIdeDistribution : IdeDistribution() {
     companion object {
         //        private const val DEFAULT_DISPLAY_RESOLUTION = "1920x1080"
-//        private const val XVFB_TOOL_NAME: String = "xvfb-run"
-//        private val xvfbRunTool: String by lazy {
-//            val homePath = Path(System.getProperty("user.home")).toAbsolutePath()
-//            ProcessExecutor(
-//                XVFB_TOOL_NAME, homePath, timeout = 5.seconds, args = listOf("which", XVFB_TOOL_NAME),
-//                stdoutRedirect = ExecOutputRedirect.ToStdOut("$XVFB_TOOL_NAME-out"),
-//                stderrRedirect = ExecOutputRedirect.ToStdOut("$XVFB_TOOL_NAME-err")
-//            ).start()
-//            XVFB_TOOL_NAME
+//        private const val xvfbRunTool: String = "/usr/bin/xvfb-run"
+        private const val DISPLAY_ENV: String = "DISPLAY=:88"
+
+//        fun linuxCommandLine(xvfbRunLog: Path, vmOptions: VMOptions): List<String> {
+//            return listOf(
+//                xvfbRunTool,
+//                "--error-file=" + xvfbRunLog.toAbsolutePath().toString(),
+//                "--server-args=-ac -screen 0 ${DEFAULT_DISPLAY_RESOLUTION}x24",
+//                "--auto-servernum",
+//                "--server-num=$DEFAULT_DISPLAY_ID"
+//            )
 //        }
 
-//        fun linuxCommandLine(xvfbRunLog: Path, commandEnv: Map<String, String> = emptyMap()): List<String> {
-//            return when {
-//                System.getenv("DISPLAY") != null || commandEnv["DISPLAY"] != null -> listOf()
-//                else ->
-//                    //hint https://gist.github.com/tullmann/2d8d38444c5e81a41b6d
-//                    listOf(
-//                        xvfbRunTool,
-//                        "--error-file=" + xvfbRunLog.toAbsolutePath().toString(),
-//                        "--server-args=-ac -screen 0 ${DEFAULT_DISPLAY_RESOLUTION}x24",
-//                        "--auto-servernum",
-//                        "--server-num=$DEFAULT_DISPLAY_ID"
-//                    )
-//            }
+//        fun createXvfbRunLog(logsDir: Path): Path {
+//            val logTxt = logsDir.resolve("xvfb-log.txt")
+//            logTxt.deleteIfExists()
+//
+//            return Files.createFile(logTxt)
 //        }
-
-        fun createXvfbRunLog(logsDir: Path): Path {
-            val logTxt = logsDir.resolve("xvfb-log.txt")
-            logTxt.deleteIfExists()
-
-            return Files.createFile(logTxt)
-        }
     }
 
     override fun installIde(unpackDir: Path, executableFileName: String): InstalledIde {
@@ -85,6 +74,8 @@ class MyLinuxIdeDistribution : IdeDistribution() {
                 vmOptions.clearSystemProperty("idea.diagnostic.opentelemetry.file")
                 vmOptions.clearSystemProperty("idea.log.path")
                 vmOptions.clearSystemProperty("memory.snapshots.path")
+                vmOptions.clearSystemProperty("expose.ui.hierarchy.url")
+                vmOptions.addSystemProperty("expose.ui.hierarchy.url", false)
                 vmOptions.addSystemProperty("idea.log.path", "/king/.config/JetBrains/IC/log")
                 vmOptions.addSystemProperty("idea.diagnostic.opentelemetry.metrics.file", "")
                 vmOptions.addSystemProperty("idea.diagnostic.opentelemetry.meters.file.json", "")
@@ -97,13 +88,20 @@ class MyLinuxIdeDistribution : IdeDistribution() {
                 vmOptions.removeLine("-Xlog:gc*:file=/aot/stuff/dev/OpenInSplitView/out/ide-tests/tests/IC-locally-installed-ide/plugin-test/simple-test-without-project/reports/gcLog.log")
                 vmOptions.removeLine("-XX:ErrorFile=/aot/stuff/dev/OpenInSplitView/out/ide-tests/tests/IC-locally-installed-ide/plugin-test/simple-test-without-project/log/jvm-crash/java_error_in_idea_%p.log")
                 vmOptions.removeLine("-XX:HeapDumpPath=/aot/stuff/dev/OpenInSplitView/out/ide-tests/tests/IC-locally-installed-ide/plugin-test/simple-test-without-project/log/heap-dump/heap-dump.hprof")
-                val xvfbRunLog: Path = createXvfbRunLog(logsDir)
+//                val xvfbRunLog: Path = createXvfbRunLog(logsDir)
                 return object : InstalledBackedIDEStartConfig(patchedVMOptionsFile, vmOptions) {
-                    override val errorDiagnosticFiles: List<Path> = listOf(xvfbRunLog)
+                    //                    override val errorDiagnosticFiles: List<Path> = listOf(xvfbRunLog)
                     override val workDir: Path = appHome
+
+                    //                    override val commandLine: List<String> = listOf(executablePath.toAbsolutePath().toString())
+//                    override val commandLine: List<String> = linuxCommandLine(xvfbRunLog, vmOptions) + executablePath.toAbsolutePath().toString()
                     override val commandLine: List<String> = listOf(executablePath.toAbsolutePath().toString())
-//                    override val commandLine: List<String> =
-//                        linuxCommandLine(xvfbRunLog, vmOptions.environmentVariables) + executablePath.toAbsolutePath().toString()
+
+                    override val environmentVariables: Map<String, String>
+                        get() = System.getenv().filterKeys {
+                            // don't inherit these environment variables from parent process
+                            it != "IDEA_PROPERTIES" && !it.endsWith("VM_OPTIONS") && it != "JAVA_HOME"
+                        } + ("DISPLAY" to ":88")
                 }
             }
 

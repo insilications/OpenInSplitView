@@ -19,6 +19,7 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.platform.ide.progress.runWithModalProgressBlocking
 import com.intellij.psi.*
 import com.intellij.psi.util.PsiUtil
+import org.insilications.openinsplit.LogToFile
 import org.insilications.openinsplit.debug
 import org.jetbrains.kotlin.analysis.api.KaSession
 import org.jetbrains.kotlin.analysis.api.analyze
@@ -57,8 +58,6 @@ class SymbolsInformationAction : DumbAwareAction() {
     }
 
     override fun actionPerformed(e: AnActionEvent) {
-        SYMBOL_USAGE_LOG.debug { "actionPerformed" }
-
         val dataContext: DataContext = e.dataContext
         val project: Project = dataContext.project
         val editor: Editor? = CommonDataKeys.EDITOR.getData(dataContext)
@@ -224,50 +223,7 @@ private fun buildSymbolContext(
 
     val targetSlice: DeclarationSlice = targetSymbol.toDeclarationSlice(project)
 
-    // Collect references (types, calls, etc.) used WITHIN the target symbol's scope.
-    val referencedCollections: ReferencedCollections = collectReferencedDeclarations(project, targetSymbol, symbolKind, maxRefs)
-
-    // Merge Target File into the Referenced Files map
-    // We want the target file to be the FIRST entry in the map for clarity.
-    val mergedFiles = LinkedHashMap<String, ReferencedFile>()
-    val targetPath: String = targetSlice.psiFilePath
-    val existingTargetFile: ReferencedFile? = referencedCollections.referencedFiles[targetPath]
-
-    val isTargetType: Boolean = symbolKind == SymbolKind.CLASS
-    // Wrap target slice. We use empty usage kinds as it's the definition, not a usage.
-    val targetRefDecl = ReferencedDeclaration(targetSlice, emptySet())
-
-    val targetFileEntry: ReferencedFile = if (existingTargetFile != null) {
-        ReferencedFile(
-            packageDirective = existingTargetFile.packageDirective,
-            importsList = existingTargetFile.importsList,
-            referencedTypes = if (isTargetType) existingTargetFile.referencedTypes + targetRefDecl else existingTargetFile.referencedTypes,
-            referencedFunctions = if (!isTargetType) existingTargetFile.referencedFunctions + targetRefDecl else existingTargetFile.referencedFunctions
-        )
-    } else {
-        val targetPsiFile: PsiFile = targetSymbol.containingFile
-        ReferencedFile(
-            packageDirective = getPackageDirective(targetPsiFile),
-            importsList = getImportsList(targetPsiFile),
-            referencedTypes = if (isTargetType) listOf(targetRefDecl) else emptyList(),
-            referencedFunctions = if (!isTargetType) listOf(targetRefDecl) else emptyList()
-        )
-    }
-
-    // 1. Add Target File first
-    mergedFiles[targetPath] = targetFileEntry
-
-    // 2. Add remaining referenced files
-    for ((path, file) in referencedCollections.referencedFiles) {
-        if (path != targetPath) {
-            mergedFiles[path] = file
-        }
-    }
-
-    val targetContext = TargetSymbolContext(
-        declarationSlice = targetSlice, symbolKind = symbolKind, files = mergedFiles, referenceLimitReached = referencedCollections.limitReached
-    )
-    SYMBOL_USAGE_LOG.info(targetContext.toLogString())
+    LogToFile.info(targetSlice.toLogString())
 }
 
 /**
@@ -386,8 +342,8 @@ private class SymbolUsageCollector(
         }
 
         class FileBuilder(val psiFile: PsiFile) {
-            val types: MutableList<ReferencedDeclaration> = mutableListOf<ReferencedDeclaration>()
-            val functions: MutableList<ReferencedDeclaration> = mutableListOf<ReferencedDeclaration>()
+            val types: MutableList<ReferencedDeclaration> = mutableListOf()
+            val functions: MutableList<ReferencedDeclaration> = mutableListOf()
         }
 
         val fileMap = LinkedHashMap<String, FileBuilder>()
@@ -989,27 +945,11 @@ private fun PsiElement.toDeclarationSlice(
     val name: String? = sourceDeclaration.computeName()
     val fqNameTypeString: String = sourceDeclaration::class.qualifiedName ?: sourceDeclaration.javaClass.name
 
-//    val sourceCode: String = try {
-//        sourceDeclaration.text ?: "<!-- Source code not available (text is null) -->"
-//    } catch (e: Exception) {
-//        "<!-- Source code not available (compiled/error: ${e.message}) -->"
-//    }
     val sourceCode: String = try {
-        sourceDeclaration.getTextWithSurroundingWhitespace() ?: "<!-- Source code not available (text is null) -->"
+        sourceDeclaration.text ?: "<!-- Source code not available (text is null) -->"
     } catch (e: Exception) {
         "<!-- Source code not available (compiled/error: ${e.message}) -->"
     }
-
-//    SYMBOL_USAGE_LOG.info("\nkotlinFqName: $kotlinFqName\n${sourceCode}\n")
-//    SYMBOL_USAGE_LOG.info("sourceDeclaration.getLineCount: ${sourceDeclaration.startLine()}")
-//    SYMBOL_USAGE_LOG.info("sourceDeclaration.getLineCount: ${sourceDeclaration.endLine()}")
-//    SYMBOL_USAGE_LOG.info("sourceDeclaration.getLineCount: ${sourceDeclaration.getLineCountByDocument()}")
-//    SYMBOL_USAGE_LOG.info("sourceDeclaration.getElementTextWithContext: ${sourceDeclaration.getElementTextWithContext()}")
-//    SYMBOL_USAGE_LOG.info("sourceDeclaration.textRange: ${sourceDeclaration.textRange}")
-//    SYMBOL_USAGE_LOG.info("sourceDeclaration.getLineRange: ${sourceDeclaration.getLineRange()}")
-//    SYMBOL_USAGE_LOG.info("sourceDeclaration.getLineCount: ${sourceDeclaration.getLineCount()}")
-//
-//    SYMBOL_USAGE_LOG.info("=====================================================")
 
     val structurePath: List<StructureNode> = sourceDeclaration.computeStructurePath()
 
@@ -1161,38 +1101,11 @@ private inline fun UsageKind.toClassificationString(): String = when (this) {
     UsageKind.EXTENSION_CALL -> "extension_call"
 }
 
-@Suppress("LongLine")
-private fun TargetSymbolContext.toLogString(): String {
-    val sb = StringBuilder()
+private fun DeclarationSlice.toLogString(): String {
+    val sb = StringBuilder(96708)
 
-    sb.appendLine("============ Target Symbol ============")
-    sb.appendLine("Target Symbol: ${declarationSlice.ktFqNameRelativeString ?: declarationSlice.name}")
+    sb.appendLine("$sourceCode")
 
-    if (files.isEmpty()) {
-        sb.appendLine("Files: <none>")
-    } else {
-        files.forEach { (path: String, refFile: ReferencedFile) ->
-            sb.appendLine("Source File: $path")
-            sb.appendLine()
-
-            // Collect all slices for this file (Types + Functions)
-            val allSlices: List<DeclarationSlice> =
-                refFile.referencedTypes.map { it.declarationSlice } + refFile.referencedFunctions.map { it.declarationSlice }
-
-            val reconstructedContent: String = renderReconstructedFile(
-                refFile.packageDirective, refFile.importsList, allSlices
-            )
-
-            sb.appendLine(reconstructedContent)
-            sb.appendLine("----------------------------------------------------------------") // File separator
-            sb.appendLine()
-        }
-    }
-
-    if (referenceLimitReached) {
-        sb.appendLine("Reference limit reached; output truncated.")
-    }
-    sb.appendLine("==============================================================")
     return sb.toString()
 }
 
@@ -1224,7 +1137,7 @@ private fun TargetSymbolContext.toLogString(): String {
 private fun renderReconstructedFile(
     packageDirective: String?, importsList: List<String>, slices: List<DeclarationSlice>
 ): String {
-    val sb = StringBuilder()
+    val sb = StringBuilder(96708)
 
     // Header
     if (packageDirective != null) {
@@ -1298,33 +1211,33 @@ private fun renderReconstructedFile(
     return sb.toString()
 }
 
-/**
- * Appends the text of this PsiElement along with its surrounding PsiWhiteSpace siblings
- * to the provided StringBuilder.
- *
- * @param sb the StringBuilder to append to
- * @param includeLeading whether to include leading whitespace
- * @param includeTrailing whether to include trailing whitespace
- */
-fun PsiElement.appendTextWithSurroundingWhitespace(
-    sb: StringBuilder, includeLeading: Boolean = true, includeTrailing: Boolean = true
-) {
-    val first = if (includeLeading) findFirstWhitespace() else this
-    val last = if (includeTrailing) findLastWhitespace() else this
-
-    // Pre-allocate capacity to avoid reallocations
-    val startOffset = first.textRange.startOffset
-    val endOffset = last.textRange.endOffset
-    sb.ensureCapacity(sb.length + (endOffset - startOffset))
-
-    // Append all elements in range
-    var current: PsiElement? = first
-    while (current != null) {
-        sb.append(current.text)
-        if (current === last) break
-        current = current.nextSibling
-    }
-}
+///**
+// * Appends the text of this PsiElement along with its surrounding PsiWhiteSpace siblings
+// * to the provided StringBuilder.
+// *
+// * @param sb the StringBuilder to append to
+// * @param includeLeading whether to include leading whitespace
+// * @param includeTrailing whether to include trailing whitespace
+// */
+//fun PsiElement.appendTextWithSurroundingWhitespace(
+//    sb: StringBuilder, includeLeading: Boolean = true, includeTrailing: Boolean = true
+//) {
+//    val first = if (includeLeading) findFirstWhitespace() else this
+//    val last = if (includeTrailing) findLastWhitespace() else this
+//
+//    // Pre-allocate capacity to avoid reallocations
+//    val startOffset = first.textRange.startOffset
+//    val endOffset = last.textRange.endOffset
+//    sb.ensureCapacity(sb.length + (endOffset - startOffset))
+//
+//    // Append all elements in range
+//    var current: PsiElement? = first
+//    while (current != null) {
+//        sb.append(current.text)
+//        if (current === last) break
+//        current = current.nextSibling
+//    }
+//}
 
 /**
  * Returns the text of this PsiElement with its surrounding whitespace.
@@ -1342,30 +1255,30 @@ fun PsiElement.getTextWithSurroundingWhitespace(): String {
     return fileText.subSequence(startOffset, endOffset).toString()
 }
 
-/**
- * Returns the text of this PsiElement with surrounding whitespace as a CharSequence.
- * Avoids string allocation when only CharSequence is needed.
- */
-fun PsiElement.getTextWithSurroundingWhitespaceAsSequence(): CharSequence {
-    val first = findFirstWhitespace()
-    val last = findLastWhitespace()
-
-    val startOffset = first.textRange.startOffset
-    val endOffset = last.textRange.endOffset
-
-    return containingFile.viewProvider.contents.subSequence(startOffset, endOffset)
-}
-
-/**
- * Builds a string containing this element's text with surrounding whitespace.
- */
-inline fun PsiElement.buildTextWithSurroundingWhitespace(
-    includeLeading: Boolean = true, includeTrailing: Boolean = true, additionalCapacity: Int = 0, block: StringBuilder.() -> Unit = {}
-): String = buildString {
-    appendTextWithSurroundingWhitespace(this, includeLeading, includeTrailing)
-    ensureCapacity(length + additionalCapacity)
-    block()
-}
+///**
+// * Returns the text of this PsiElement with surrounding whitespace as a CharSequence.
+// * Avoids string allocation when only CharSequence is needed.
+// */
+//fun PsiElement.getTextWithSurroundingWhitespaceAsSequence(): CharSequence {
+//    val first = findFirstWhitespace()
+//    val last = findLastWhitespace()
+//
+//    val startOffset = first.textRange.startOffset
+//    val endOffset = last.textRange.endOffset
+//
+//    return containingFile.viewProvider.contents.subSequence(startOffset, endOffset)
+//}
+//
+///**
+// * Builds a string containing this element's text with surrounding whitespace.
+// */
+//inline fun PsiElement.buildTextWithSurroundingWhitespace(
+//    includeLeading: Boolean = true, includeTrailing: Boolean = true, additionalCapacity: Int = 0, block: StringBuilder.() -> Unit = {}
+//): String = buildString {
+//    appendTextWithSurroundingWhitespace(this, includeLeading, includeTrailing)
+//    ensureCapacity(length + additionalCapacity)
+//    block()
+//}
 
 private fun PsiElement.findFirstWhitespace(): PsiElement {
     var first = this

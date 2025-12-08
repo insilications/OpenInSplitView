@@ -57,7 +57,8 @@ sourceSets {
     integrationTest.apply {
         compileClasspath += sourceSets.main.get().output
         runtimeClasspath += sourceSets.main.get().output
-        kotlin.srcDirs("src/integrationTest")
+        java.srcDirs("src/test/integrationTest")
+        kotlin.srcDirs("src/test/integrationTest")
     }
 }
 
@@ -79,7 +80,6 @@ dependencies {
         pluginVerifier()
 
         testFramework(TestFrameworkType.Starter, version = "latest", configurationName = integrationTestImplementation.name)
-//        testFramework(TestFrameworkType.Bundled)
     }
 
     integrationTestImplementation(libs.kodein.di.jvm)
@@ -194,6 +194,16 @@ val truncateLogsTask: TaskProvider<DefaultTask> = tasks.register<DefaultTask>("t
                 ideaLogFile.writeText("")
             } else {
                 println("Log file not found, skipping truncation: ${ideaLogFile.path}")
+            }
+
+            // --- Start: Truncate symbols.log ---
+            val symbolsLogFile: File = destinationDir.resolve("log/symbols.log")
+
+            if (symbolsLogFile.exists()) {
+                println("Truncating log file: ${symbolsLogFile.path}")
+                symbolsLogFile.writeText("")
+            } else {
+                println("Log file not found, skipping truncation: ${symbolsLogFile.path}")
             }
         }
     }
