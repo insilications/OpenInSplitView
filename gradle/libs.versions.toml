@@ -17,8 +17,6 @@ junit5-bom = { module = "org.junit:junit-bom", version.ref = "junit5" }
 junit5-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit5" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin2" }
 kotlin-test-junit5 = { module = "org.jetbrains.kotlin:kotlin-test-junit5", version.ref = "kotlin" }
-#kotlin-test-common = { module = "org.jetbrains.kotlin:kotlin-test-common", version.ref = "kotlin2" }
-#
 kotlin-coroutines-jvm = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm", version.ref = "kotlinCoroutines" }
 kodein-di-jvm = { module = "org.kodein.di:kodein-di-jvm", version.ref = "kodeinDiJvm" }
 ###### K2 analysis ######
@@ -39,6 +37,3 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 intellij-platform = { id = "org.jetbrains.intellij.platform", version.ref = "intellijPlatform" }
 ben-manes-versions = { id = "com.github.ben-manes.versions", version.ref = "benManesVersions" }
 changelog = { id = "org.jetbrains.changelog", version.ref = "changelog" }
-
-#   testImplementation("org.jetbrains.kotlin:kotlin-test:$kotlinVersion")
-#  testFixturesImplementation("org.jetbrains.kotlin:kotlin-test:$kotlinVersion")

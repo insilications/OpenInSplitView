@@ -68,10 +68,7 @@ class PluginTest {
                     }
 
                     override fun reportTestFailure(
-                        testName: String,
-                        message: String,
-                        details: String,
-                        linkToLogs: String?
+                        testName: String, message: String, details: String, linkToLogs: String?
                     ) {
                         fail { "$testName fails: $message. \n$details" }
                     }
@@ -83,8 +80,7 @@ class PluginTest {
             bindSingleton<IdeInstallerFactory>(overrides = true) { createInstallerFactory() }
             bindSingleton<IdeDistributionFactory>(overrides = true) { createDistributionFactory() }
             bindSingleton<IdeDownloader>(overrides = true) {
-                @Suppress("PathAnnotationInspection")
-                IdeNotDownloader(Paths.get(platformPath))
+                @Suppress("PathAnnotationInspection") IdeNotDownloader(Paths.get(platformPath))
             }
             val defaults = ConfigurationStorage.instance().defaults.toMutableMap().apply {
                 put("MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
@@ -108,8 +104,7 @@ class PluginTest {
 
     private fun createInstallerFactory(): IdeInstallerFactory = object : IdeInstallerFactory() {
         @Suppress("PathAnnotationInspection")
-        override fun createInstaller(ideInfo: IdeInfo, downloader: IdeDownloader) =
-            ExistingIdeInstaller(Paths.get(platformPath))
+        override fun createInstaller(ideInfo: IdeInfo, downloader: IdeDownloader) = ExistingIdeInstaller(Paths.get(platformPath))
     }
 
     // This helpers are required to run locally installed IDE instead of downloading one
@@ -132,8 +127,7 @@ class PluginTest {
     fun simpleTestWithoutProject() {
         ConfigurationStorage.Companion.instance().put("MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
         Starter.newContext(
-            CurrentTestMethod.hyphenateWithClass(),
-            TestCase(IdeProductProvider.IC, projectInfo = NoProject)
+            CurrentTestMethod.hyphenateWithClass(), TestCase(IdeProductProvider.IC, projectInfo = NoProject)
 //                .withVersion("2025.2.1")
         ).applyVMOptionsPatch {
             addSystemProperty("idea.system.path", "/king/.config/JetBrains/IC/system")
@@ -180,38 +174,45 @@ class PluginTest {
 
             // Ensure it does not open any project on startup
             addSystemProperty("ide.open.project.at.startup", false)
-        }.enableAsyncProfiler()
-            .suppressStatisticsReport()
-            .withKotlinPluginK2()
-            .executeDuringIndexing(false).apply {
-                val pathToPlugin: String = System.getProperty("path.to.build.plugin")
-                LOG.info("Path to plugin: $pathToPlugin")
-                PluginConfigurator(this).installPluginFromDir(Path(pathToPlugin))
-                ConfigurationStorage.Companion.instance().put("MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
-            }
-            .runIdeWithDriver().apply {
-                try {
-                    driver.withContext {
-                        waitForIndicators(3.minutes)
+        }.enableAsyncProfiler().suppressStatisticsReport().withKotlinPluginK2().executeDuringIndexing(false).apply {
+            val pathToPlugin: String = System.getProperty("path.to.build.plugin")
+            LOG.info("Path to plugin: $pathToPlugin")
+            PluginConfigurator(this).installPluginFromDir(Path(pathToPlugin))
+            ConfigurationStorage.Companion.instance().put("MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
+        }.runIdeWithDriver().apply {
+            try {
+                driver.withContext {
+                    waitForIndicators(3.minutes)
 //                        Thread.sleep(30.minutes.inWholeMilliseconds)
 //                        execute(CommandChain().waitForSmartMode())
-                        ideFrame {
-                            val firstEditor: JEditorUiComponent = xx(JEditorUiComponent::class.java) {
-                                and(
-                                    byClass(EDITOR_COMPONENT_IMPL),
-                                    byAccessibleName(EDITOR_FOR_GOTODECLARATION)
-                                )
-                            }.list()
-                                .first()
-                            val firstEditorComponent: Component = firstEditor.component
-                            val robot: Robot = robotProvider.defaultRobot
-                            val actionManager: ActionManager = service<ActionManager>(RdTarget.DEFAULT)
-                            val action: AnAction = withContext(OnDispatcher.EDT) {
-                                actionManager.getAction(GO_TO_DECLARATION_ACTION)
-                            } ?: return@ideFrame
+                    ideFrame {
+                        val firstEditor: JEditorUiComponent = xx(JEditorUiComponent::class.java) {
+                            and(
+                                byClass(EDITOR_COMPONENT_IMPL), byAccessibleName(EDITOR_FOR_GOTODECLARATION)
+                            )
+                        }.list().first()
+                        val firstEditorComponent: Component = firstEditor.component
+                        val robot: Robot = robotProvider.defaultRobot
+                        val actionManager: ActionManager = service<ActionManager>(RdTarget.DEFAULT)
+                        val action: AnAction = withContext(OnDispatcher.EDT) {
+                            actionManager.getAction(GO_TO_DECLARATION_ACTION)
+                        } ?: return@ideFrame
 //                            var showUsagesTableRowCount = 0
 
-                            firstEditor.goToPosition(68, 22)
+                        firstEditor.goToPosition(68, 22)
+                        withContext(OnDispatcher.EDT, semantics = LockSemantics.READ_ACTION) {
+                            actionManager.tryToExecute(action, null, null, null, true)
+                        }
+
+                        table(DIV_CLASS_SHOW_USAGES_TABLE).apply {
+                            waitForIt(MESSAGE_SHOW_USAGES_TABLE_POPULATED, 1.minutes, 50.milliseconds) {
+                                this.rowCount() > 0
+                            }
+                            robot.pressAndReleaseKey(KeyEvent.VK_ENTER)
+                        }
+
+                        repeat(4) {
+                            robot.focus(firstEditorComponent)
                             withContext(OnDispatcher.EDT, semantics = LockSemantics.READ_ACTION) {
                                 actionManager.tryToExecute(action, null, null, null, true)
                             }
@@ -222,20 +223,7 @@ class PluginTest {
                                 }
                                 robot.pressAndReleaseKey(KeyEvent.VK_ENTER)
                             }
-
-                            repeat(4) {
-                                robot.focus(firstEditorComponent)
-                                withContext(OnDispatcher.EDT, semantics = LockSemantics.READ_ACTION) {
-                                    actionManager.tryToExecute(action, null, null, null, true)
-                                }
-
-                                table(DIV_CLASS_SHOW_USAGES_TABLE).apply {
-                                    waitForIt(MESSAGE_SHOW_USAGES_TABLE_POPULATED, 1.minutes, 50.milliseconds) {
-                                        this.rowCount() > 0
-                                    }
-                                    robot.pressAndReleaseKey(KeyEvent.VK_ENTER)
-                                }
-                            }
+                        }
 
 //                            firstEditor.apply {
 //                                goToPosition(68, 22)
@@ -276,20 +264,20 @@ class PluginTest {
 //                                clickCell(showUsagesTableRowCount, 0)
 //                                showUsagesTableRowCount -= 1
 //                            }
-                        }
-                        Thread.sleep(30.minutes.inWholeMilliseconds)
-                        // event=wall,interval=100000ns,jstackdepth=36384,jfrsync=profile
+                    }
+                    Thread.sleep(30.minutes.inWholeMilliseconds)
+                    // event=wall,interval=100000ns,jstackdepth=36384,jfrsync=profile
 //                        val commands =
 //                            CommandChain().startProfile("indexing", "event=wall,interval=100000ns,jstackdepth=36384,jfrsync=profile").waitForSmartMode()
 //                                .stopProfile()
 //                        execute(commands)
 
-                    }
-                } finally {
-                    myCloseIdeAndWait(this, driver, 1.minutes)
                 }
-                return
+            } finally {
+                myCloseIdeAndWait(this, driver, 1.minutes)
             }
+            return
+        }
     }
 
     private inline fun myCloseIdeAndWait(backgroundRun: BackgroundRun, driver: Driver, closeIdeTimeout: Duration): IDEStartResult {
