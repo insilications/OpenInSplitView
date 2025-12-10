@@ -1146,35 +1146,20 @@ private inline fun UsageKind.toClassificationString(): String = when (this) {
 
 private fun TargetSymbolContext.toLogString(): String {
     val sb = StringBuilder(96708)
-
-    sb.appendLine("============ Target Symbol ============")
-    sb.appendLine("Target Symbol: ${declarationSlice.ktFqNameRelativeString ?: declarationSlice.name}")
-
-    if (files.isEmpty()) {
-        sb.appendLine("Files: <none>")
-    } else {
-        files.forEach { (path: String, refFile: ReferencedFile) ->
-            sb.appendLine("Source File: $path")
-            sb.appendLine()
-
+    if (!files.isEmpty()) {
+        val targetFile: ReferencedFile? = files[declarationSlice.psiFilePath]
+        if (targetFile != null) {
             // Collect all slices for this file (Types + Functions)
             val allSlices: List<DeclarationSlice> =
-                refFile.referencedTypes.map { it.declarationSlice } + refFile.referencedFunctions.map { it.declarationSlice }
+                targetFile.referencedTypes.map { it.declarationSlice } + targetFile.referencedFunctions.map { it.declarationSlice }
 
             val reconstructedContent: String = renderReconstructedFile(
-                refFile.packageDirective, refFile.importsList, allSlices
+                targetFile.packageDirective, targetFile.importsList, allSlices
             )
 
-            sb.appendLine(reconstructedContent)
-            sb.appendLine("----------------------------------------------------------------") // File separator
-            sb.appendLine()
+            sb.append(reconstructedContent)
         }
     }
-
-    if (referenceLimitReached) {
-        sb.appendLine("Reference limit reached; output truncated.")
-    }
-    sb.appendLine("==============================================================")
     return sb.toString()
 }
 
@@ -1249,22 +1234,19 @@ private fun renderReconstructedFile(
         for (i: Int in commonDepth until nextPath.size) {
             val node: StructureNode = nextPath[i]
             val indentation: String = "    ".repeat(i)
-//            sb.appendLine()
+            sb.appendLine()
             sb.appendLine("$indentation${node.signature} {")
             // Note: We don't print "..." immediately at start; only at end or between members
         }
 
         // 4. Print the symbol source code
         // We need to indent the entire source block to match the current nesting depth
-//        val contentIndentation: String = "    ".repeat(nextPath.size)
-//        val indentedSource: String = slice.sourceCode.prependIndent(contentIndentation)
-        val indentedSource: String = slice.sourceCode
-
+        val contentIndentation: String = "    ".repeat(nextPath.size)
+        val indentedSource: String = slice.sourceCode.prependIndent(contentIndentation)
         // Add a visual separator if this isn't the first item in a shared scope?
         // For now, just print the code.
-        sb.appendLine(indentedSource.trimStart { it == '\r' || it == '\n' })
-//        sb.appendLine(indentedSource)
-//        sb.append(indentedSource)
+        sb.appendLine(indentedSource)
+        sb.appendLine()
 
         // Update stack
         currentPath = nextPath
