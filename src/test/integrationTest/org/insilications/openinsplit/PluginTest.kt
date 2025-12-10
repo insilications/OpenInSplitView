@@ -191,7 +191,7 @@ class PluginTest {
                             actionManager.getAction(SYMBOLS_INFORMATION_ACTION)
                         } ?: return@ideFrame
 
-                        firstEditor.goToPosition(28, 8)
+                        firstEditor.goToPosition(24, 18)
                         withContext(OnDispatcher.EDT, semantics = LockSemantics.READ_ACTION) {
                             actionManager.tryToExecute(action, null, null, null, true)
                         }

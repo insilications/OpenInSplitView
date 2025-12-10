@@ -142,15 +142,21 @@ data class CaretLocation(
  * @property signature The declaration header text (e.g. "class MyClass : Base", "companion object").
  *                     This string is used to re-open the scope in the generated summary.
  * @property kind The kind of container ("class", "interface", "object", etc.).
+ * @property startLine The 0-based line number where this container begins (inclusive). Used for gap calculation.
+ * @property bodyStartLine The 0-based line number where the body of this container starts (e.g., after the opening brace).
+ *                         Used to track the last printed line when entering a new scope.
+ * @property endLine The 0-based line number where this container ends (inclusive). Used for gap calculation upon closing.
  */
 data class StructureNode(
-    val signature: String, val kind: String
+    val signature: String, val kind: String, val startLine: Int, val bodyStartLine: Int, val endLine: Int
 )
 
 /**
  * A comprehensive snapshot of a declaration, extracted during the **Information Extracted** phase.
  * Contains identity (FQN, names), location, the full source code text, and its structural ancestry.
  *
+ * @property startLine The 0-based line number where this declaration begins (inclusive).
+ * @property endLine The 0-based line number where this declaration ends (inclusive).
  * @property structurePath The list of parent containers (from outermost to immediate parent) required to
  *                         reach this declaration. Used by [renderReconstructedFile] to reconstruct the
  *                         file's nesting structure.
@@ -158,6 +164,8 @@ data class StructureNode(
 data class DeclarationSlice(
     val psiFilePath: String,
     val caretLocation: CaretLocation,
+    val startLine: Int,
+    val endLine: Int,
     val presentableText: String?,
     val name: String?,
     val ktFqNameRelativeString: String?,
@@ -1006,7 +1014,16 @@ private fun PsiElement.toDeclarationSlice(
 ): DeclarationSlice {
     val (sourceDeclaration: PsiElement, psiFile: PsiFile) = preferSourceDeclaration()
     val psiFilePath: String = psiFile.virtualFile.path
+
+    val document: Document? = PsiDocumentManager.getInstance(project).getDocument(psiFile) ?: psiFile.virtualFile?.let { virtualFile: VirtualFile ->
+        FileDocumentManager.getInstance().getDocument(virtualFile)
+    }
+
     val caretLocation: CaretLocation = resolveCaretLocation(project, psiFile, sourceDeclaration.textOffset)
+
+    val startLine: Int = document?.getLineNumber(sourceDeclaration.textRange.startOffset) ?: -1
+    val endLine: Int = document?.getLineNumber(sourceDeclaration.textRange.endOffset) ?: -1
+
     val kotlinFqName: FqName? = sourceDeclaration.kotlinFqName
     val packageName: String = (containingFile as? PsiClassOwner)?.packageName ?: ""
     val ktFqNameRelativeString: String? = computeRelativeFqName(kotlinFqName, FqName(packageName))
@@ -1020,12 +1037,14 @@ private fun PsiElement.toDeclarationSlice(
         "<!-- Source code not available (compiled/error: ${e.message}) -->"
     }
 
-    val structurePath: List<StructureNode> = sourceDeclaration.computeStructurePath()
+    val structurePath: List<StructureNode> = sourceDeclaration.computeStructurePath(document)
 
     // Pack every attribute that downstream tooling may need to reconstruct a declarative slice
     return DeclarationSlice(
         psiFilePath,
         caretLocation,
+        startLine,
+        endLine,
         presentableText,
         name,
         ktFqNameRelativeString,
@@ -1042,10 +1061,12 @@ private fun PsiElement.toDeclarationSlice(
  * It traverses up the PSI tree from the current element to the file root, collecting "Container" nodes
  * (Classes, Objects, Interfaces) along the way.
  *
+ * @param document The document corresponding to the file, used to resolve line numbers for gap calculation.
+ *                 Can be null if the document cannot be retrieved (e.g. for binary files), in which case line numbers default to -1.
  * @return A list of [StructureNode]s ordered from **Outermost** (root) to **Innermost** (immediate parent).
  *         This order is critical for the top-down reconstruction in [renderReconstructedFile].
  */
-private fun PsiElement.computeStructurePath(): List<StructureNode> {
+private fun PsiElement.computeStructurePath(document: Document?): List<StructureNode> {
     val path: MutableList<StructureNode> = mutableListOf<StructureNode>()
     var current: PsiElement? = this.parent
     while (current != null) {
@@ -1056,13 +1077,31 @@ private fun PsiElement.computeStructurePath(): List<StructureNode> {
             is KtClassOrObject -> {
                 val header: String = getContainerHeader(current)
                 val kind: String = if (current is KtObjectDeclaration) "object" else "class"
-                StructureNode(header, kind)
+                val startOffset: Int = current.textRange.startOffset
+                val bodyStartOffset: Int = current.body?.textRange?.startOffset ?: startOffset
+                val endOffset: Int = current.textRange.endOffset
+                StructureNode(
+                    header,
+                    kind,
+                    startLine = document?.getLineNumber(startOffset) ?: -1,
+                    bodyStartLine = document?.getLineNumber(bodyStartOffset) ?: -1,
+                    endLine = document?.getLineNumber(endOffset) ?: -1
+                )
             }
 
             is PsiClass -> {
                 val header: String = getContainerHeader(current)
                 val kind: String = if (current.isInterface) "interface" else "class"
-                StructureNode(header, kind)
+                val startOffset: Int = current.textRange.startOffset
+                val bodyStartOffset: Int = current.lBrace?.textRange?.startOffset ?: startOffset
+                val endOffset: Int = current.textRange.endOffset
+                StructureNode(
+                    header,
+                    kind,
+                    startLine = document?.getLineNumber(startOffset) ?: -1,
+                    bodyStartLine = document?.getLineNumber(bodyStartOffset) ?: -1,
+                    endLine = document?.getLineNumber(endOffset) ?: -1
+                )
             }
 
             else -> null
@@ -1217,6 +1256,11 @@ private fun TargetSymbolContext.toLogString(): String {
  * 4.  **Open Scopes:** We then open the new scopes required by the new path (`ClassB`) that weren't already open.
  * 5.  **Render:** Finally, we print the source code of the slice itself, indented to the correct depth.
  *
+ * **Gap Calculation:**
+ * The function tracks the `lastPrintedLine` to identify gaps between the end of one symbol (or scope) and the
+ * start of the next. If a gap is detected, it inserts a truncation marker (e.g., `// 13 lines truncated...`)
+ * instead of a generic `// ...`, providing the LLM with a sense of the missing code's volume.
+ *
  * @param packageDirective The package declaration of the file.
  * @param importsList The list of imports to include at the top.
  * @param slices The list of [DeclarationSlice]s to render.
@@ -1245,6 +1289,10 @@ private fun renderReconstructedFile(
     // We store the StructureNode to check equality
     var currentPath: List<StructureNode> = emptyList()
 
+    // Track the last line we printed (0-based)
+    // Initialize to -1 to indicate start of content
+    var lastPrintedLine = -1
+
     for (slice: DeclarationSlice in sortedSlices) {
         val nextPath: List<StructureNode> = slice.structurePath
 
@@ -1258,9 +1306,21 @@ private fun renderReconstructedFile(
         // 2. Close scopes that are no longer valid (from deep to shallow)
         // e.g. Current: [A, B], Next: [A, C]. Close B.
         for (i: Int in currentPath.lastIndex downTo commonDepth) {
+            val node: StructureNode = currentPath[i]
             val indentation: String = "    ".repeat(i)
-            sb.appendLine("$indentation    // ...")
+
+            // Check gap between lastPrintedLine and closing brace
+            if (lastPrintedLine != -1 && node.endLine != -1) {
+                val gap: Int = node.endLine - lastPrintedLine - 1
+                if (gap > 0) {
+                    sb.appendLine("$indentation    // $gap ${if (gap == 1) "line" else "lines"} truncated...")
+                }
+            } else {
+                sb.appendLine("$indentation    // ...")
+            }
+
             sb.appendLine("$indentation}")
+            lastPrintedLine = node.endLine
         }
 
         // 3. Open new scopes (from shallow to deep)
@@ -1268,17 +1328,41 @@ private fun renderReconstructedFile(
         for (i: Int in commonDepth until nextPath.size) {
             val node: StructureNode = nextPath[i]
             val indentation: String = "    ".repeat(i)
+
+            // Check gap between lastPrintedLine and start of this container
+            // Only check if we are not at the very beginning of the "symbol content"
+            // (i.e. ignore gap between imports and first class)
+            if (lastPrintedLine != -1 && node.startLine != -1) {
+                val gap: Int = node.startLine - lastPrintedLine - 1
+                if (gap > 0) {
+                    sb.appendLine("$indentation// $gap ${if (gap == 1) "line" else "lines"} truncated...")
+                }
+            }
+
             sb.appendLine("$indentation${node.signature} {")
-            // Note: We don't print "..." immediately at start; only at end or between members
+            // Update lastPrintedLine to where the body starts
+            lastPrintedLine = if (node.bodyStartLine != -1) node.bodyStartLine else lastPrintedLine
         }
 
         // 4. Print the symbol source code
         // We need to indent the entire source block to match the current nesting depth
         val contentIndentation: String = "    ".repeat(nextPath.size)
+
+        // Check gap between lastPrintedLine and start of slice
+        if (lastPrintedLine != -1 && slice.startLine != -1) {
+            val gap: Int = slice.startLine - lastPrintedLine - 1
+            if (gap > 0) {
+                sb.appendLine("$contentIndentation// $gap ${if (gap == 1) "line" else "lines"} truncated...")
+            }
+        }
+
         val indentedSource: String = slice.sourceCode.prependIndent(contentIndentation)
         // Add a visual separator if this isn't the first item in a shared scope?
         // For now, just print the code.
         sb.appendLine(indentedSource)
+
+        // Update lastPrintedLine
+        lastPrintedLine = if (slice.endLine != -1) slice.endLine else lastPrintedLine
 
         // Update stack
         currentPath = nextPath
@@ -1286,9 +1370,20 @@ private fun renderReconstructedFile(
 
     // 5. Close any remaining open scopes
     for (i: Int in currentPath.lastIndex downTo 0) {
+        val node: StructureNode = currentPath[i]
         val indentation: String = "    ".repeat(i)
-        sb.appendLine("$indentation    // ...")
+
+        if (lastPrintedLine != -1 && node.endLine != -1) {
+            val gap: Int = node.endLine - lastPrintedLine - 1
+            if (gap > 0) {
+                sb.appendLine("$indentation    // $gap ${if (gap == 1) "line" else "lines"} truncated...")
+            }
+        } else {
+            sb.appendLine("$indentation    // ...")
+        }
+
         sb.appendLine("$indentation}")
+        lastPrintedLine = node.endLine
     }
 
     return sb.toString()
