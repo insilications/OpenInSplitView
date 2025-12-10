@@ -1142,25 +1142,6 @@ private inline fun UsageKind.toClassificationString(): String = when (this) {
     UsageKind.EXTENSION_CALL -> "extension_call"
 }
 
-//private fun TargetSymbolContext.toLogString(): String {
-//    val sb = StringBuilder(96708)
-//    if (!files.isEmpty()) {
-//        val targetFile: ReferencedFile? = files[declarationSlice.psiFilePath]
-//        if (targetFile != null) {
-//            // Collect all slices for this file (Types + Functions)
-//            val allSlices: List<DeclarationSlice> =
-//                targetFile.referencedTypes.map { it.declarationSlice } + targetFile.referencedFunctions.map { it.declarationSlice }
-//
-//            val reconstructedContent: String = renderReconstructedFile(
-//                targetFile.packageDirective, targetFile.importsList, allSlices
-//            )
-//
-//            sb.append(reconstructedContent)
-//        }
-//    }
-//    return sb.toString()
-//}
-
 private fun TargetSymbolContext.toLogString(): String {
     val sb = StringBuilder(96708)
 
@@ -1259,7 +1240,6 @@ private fun renderReconstructedFile(
         for (i: Int in commonDepth until nextPath.size) {
             val node: StructureNode = nextPath[i]
             val indentation: String = "    ".repeat(i)
-            sb.appendLine()
             sb.appendLine("$indentation${node.signature} {")
             // Note: We don't print "..." immediately at start; only at end or between members
         }
@@ -1271,8 +1251,7 @@ private fun renderReconstructedFile(
         // Add a visual separator if this isn't the first item in a shared scope?
         // For now, just print the code.
         sb.appendLine(indentedSource)
-        sb.appendLine()
-
+        
         // Update stack
         currentPath = nextPath
     }
