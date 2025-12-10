@@ -93,10 +93,8 @@ class MyLinuxIdeDistribution : IdeDistribution() {
                     //                    override val errorDiagnosticFiles: List<Path> = listOf(xvfbRunLog)
                     override val workDir: Path = appHome
 
-                    //                    override val commandLine: List<String> = listOf(executablePath.toAbsolutePath().toString())
-//                    override val commandLine: List<String> = linuxCommandLine(xvfbRunLog, vmOptions) + executablePath.toAbsolutePath().toString()
+                    //                    override val commandLine: List<String> = linuxCommandLine(xvfbRunLog, vmOptions) + executablePath.toAbsolutePath().toString()
                     override val commandLine: List<String> = listOf(executablePath.toAbsolutePath().toString())
-
                     override val environmentVariables: Map<String, String>
                         get() = System.getenv().filterKeys {
                             // don't inherit these environment variables from parent process

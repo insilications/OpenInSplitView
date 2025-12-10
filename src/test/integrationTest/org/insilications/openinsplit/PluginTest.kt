@@ -210,7 +210,7 @@ class PluginTest {
         try {
             if (driver.isConnected) {
                 driver.exitApplication()
-                waitForIt("Driver is not connected", closeIdeTimeout, 3.seconds) { !driver.isConnected }
+                waitForIt("Driver is not connected", closeIdeTimeout, 1.seconds) { !driver.isConnected }
             } else {
                 error("Driver is not connected, so it can't exit IDE")
             }
@@ -223,7 +223,7 @@ class PluginTest {
                 if (driver.isConnected) {
                     driver.close()
                 }
-                waitForIt("Process is closed", closeIdeTimeout, 3.seconds) { !process.isAlive }
+                waitForIt("Process is closed", closeIdeTimeout, 1.seconds) { !process.isAlive }
             } catch (e: Throwable) {
                 logError("Error waiting IDE is closed: ${e.message}: ${e.stackTraceToString()}", e)
                 logOutput("Performing force kill")
