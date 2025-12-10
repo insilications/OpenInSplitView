@@ -94,8 +94,6 @@ class SymbolsInformationAction : DumbAwareAction() {
                 return@runWithModalProgressBlocking
             }
 
-            SYMBOL_USAGE_LOG.info("Analyzing...")
-
             // Step 2: Build the full context (references, types, etc.) for the found symbol.
             readAction {
                 buildSymbolContext(project, targetSymbol)
@@ -1144,21 +1142,48 @@ private inline fun UsageKind.toClassificationString(): String = when (this) {
     UsageKind.EXTENSION_CALL -> "extension_call"
 }
 
+//private fun TargetSymbolContext.toLogString(): String {
+//    val sb = StringBuilder(96708)
+//    if (!files.isEmpty()) {
+//        val targetFile: ReferencedFile? = files[declarationSlice.psiFilePath]
+//        if (targetFile != null) {
+//            // Collect all slices for this file (Types + Functions)
+//            val allSlices: List<DeclarationSlice> =
+//                targetFile.referencedTypes.map { it.declarationSlice } + targetFile.referencedFunctions.map { it.declarationSlice }
+//
+//            val reconstructedContent: String = renderReconstructedFile(
+//                targetFile.packageDirective, targetFile.importsList, allSlices
+//            )
+//
+//            sb.append(reconstructedContent)
+//        }
+//    }
+//    return sb.toString()
+//}
+
 private fun TargetSymbolContext.toLogString(): String {
     val sb = StringBuilder(96708)
+
     if (!files.isEmpty()) {
-        val targetFile: ReferencedFile? = files[declarationSlice.psiFilePath]
-        if (targetFile != null) {
+        files.forEach { (path: String, refFile: ReferencedFile) ->
+            sb.appendLine("Source File: $path")
+            sb.appendLine()
+
             // Collect all slices for this file (Types + Functions)
             val allSlices: List<DeclarationSlice> =
-                targetFile.referencedTypes.map { it.declarationSlice } + targetFile.referencedFunctions.map { it.declarationSlice }
+                refFile.referencedTypes.map { it.declarationSlice } + refFile.referencedFunctions.map { it.declarationSlice }
 
             val reconstructedContent: String = renderReconstructedFile(
-                targetFile.packageDirective, targetFile.importsList, allSlices
+                refFile.packageDirective, refFile.importsList, allSlices
             )
 
             sb.append(reconstructedContent)
+            sb.appendLine("----------------------------------------------------------------") // File separator
         }
+    }
+
+    if (referenceLimitReached) {
+        sb.appendLine("Reference limit reached; output truncated.")
     }
     return sb.toString()
 }
