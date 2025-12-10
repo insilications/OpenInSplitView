@@ -18,23 +18,17 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.platform.ide.progress.runWithModalProgressBlocking
 import com.intellij.psi.*
-import com.intellij.psi.util.PsiUtil
 import org.insilications.openinsplit.LogToFile
 import org.insilications.openinsplit.debug
 import org.jetbrains.kotlin.analysis.api.KaSession
 import org.jetbrains.kotlin.analysis.api.analyze
-import org.jetbrains.kotlin.analysis.api.resolution.*
-import org.jetbrains.kotlin.analysis.api.symbols.*
-import org.jetbrains.kotlin.analysis.api.types.KaClassType
 import org.jetbrains.kotlin.idea.base.psi.kotlinFqName
 import org.jetbrains.kotlin.idea.refactoring.project
-import org.jetbrains.kotlin.idea.references.KtReference
-import org.jetbrains.kotlin.idea.references.mainReference
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.tail
-import org.jetbrains.kotlin.psi.*
+import org.jetbrains.kotlin.psi.KtElement
+import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.psiUtil.getParentOfType
-import org.jetbrains.uast.UTypeReferenceExpression
 
 private val SYMBOL_USAGE_LOG: Logger = Logger.getInstance("org.insilications.openinsplit")
 
@@ -151,33 +145,6 @@ data class DeclarationSlice(
     val sourceCode: String,
 )
 
-/**
- * Represents a dependency found within the target symbol's AST.
- * Wraps the [DeclarationSlice] of the referenced symbol and the set of ways it was used.
- */
-data class ReferencedDeclaration(
-    val declarationSlice: DeclarationSlice, val usageKinds: Set<UsageKind>
-)
-
-/**
- * Groups collected referenced symbols by their defining source file.
- * This structure supports the "File-Based Grouping" strategy in the Data Aggregation layer,
- * ensuring all symbols are attributed to their *defining* file, not the file where they are used.
- *
- * @property referencedTypes Collected classes, interfaces, objects, and structural types.
- * @property referencedFunctions Collected function calls, constructor calls, and method references.
- */
-data class ReferencedFile(
-    val packageDirective: String?,
-    val importsList: List<String>,
-    val referencedTypes: List<ReferencedDeclaration>,
-    val referencedFunctions: List<ReferencedDeclaration>,
-)
-
-private data class ReferencedCollections(
-    val referencedFiles: LinkedHashMap<String, ReferencedFile>, val limitReached: Boolean
-)
-
 /* ============================= CONTEXT BUILDERS ============================= */
 
 private fun buildSymbolContext(
@@ -186,127 +153,6 @@ private fun buildSymbolContext(
     val targetSlice: DeclarationSlice = targetSymbol.toDeclarationSlice(project)
 
     LogToFile.info(targetSlice.toLogString())
-}
-
-// Helper extracted for readability: UAST type reference -> PsiClass when possible.
-private fun UTypeReferenceExpression.resolvePsiClass(): PsiElement? = type.let { PsiUtil.resolveClassInType(it) }
-
-private fun PsiElement.computeStableStorageKey(): String? {
-    val psiFile: PsiFile? = containingFile
-    val virtualFilePath: String? = psiFile?.virtualFile?.path
-    val offset: Int? = textRange?.startOffset?.takeIf { it >= 0 } ?: textOffset.takeIf { it >= 0 }
-    return when {
-        virtualFilePath != null && offset != null -> "$virtualFilePath@$offset"
-        virtualFilePath != null -> "$virtualFilePath@${hashCode()}"
-        this is KtDeclaration && kotlinFqName != null -> kotlinFqName?.asString()
-        else -> hashCode().toString()
-    }
-}
-
-private fun PsiElement.isSameDeclarationAs(other: PsiElement): Boolean {
-    if (this == other) return true
-    val thisNav: PsiElement = navigationElement ?: this
-    val otherNav: PsiElement = other.navigationElement ?: other
-    return thisNav == other || this == otherNav || thisNav == otherNav
-}
-
-// =================================================================================================
-// KOTLIN ANALYSIS API HELPERS
-//
-// The following functions bridge the gap between UAST/PSI and the Kotlin Analysis API (K2).
-// UAST is excellent for language-agnostic structural traversal, but it sometimes struggles to
-// resolve complex Kotlin constructs (like `typealias`, inferred types, or specific constructor calls)
-// to their underlying declaration.
-//
-// We use `analyze(element) { ... }` to enter the Analysis API context (`KaSession`).
-// Within this session, we can access semantic information like symbols (`KaSymbol`), types (`KaType`),
-// and call resolution results (`KaCall`).
-// =================================================================================================
-
-/**
- * Attempts to resolve a Kotlin reference to its target referenced declarations using the Analysis API
- */
-private fun resolveReferenceWithAnalysis(element: PsiElement): List<PsiElement?>? {
-    val ktReferenceExpr: KtReferenceExpression = element as? KtReferenceExpression ?: return null
-    return ktReferenceExpr.runAnalysisSafely {
-
-        // Resolve K2 references
-        val k2References: Array<PsiReference> = ktReferenceExpr.references
-
-        val kaSymbols: List<KaSymbol> = buildList {
-            for (psiRef: PsiReference in k2References) {
-                val k2Ref: KtReference = psiRef as? KtReference ?: continue
-                addAll(runCatching<MutableList<KaSymbol>, Collection<KaSymbol>> { k2Ref.resolveToSymbols() }.getOrElse { emptyList() })
-            }
-        }
-        if (kaSymbols.isEmpty()) return@runAnalysisSafely null
-        return@runAnalysisSafely kaSymbols.map { it.psi }
-    }
-}
-
-/**
- * A more specialized resolver for classifiers (classes, interfaces, objects) and types using the **K2 Analysis API**.
- *
- * **Why is this needed?**
- * UAST is often unable to resolve complex Kotlin constructs to their canonical declarations.
- * This function addresses specific limitations:
- * 1.  **Type Aliases:** UAST might return the alias itself; we use `expandedSymbol` to find the underlying class.
- * 2.  **Class Literals:** UAST sees `KClass<T>`; we need to unwrap `T`.
- * 3.  **Constructors:** UAST might not link the constructor call back to the containing class reliably in all cases.
- */
-private fun resolveClassifierWithAnalysis(element: PsiElement): PsiElement? {
-    val ktElement: KtElement = element as? KtElement ?: return null
-    return ktElement.runAnalysisSafely {
-        // `KaSession` Context
-        when (ktElement) {
-            // Case 1: Type References (e.g., `val x: MyType`)
-            is KtTypeReference -> {
-                // `expandedSymbol` follows type aliases to the final class symbol.
-                ktElement.type.expandedSymbol?.psi
-            }
-
-            // Case 2: Function/Constructor Calls (e.g., `MyClass()`)
-            is KtCallExpression -> {
-                // `resolveToCall()` returns a `KaCallInfo`. We check if it's a successful function call.
-                val callInfo: KaCallInfo? = ktElement.resolveToCall()
-                val symbol: KaFunctionSymbol? = callInfo?.successfulFunctionCallOrNull()?.symbol ?: callInfo?.successfulConstructorCallOrNull()?.symbol
-
-                // If it's a constructor call, we want the class (containing symbol), not the constructor function itself.
-                if (symbol is KaConstructorSymbol) {
-                    symbol.containingSymbol?.psi
-                } else null
-            }
-
-            // Case 3: Class Literals (e.g., `MyClass::class`)
-            is KtClassLiteralExpression -> {
-                val type: KaClassType? = ktElement.expressionType as? KaClassType
-                // We unwrap the `KClass<T>` to get `T`, then find its expanded symbol.
-                type?.typeArguments?.firstOrNull()?.type?.expandedSymbol?.psi
-            }
-
-            // Case 4: Super Types (e.g., `class A : B()`)
-            is KtSuperExpression -> {
-                ktElement.superTypeQualifier?.type?.expandedSymbol?.psi
-            }
-
-            // Case 5: Simple Name References (e.g., `MyClass.SOME_CONSTANT`)
-            is KtNameReferenceExpression -> {
-                val symbol: KaSymbol? = ktElement.mainReference.resolveToSymbol()
-                // We only care if it resolves to a Class or TypeAlias.
-                if (symbol is KaClassSymbol || symbol is KaTypeAliasSymbol) symbol.psi else null
-            }
-
-            // Case 6: Annotations (e.g., `@MyAnnotation`)
-            is KtAnnotationEntry -> {
-                // Annotations are constructor calls.
-                val callInfo: KaCallInfo? = ktElement.resolveToCall()
-                val symbol: KaConstructorSymbol? = callInfo?.successfulConstructorCallOrNull()?.symbol ?: callInfo?.singleConstructorCallOrNull()?.symbol
-                symbol?.containingSymbol?.psi
-            }
-
-            else -> null
-        }
-    }
 }
 
 /**
