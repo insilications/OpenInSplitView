@@ -18,7 +18,7 @@ object LogToFile {
         val logPath: Path = Path.of(PathManager.getLogPath()).resolve("symbols.log")
 
         handler = RollingFileHandler(
-            logPath = logPath, limit = Long.MAX_VALUE, count = 1, append = false
+            logPath = logPath, limit = Long.MAX_VALUE, count = 1, append = true
         )
 
         // Custom formatter that outputs only the message

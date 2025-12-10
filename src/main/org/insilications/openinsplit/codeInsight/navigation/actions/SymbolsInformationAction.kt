@@ -491,7 +491,7 @@ private class SymbolUsageCollector(
             node.returnType?.let { PsiUtil.resolveClassInType(it) } ?: node.returnTypeReference?.resolvePsiClass()
         }
 
-        // **Implicit Type Filter:**
+        // **Implicit Type Filter**
         // Explicitly filter out implicit `kotlin.Unit` return types.
         // This significantly reduces noise in the collected data, as `Unit` is ubiquitous, often inferred,
         // and rarely provides semantic value for this type of analysis.
@@ -658,9 +658,23 @@ private class SymbolUsageCollector(
     override fun visitSimpleNameReferenceExpression(node: USimpleNameReferenceExpression): Boolean {
         if (shouldStopTraversal()) return true
 
-        // Avoid double counting calls (which are handled in visitCallExpression)
-        if (node.uastParent is UCallExpression) {
-            return super.visitSimpleNameReferenceExpression(node)
+        // Avoid double counting calls (which are handled in visitCallExpression).
+        // However, we MUST process arguments (and receivers) passed to the call.
+        //
+        // **Refined Guard Clause:**
+        // Previously, we blindly skipped any node whose parent was a `UCallExpression`. This incorrectly
+        // ignored arguments passed to the function (e.g., `println(MY_DATA)`), as `MY_DATA` is also a child
+        // of the call expression.
+        //
+        // Now, we strictly check if the node is the **method identifier** (the function name) or the
+        // **class reference** (for constructors). If so, we skip it because `visitCallExpression` handles
+        // the call semantics. Everything else (arguments, receivers) falls through to be processed as
+        // a standard reference.
+        val parent: UElement? = node.uastParent
+        if (parent is UCallExpression) {
+            if (node == parent.methodIdentifier || node == parent.classReference) {
+                return super.visitSimpleNameReferenceExpression(node)
+            }
         }
 
         val sourcePsi: PsiElement? = node.sourcePsi
@@ -688,7 +702,14 @@ private class SymbolUsageCollector(
                     val typeClass: PsiElement? = element.runAnalysisSafely {
                         element.symbol.returnType.expandedSymbol?.psi
                     }
-                    recordType(typeClass, UsageKind.TYPE_REFERENCE)
+                    // **Kotlin Standard Library Filter**
+                    // We want to explicitly filter out simple types from the Kotlin Standard Library such as `kotlin.String`
+                    // This significantly reduces noise in the collected data, as some types are ubiquitous, often inferred,
+                    // and rarely provides semantic value for this type of analysis.
+                    val isKotlinStd: Boolean = typeClass?.kotlinFqName?.asString() == "kotlin.String"
+                    if (!isKotlinStd) {
+                        recordType(typeClass, UsageKind.TYPE_REFERENCE)
+                    }
                     val kind: UsageKind = if (isLValue(node)) UsageKind.PROPERTY_ACCESS_SET else UsageKind.PROPERTY_ACCESS_GET
                     recordFunction(element, kind)
                 }
@@ -698,7 +719,14 @@ private class SymbolUsageCollector(
                         val typeClass: PsiElement? = element.runAnalysisSafely {
                             element.symbol.returnType.expandedSymbol?.psi
                         }
-                        recordType(typeClass, UsageKind.TYPE_REFERENCE)
+                        // **Kotlin Standard Library Filter**
+                        // We want to explicitly filter out simple types from the Kotlin Standard Library such as `kotlin.String`
+                        // This significantly reduces noise in the collected data, as some types are ubiquitous, often inferred,
+                        // and rarely provides semantic value for this type of analysis.
+                        val isKotlinStd: Boolean = typeClass?.kotlinFqName?.asString() == "kotlin.String"
+                        if (!isKotlinStd) {
+                            recordType(typeClass, UsageKind.TYPE_REFERENCE)
+                        }
                         val kind: UsageKind = if (isLValue(node)) UsageKind.PROPERTY_ACCESS_SET else UsageKind.PROPERTY_ACCESS_GET
                         recordFunction(element, kind)
                     }
@@ -1251,7 +1279,7 @@ private fun renderReconstructedFile(
         // Add a visual separator if this isn't the first item in a shared scope?
         // For now, just print the code.
         sb.appendLine(indentedSource)
-        
+
         // Update stack
         currentPath = nextPath
     }
