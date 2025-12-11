@@ -1,0 +1,12 @@
+.github/
+.gradle/
+.idea/
+.intellijPlatform/
+.kotlin/
+allure-results/
+assets/
+build/
+intellij-community/
+kotlin-src/
+out/
+sandbox-config/
