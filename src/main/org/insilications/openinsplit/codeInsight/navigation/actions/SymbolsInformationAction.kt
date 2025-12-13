@@ -12,6 +12,7 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.Document
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.fileEditor.impl.LoadTextUtil
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.project.Project
@@ -44,6 +45,16 @@ private val SYMBOL_USAGE_LOG: Logger = Logger.getInstance("org.insilications.ope
  *
  * It is marked as `DumbAware` so it can be invoked even during indexing, although the core logic
  * checks `DumbService` to avoid expensive or inaccurate resolution when indices are incomplete.
+ *
+ * ## Output contract (important for LLM context)
+ * The resulting log is a set of **reconstructed source files** (target + referenced declarations) where:
+ * - All emitted code fragments are **verbatim slices** of the original file text (whitespace/newlines preserved).
+ * - Missing regions are replaced with precise `// N lines truncated...` markers whose line counts are computed from
+ *   the original file text (no approximation), including for library/jar sources.
+ *
+ * ## Responsiveness / correctness constraints
+ * The reconstruction is offset-driven: slices store PSI offsets, and rendering splices text from a file snapshot.
+ * For offsets to be meaningful, PSI must be committed to the current document text before extraction.
  */
 class SymbolsInformationAction : DumbAwareAction() {
     companion object {
@@ -78,6 +89,11 @@ class SymbolsInformationAction : DumbAwareAction() {
                 return@runWithModalProgressBlocking
             }
 
+            // Offsets are only meaningful if PSI and document text are aligned.
+            // We later splice code verbatim from the file text using these offsets, so "uncommitted PSI" would break
+            // both formatting fidelity and truncation accuracy.
+            PsiDocumentManager.getInstance(project).commitAllDocumentsUnderProgress()
+
             // Step 1: Find the target element (symbol) at the caret.
             // We do this in a `readAction` because it accesses the PSI/AST.
             // We do NOT use the Analysis API yet; `TargetElementUtil` is sufficient for finding the declaration.
@@ -94,9 +110,13 @@ class SymbolsInformationAction : DumbAwareAction() {
                 return@runWithModalProgressBlocking
             }
 
-            // Step 2: Build the full context (references, types, etc.) for the found symbol.
+            // Step 2: Build the full context model (references, types, etc.) for the found symbol.
+            // The model contains only offsets + metadata; it does not capture any formatted source strings.
             readAction {
-                buildSymbolContext(project, targetSymbol)
+                val targetContext: TargetSymbolContext? = buildSymbolContext(project, targetSymbol)
+                if (targetContext != null) {
+                    LogToFile.info(targetContext.toLogString())
+                }
             }
         }
     }
@@ -131,6 +151,14 @@ enum class SymbolKind {
     CLASS
 }
 
+/**
+ * Legacy caret location structure.
+ *
+ * The current reconstruction pipeline is offset-based (see [DeclarationSlice] / [StructureNode]) and renders from
+ * [FileTextSnapshot], so line/column is no longer required for correctness.
+ *
+ * Kept for potential future UI/debug output, but not used by the current renderer.
+ */
 data class CaretLocation(
     val offset: Int, val line: Int, val column: Int
 )
@@ -139,39 +167,56 @@ data class CaretLocation(
  * Represents a container in the declaration's hierarchy (e.g. a Class, Interface, or Object).
  * Used during the "Tree Merger" reconstruction phase to recreate the nesting structure of the original file.
  *
- * @property signature The declaration header text (e.g. "class MyClass : Base", "companion object").
- *                     This string is used to re-open the scope in the generated summary.
- * @property kind The kind of container ("class", "interface", "object", etc.).
- * @property startLine The 0-based line number where this container begins (inclusive). Used for gap calculation.
- * @property bodyStartLine The 0-based line number where the body of this container starts (e.g., after the opening brace).
- *                         Used to track the last printed line when entering a new scope.
- * @property endLine The 0-based line number where this container ends (inclusive). Used for gap calculation upon closing.
+ * **Why offsets, not strings?**
+ * Earlier versions reconstructed container headers like `class Foo {` by extracting and trimming text and then re-printing
+ * it with synthetic whitespace/indentation. That is fast to implement, but it changes formatting.
+ *
+ * This node stores only offsets so the renderer can splice **verbatim segments** from a file snapshot, guaranteeing that
+ * whitespace/newlines in the emitted code match the original source exactly.
+ *
+ * @property kind The kind of container ("class", "interface", "object", etc.). Used only for debugging/diagnostics.
+ * @property startOffset The start offset of the container declaration (inclusive).
+ * @property endOffset The end offset of the container declaration (exclusive).
+ * @property lBraceOffset The offset of the opening `{` (inclusive), or -1 if missing.
+ * @property lBraceEndOffset The end offset of the opening `{` token (exclusive), or -1 if missing.
+ * @property rBraceOffset The offset of the closing `}` (inclusive), or -1 if missing.
+ * @property rBraceEndOffset The end offset of the closing `}` token (exclusive), or -1 if missing.
  */
 data class StructureNode(
-    val signature: String, val kind: String, val startLine: Int, val bodyStartLine: Int, val endLine: Int
+    val kind: String,
+    val startOffset: Int,
+    val endOffset: Int,
+    val lBraceOffset: Int,
+    val lBraceEndOffset: Int,
+    val rBraceOffset: Int,
+    val rBraceEndOffset: Int,
 )
 
 /**
  * A comprehensive snapshot of a declaration, extracted during the **Information Extracted** phase.
- * Contains identity (FQN, names), location, the full source code text, and its structural ancestry.
+ * Contains identity (FQN, names), location, and its structural ancestry.
  *
- * @property startLine The 0-based line number where this declaration begins (inclusive).
- * @property endLine The 0-based line number where this declaration ends (inclusive).
+ * **Important:** To guarantee that rendered output preserves whitespace and newlines *exactly*, the slice stores only
+ * offsets into the source file.
+ *
+ * The renderer later splices the exact character range from a [FileTextSnapshot] created for the file. This makes the
+ * output stable (no reformatting) and enables exact truncation markers for library/jar sources.
+ *
+ * @property declStartOffset The start offset of the declaration (inclusive).
+ * @property declEndOffset The end offset of the declaration (exclusive).
  * @property structurePath The list of parent containers (from outermost to immediate parent) required to
  *                         reach this declaration. Used by [renderReconstructedFile] to reconstruct the
  *                         file's nesting structure.
  */
 data class DeclarationSlice(
     val psiFilePath: String,
-    val caretLocation: CaretLocation,
-    val startLine: Int,
-    val endLine: Int,
+    val declStartOffset: Int,
+    val declEndOffset: Int,
     val presentableText: String?,
     val name: String?,
     val ktFqNameRelativeString: String?,
     val fqNameTypeString: String,
     val kotlinFqNameString: String?,
-    val sourceCode: String,
     val structurePath: List<StructureNode>
 )
 
@@ -188,12 +233,18 @@ data class ReferencedDeclaration(
  * This structure supports the "File-Based Grouping" strategy in the Data Aggregation layer,
  * ensuring all symbols are attributed to their *defining* file, not the file where they are used.
  *
+ * **Important:** We store the [VirtualFile] plus a [headerEndOffset] instead of storing a reconstructed `package` /
+ * `import` list. During rendering we splice the header **verbatim** from the file text so whitespace and line breaks are
+ * identical to the original source.
+ *
+ * @property virtualFile The file that owns the collected declarations (works for project files and library/jar sources).
+ * @property headerEndOffset End offset (exclusive) of the header section (package/imports/file annotations).
  * @property referencedTypes Collected classes, interfaces, objects, and structural types.
  * @property referencedFunctions Collected function calls, constructor calls, and method references.
  */
 data class ReferencedFile(
-    val packageDirective: String?,
-    val importsList: List<String>,
+    val virtualFile: VirtualFile,
+    val headerEndOffset: Int,
     val referencedTypes: List<ReferencedDeclaration>,
     val referencedFunctions: List<ReferencedDeclaration>,
 )
@@ -201,7 +252,11 @@ data class ReferencedFile(
 /**
  * The root container for all extracted information about the target symbol.
  *
- * @property declarationSlice The comprehensive snapshot of the target symbol itself (Identity, Location, Context, Content).
+ * This is intentionally a "thin" model:
+ * - PSI resolution happens during collection.
+ * - Rendering happens later from file text snapshots, using offsets recorded in slices.
+ *
+ * @property declarationSlice Snapshot of the target declaration (identity + offsets + structure path).
  * @property files A map of all files (target + referenced) involved in the context, preserving insertion order.
  */
 data class TargetSymbolContext(
@@ -216,18 +271,22 @@ private data class ReferencedCollections(
 
 /**
  * Orchestrates the gathering of information for the target symbol.
- * It determines the symbol kind, converts the target to a slice, and triggers the recursive reference collection.
+ *
+ * It determines the symbol kind, converts the target to an offset-based slice, and triggers reference collection.
+ *
+ * **Design note:** This function returns a pure data model (offsets + metadata) and does not build formatted source
+ * strings. This keeps the PSI read section focused on analysis and enables exact, verbatim rendering later.
  */
 private fun buildSymbolContext(
     project: Project, targetSymbol: PsiElement, maxRefs: Int = 5000
-) {
+): TargetSymbolContext? {
     // Determine if we are looking at a Function or a Class to decide the scope of traversal.
     val symbolKind: SymbolKind = targetSymbol.detectSymbolKind() ?: run {
         SYMBOL_USAGE_LOG.warn("Unsupported target symbol: ${targetSymbol::class.qualifiedName}")
-        return
+        return null
     }
 
-    val targetSlice: DeclarationSlice = targetSymbol.toDeclarationSlice(project)
+    val targetSlice: DeclarationSlice = targetSymbol.toDeclarationSlice()
 
     // Collect references (types, calls, etc.) used WITHIN the target symbol's scope.
     val referencedCollections: ReferencedCollections = collectReferencedDeclarations(project, targetSymbol, symbolKind, maxRefs)
@@ -244,16 +303,17 @@ private fun buildSymbolContext(
 
     val targetFileEntry: ReferencedFile = if (existingTargetFile != null) {
         ReferencedFile(
-            packageDirective = existingTargetFile.packageDirective,
-            importsList = existingTargetFile.importsList,
+            virtualFile = existingTargetFile.virtualFile,
+            headerEndOffset = existingTargetFile.headerEndOffset,
             referencedTypes = if (isTargetType) existingTargetFile.referencedTypes + targetRefDecl else existingTargetFile.referencedTypes,
             referencedFunctions = if (!isTargetType) existingTargetFile.referencedFunctions + targetRefDecl else existingTargetFile.referencedFunctions
         )
     } else {
         val targetPsiFile: PsiFile = targetSymbol.containingFile
+        val targetVirtualFile: VirtualFile = targetPsiFile.virtualFile ?: return null
         ReferencedFile(
-            packageDirective = getPackageDirective(targetPsiFile),
-            importsList = getImportsList(targetPsiFile),
+            virtualFile = targetVirtualFile,
+            headerEndOffset = computeHeaderEndOffset(targetPsiFile),
             referencedTypes = if (isTargetType) listOf(targetRefDecl) else emptyList(),
             referencedFunctions = if (!isTargetType) listOf(targetRefDecl) else emptyList()
         )
@@ -272,7 +332,7 @@ private fun buildSymbolContext(
     val targetContext = TargetSymbolContext(
         declarationSlice = targetSlice, symbolKind = symbolKind, files = mergedFiles, referenceLimitReached = referencedCollections.limitReached
     )
-    LogToFile.info(targetContext.toLogString())
+    return targetContext
 }
 
 /**
@@ -404,7 +464,7 @@ private class SymbolUsageCollector(
                 val path: String = psiFile.virtualFile?.path ?: continue
 
                 val builder: FileBuilder = fileMap.getOrPut(path) { FileBuilder(psiFile) }
-                val declaration: ReferencedDeclaration = usage.toReferencedDeclaration(project, element)
+                val declaration: ReferencedDeclaration = usage.toReferencedDeclaration(element)
 
                 if (isType) builder.types.add(declaration) else builder.functions.add(declaration)
             }
@@ -415,11 +475,11 @@ private class SymbolUsageCollector(
 
         val referencedFiles = LinkedHashMap<String, ReferencedFile>()
         for ((path: String, builder: FileBuilder) in fileMap) {
+            val virtualFile: VirtualFile = builder.psiFile.virtualFile ?: continue
             referencedFiles[path] = ReferencedFile(
-                packageDirective = getPackageDirective(builder.psiFile),
-                importsList = getImportsList(builder.psiFile),
-                referencedTypes = builder.types,
-                referencedFunctions = builder.functions
+                virtualFile = virtualFile,
+                // Used by the renderer to splice the header (package/imports/etc.) verbatim, preserving formatting.
+                headerEndOffset = computeHeaderEndOffset(builder.psiFile), referencedTypes = builder.types, referencedFunctions = builder.functions
             )
         }
 
@@ -427,9 +487,9 @@ private class SymbolUsageCollector(
     }
 
     // Re-hydrate a `CollectedUsage` into the serializable payload.
-    private fun CollectedUsage.toReferencedDeclaration(project: Project, element: PsiElement): ReferencedDeclaration {
+    private fun CollectedUsage.toReferencedDeclaration(element: PsiElement): ReferencedDeclaration {
         return ReferencedDeclaration(
-            declarationSlice = element.toDeclarationSlice(project), usageKinds = usageKinds.toSet()
+            declarationSlice = element.toDeclarationSlice(), usageKinds = usageKinds.toSet()
         )
     }
 
@@ -983,46 +1043,44 @@ private inline fun PsiElement.preferSourceDeclaration(): Pair<PsiElement, PsiFil
     return this to this.containingFile
 }
 
-inline fun getImportsList(file: PsiFile): List<String> {
+/**
+ * Computes the end offset (exclusive) of the "header section" of a file:
+ * - Kotlin: file annotations + package directive + import directives (whichever extends farthest)
+ * - Java: package statement + import statements
+ *
+ * The renderer uses this offset to splice the header **verbatim** from [FileTextSnapshot.text]. We intentionally
+ * do not include any trailing whitespace here; the renderer will emit whitespace-only gaps as-is.
+ */
+private fun computeHeaderEndOffset(file: PsiFile): Int {
     return when (file) {
-        // Handle Java files
-        is PsiJavaFile -> file.importList?.allImportStatements?.map { it.text } ?: emptyList()
+        is PsiJavaFile -> {
+            val imports = file.importList?.allImportStatements.orEmpty()
+            when {
+                imports.isNotEmpty() -> imports.last().textRange.endOffset
+                file.packageStatement != null -> file.packageStatement?.textRange?.endOffset ?: 0
+                else -> 0
+            }
+        }
 
-        // Handle Kotlin files
-        is KtFile -> file.importList?.imports?.map { it.text } ?: emptyList()
+        is KtFile -> {
+            val imports = file.importDirectives
+            when {
+                imports.isNotEmpty() -> imports.last().textRange.endOffset
+                file.packageDirective != null -> file.packageDirective?.textRange?.endOffset ?: 0
+                file.fileAnnotationList != null -> file.fileAnnotationList?.textRange?.endOffset ?: 0
+                else -> 0
+            }
+        }
 
-        // Handle other file types or if the cast fails
-        else -> emptyList()
+        else -> 0
     }
 }
 
-inline fun getPackageDirective(file: PsiFile): String? {
-    return when (file) {
-        // Handle Java files
-        is PsiJavaFile -> file.packageStatement?.text
-
-        // Handle Kotlin files
-        is KtFile -> file.packageDirective?.text
-
-        // Handle other file types or if the cast fails
-        else -> null
-    }
-}
-
-private fun PsiElement.toDeclarationSlice(
-    project: Project
-): DeclarationSlice {
+private fun PsiElement.toDeclarationSlice(): DeclarationSlice {
     val (sourceDeclaration: PsiElement, psiFile: PsiFile) = preferSourceDeclaration()
-    val psiFilePath: String = psiFile.virtualFile.path
-
-    val document: Document? = PsiDocumentManager.getInstance(project).getDocument(psiFile) ?: psiFile.virtualFile?.let { virtualFile: VirtualFile ->
-        FileDocumentManager.getInstance().getDocument(virtualFile)
-    }
-
-    val caretLocation: CaretLocation = resolveCaretLocation(project, psiFile, sourceDeclaration.textOffset)
-
-    val startLine: Int = document?.getLineNumber(sourceDeclaration.textRange.startOffset) ?: -1
-    val endLine: Int = document?.getLineNumber(sourceDeclaration.textRange.endOffset) ?: -1
+    val psiFilePath: String = psiFile.virtualFile?.path ?: "<unknown>"
+    val declStartOffset: Int = sourceDeclaration.textRange.startOffset
+    val declEndOffset: Int = sourceDeclaration.textRange.endOffset
 
     val kotlinFqName: FqName? = sourceDeclaration.kotlinFqName
     val packageName: String = (containingFile as? PsiClassOwner)?.packageName ?: ""
@@ -1030,27 +1088,18 @@ private fun PsiElement.toDeclarationSlice(
     val presentableText: String? = sourceDeclaration.computePresentableText()
     val name: String? = sourceDeclaration.computeName()
     val fqNameTypeString: String = sourceDeclaration::class.qualifiedName ?: sourceDeclaration.javaClass.name
-
-    val sourceCode: String = try {
-        sourceDeclaration.text ?: "<!-- Source code not available (text is null) -->"
-    } catch (e: Exception) {
-        "<!-- Source code not available (compiled/error: ${e.message}) -->"
-    }
-
-    val structurePath: List<StructureNode> = sourceDeclaration.computeStructurePath(document)
+    val structurePath: List<StructureNode> = sourceDeclaration.computeStructurePath()
 
     // Pack every attribute that downstream tooling may need to reconstruct a declarative slice
     return DeclarationSlice(
         psiFilePath,
-        caretLocation,
-        startLine,
-        endLine,
+        declStartOffset,
+        declEndOffset,
         presentableText,
         name,
         ktFqNameRelativeString,
         fqNameTypeString,
         kotlinFqNameString = kotlinFqName?.asString(),
-        sourceCode = sourceCode,
         structurePath = structurePath
     )
 }
@@ -1061,12 +1110,14 @@ private fun PsiElement.toDeclarationSlice(
  * It traverses up the PSI tree from the current element to the file root, collecting "Container" nodes
  * (Classes, Objects, Interfaces) along the way.
  *
- * @param document The document corresponding to the file, used to resolve line numbers for gap calculation.
- *                 Can be null if the document cannot be retrieved (e.g. for binary files), in which case line numbers default to -1.
+ * **Why brace offsets?**
+ * During reconstruction we do not print synthetic `class Foo {` / `}` tokens. Instead, we splice the exact segments
+ * around braces from the original file text. This requires stable offsets for `{` and `}` in both Kotlin and Java PSI.
+ *
  * @return A list of [StructureNode]s ordered from **Outermost** (root) to **Innermost** (immediate parent).
  *         This order is critical for the top-down reconstruction in [renderReconstructedFile].
  */
-private fun PsiElement.computeStructurePath(document: Document?): List<StructureNode> {
+private fun PsiElement.computeStructurePath(): List<StructureNode> {
     val path: MutableList<StructureNode> = mutableListOf<StructureNode>()
     var current: PsiElement? = this.parent
     while (current != null) {
@@ -1075,32 +1126,36 @@ private fun PsiElement.computeStructurePath(document: Document?): List<Structure
 
         val node: StructureNode? = when (current) {
             is KtClassOrObject -> {
-                val header: String = getContainerHeader(current)
                 val kind: String = if (current is KtObjectDeclaration) "object" else "class"
                 val startOffset: Int = current.textRange.startOffset
-                val bodyStartOffset: Int = current.body?.textRange?.startOffset ?: startOffset
                 val endOffset: Int = current.textRange.endOffset
+                val lBrace: PsiElement? = current.body?.lBrace
+                val rBrace: PsiElement? = current.body?.rBrace
                 StructureNode(
-                    header,
                     kind,
-                    startLine = document?.getLineNumber(startOffset) ?: -1,
-                    bodyStartLine = document?.getLineNumber(bodyStartOffset) ?: -1,
-                    endLine = document?.getLineNumber(endOffset) ?: -1
+                    startOffset = startOffset,
+                    endOffset = endOffset,
+                    lBraceOffset = lBrace?.textRange?.startOffset ?: -1,
+                    lBraceEndOffset = lBrace?.textRange?.endOffset ?: -1,
+                    rBraceOffset = rBrace?.textRange?.startOffset ?: -1,
+                    rBraceEndOffset = rBrace?.textRange?.endOffset ?: -1,
                 )
             }
 
             is PsiClass -> {
-                val header: String = getContainerHeader(current)
                 val kind: String = if (current.isInterface) "interface" else "class"
                 val startOffset: Int = current.textRange.startOffset
-                val bodyStartOffset: Int = current.lBrace?.textRange?.startOffset ?: startOffset
                 val endOffset: Int = current.textRange.endOffset
+                val lBrace: PsiElement? = current.lBrace
+                val rBrace: PsiElement? = current.rBrace
                 StructureNode(
-                    header,
                     kind,
-                    startLine = document?.getLineNumber(startOffset) ?: -1,
-                    bodyStartLine = document?.getLineNumber(bodyStartOffset) ?: -1,
-                    endLine = document?.getLineNumber(endOffset) ?: -1
+                    startOffset = startOffset,
+                    endOffset = endOffset,
+                    lBraceOffset = lBrace?.textRange?.startOffset ?: -1,
+                    lBraceEndOffset = lBrace?.textRange?.endOffset ?: -1,
+                    rBraceOffset = rBrace?.textRange?.startOffset ?: -1,
+                    rBraceEndOffset = rBrace?.textRange?.endOffset ?: -1,
                 )
             }
 
@@ -1114,32 +1169,6 @@ private fun PsiElement.computeStructurePath(document: Document?): List<Structure
     }
     // We traversed Inside -> Out (Parent -> Grandparent), so reverse to get Out -> In order (Grandparent -> Parent)
     return path.reversed()
-}
-
-/**
- * Extracts the "Header" or "Signature" of a container element.
- *
- * The header is defined as the text of the declaration **up to** the opening brace of its body.
- * - Example: `class MyClass : Base { ... }` -> `class MyClass : Base`
- * - Example: `companion object { ... }` -> `companion object`
- *
- * This allows us to reconstruct the container's shell without including its original content.
- */
-private fun getContainerHeader(element: PsiElement): String {
-    val text: String = element.text
-    val bodyStartOffset: Int = when (element) {
-        is KtClassOrObject -> element.body?.startOffsetInParent ?: -1
-        is PsiClass -> element.lBrace?.startOffsetInParent ?: -1
-        else -> -1
-    }
-
-    return if (bodyStartOffset > 0) {
-        text.substring(0, bodyStartOffset).trim()
-    } else {
-        // Fallback for cases without a body (e.g. abstract methods, interfaces without braces, or parsing errors)
-        // We take everything before the first '{'
-        text.substringBefore('{').trim()
-    }
 }
 
 /**
@@ -1209,11 +1238,124 @@ private inline fun UsageKind.toClassificationString(): String = when (this) {
     UsageKind.EXTENSION_CALL -> "extension_call"
 }
 
+/**
+ * Immutable file text snapshot plus a newline index.
+ *
+ * ## Why this exists
+ * Rendering requires two strict guarantees:
+ * 1. Every emitted code fragment must be a verbatim slice of the original file text (whitespace/newlines preserved).
+ * 2. Truncation markers must have exact line counts, including for library/jar sources.
+ *
+ * This snapshot provides a stable [text] buffer and an index of newline offsets so we can:
+ * - splice exact `[startOffset, endOffset)` ranges without reformatting
+ * - compute "N lines truncated" exactly from offsets (no approximation)
+ *
+ * ## Snapshot source (hybrid)
+ * - If a [Document] exists, we use `document.immutableCharSequence` to match the editor view.
+ * - Otherwise we use [LoadTextUtil.loadText] which normalizes separators and supports library/jar sources.
+ */
+private class FileTextSnapshot(
+    val text: String,
+    private val newlineOffsets: IntArray,
+) {
+    val length: Int get() = text.length
+
+    fun lineOfOffset(offset: Int): Int {
+        val clamped: Int = offset.coerceIn(0, length)
+        val idx: Int = newlineOffsets.binarySearch(clamped)
+        return if (idx >= 0) idx else -idx - 1
+    }
+
+    fun lineStartOffsetOf(offset: Int): Int {
+        val line: Int = lineOfOffset(offset)
+        return if (line == 0) 0 else newlineOffsets[line - 1] + 1
+    }
+
+    fun lineEndOffsetExclusiveOf(offset: Int): Int {
+        val line: Int = lineOfOffset(offset)
+        return if (line < newlineOffsets.size) newlineOffsets[line] + 1 else length
+    }
+
+    fun indentationAtOffset(offset: Int): String {
+        val lineStart: Int = lineStartOffsetOf(offset)
+        var i = lineStart
+        while (i < length) {
+            val c: Char = text[i]
+            if (c == ' ' || c == '\t') {
+                i++
+            } else {
+                break
+            }
+        }
+        return text.substring(lineStart, i)
+    }
+
+    fun isWhitespaceOnly(startOffset: Int, endOffset: Int): Boolean {
+        val start: Int = startOffset.coerceIn(0, length)
+        val end: Int = endOffset.coerceIn(start, length)
+        for (i in start until end) {
+            when (text[i]) {
+                ' ', '\t', '\n', '\r' -> Unit
+                else -> return false
+            }
+        }
+        return true
+    }
+
+    fun truncatedLineCount(startOffset: Int, endOffset: Int): Int {
+        val start: Int = startOffset.coerceIn(0, length)
+        val end: Int = endOffset.coerceIn(start, length)
+        if (start >= end) return 0
+        val startLine: Int = lineOfOffset(start)
+        val endLine: Int = lineOfOffset(end - 1)
+        return endLine - startLine + 1
+    }
+
+    companion object {
+        fun from(virtualFile: VirtualFile): FileTextSnapshot? {
+            val text: String = try {
+                val document: Document? = FileDocumentManager.getInstance().getDocument(virtualFile)
+                val chars: CharSequence = document?.immutableCharSequence ?: LoadTextUtil.loadText(virtualFile)
+                chars.toString()
+            } catch (throwable: Throwable) {
+                SYMBOL_USAGE_LOG.debug("Failed to snapshot text for ${virtualFile.path}", throwable)
+                return null
+            }
+
+            var offsets = IntArray(256)
+            var size = 0
+            for (i in text.indices) {
+                if (text[i] == '\n') {
+                    if (size == offsets.size) {
+                        offsets = offsets.copyOf(size * 2)
+                    }
+                    offsets[size++] = i
+                }
+            }
+
+            return FileTextSnapshot(text = text, newlineOffsets = offsets.copyOf(size))
+        }
+    }
+}
+
+/**
+ * Renders the entire LLM context payload (target + references) into a single log string.
+ *
+ * Implementation notes:
+ * - Snapshots are cached per file path so each file's text is read and indexed at most once per action invocation.
+ * - This function does not access PSI. It renders purely from offsets captured in [DeclarationSlice] / [StructureNode]
+ *   and from [FileTextSnapshot] for each [ReferencedFile].
+ */
 private fun TargetSymbolContext.toLogString(): String {
     val sb = StringBuilder(96708)
+    val snapshotCache: MutableMap<String, FileTextSnapshot> = HashMap()
 
     if (!files.isEmpty()) {
         files.forEach { (path: String, refFile: ReferencedFile) ->
+            val snapshot: FileTextSnapshot = snapshotCache.getOrPut(path) {
+                FileTextSnapshot.from(refFile.virtualFile) ?: FileTextSnapshot(text = "", newlineOffsets = IntArray(0))
+            }
+
             sb.appendLine("Source File: $path")
             sb.appendLine()
 
@@ -1222,7 +1364,7 @@ private fun TargetSymbolContext.toLogString(): String {
                 refFile.referencedTypes.map { it.declarationSlice } + refFile.referencedFunctions.map { it.declarationSlice }
 
             val reconstructedContent: String = renderReconstructedFile(
-                refFile.packageDirective, refFile.importsList, allSlices
+                snapshot, refFile.headerEndOffset, allSlices
             )
 
             sb.append(reconstructedContent)
@@ -1239,59 +1381,110 @@ private fun TargetSymbolContext.toLogString(): String {
 /**
  * Reconstructs a syntactically valid source file view from a list of isolated declaration slices.
  *
- * **The Problem:** collected symbols are isolated "leaf" nodes (e.g., a single function).
- * To provide useful context to an LLM, we must present them within their original class hierarchy
- * (parents, companion objects, etc.) so that scope and visibility are clear.
+ * ## Problem
+ * Collected symbols are isolated "leaf" nodes (e.g., a single method). For LLM context, we must show them in their
+ * original containment hierarchy (classes/objects) so scope and visibility are clear.
  *
- * **The Solution (Tree Merger Algorithm):**
- * This function takes a flat list of slices and "merges" their ancestry paths to reconstruct
- * the skeleton of the file.
+ * ## Solution: Tree Merger + Verbatim Splicing
+ * We merge ancestry paths (container stacks) similar to a typical tree-diff renderer, but we **never** reconstruct
+ * headers or indent snippets synthetically.
  *
- * 1.  **Sort:** Slices are sorted by their original `textOffset`. This restores the natural "reading order"
- *     of the file, ensuring classes and methods appear where they belong.
- * 2.  **Traverse & Diff:** We iterate through the sorted slices. For each slice, we compare its
- *     `structurePath` (ancestry) with the `currentPath` (the stack of currently open scopes).
- * 3.  **Close Scopes:** If the new path diverges from the old one (e.g., we moved from `ClassA` to `ClassB`),
- *     we close the scopes that are no longer valid (`ClassA`).
- * 4.  **Open Scopes:** We then open the new scopes required by the new path (`ClassB`) that weren't already open.
- * 5.  **Render:** Finally, we print the source code of the slice itself, indented to the correct depth.
+ * Instead, we splice exact text segments from [snapshot]:
+ * - container "open" is the verbatim text from the container start up to its `{`
+ * - container "close" is the verbatim text around its `}`
+ * - declaration is the verbatim text range for the PSI element (optionally expanded to include leading indentation
+ *   and trailing whitespace-only line endings)
  *
- * **Gap Calculation:**
- * The function tracks the `lastPrintedLine` to identify gaps between the end of one symbol (or scope) and the
- * start of the next. If a gap is detected, it inserts a truncation marker (e.g., `// 13 lines truncated...`)
- * instead of a generic `// ...`, providing the LLM with a sense of the missing code's volume.
+ * This guarantees that whitespace/newlines in emitted code are identical to the original source.
  *
- * @param packageDirective The package declaration of the file.
- * @param importsList The list of imports to include at the top.
+ * ## Gap markers (exact, no approximation)
+ * We track the last emitted offset and inspect the gap between successive emitted segments:
+ * - If the gap is whitespace-only, we emit it verbatim (preserves formatting).
+ * - If the gap contains any non-whitespace, we replace it with a `// N lines truncated...` marker.
+ *
+ * `N` is computed from the snapshot's newline index over the exact omitted offset range, which works for project files
+ * and library/jar sources equally.
+ *
+ * @param snapshot A snapshot of the file text that matches the PSI offset space.
+ * @param headerEndOffset The end offset (exclusive) of the file header section (package/imports/file annotations).
  * @param slices The list of [DeclarationSlice]s to render.
  * @return A string containing the reconstructed source code.
  */
 private fun renderReconstructedFile(
-    packageDirective: String?, importsList: List<String>, slices: List<DeclarationSlice>
+    snapshot: FileTextSnapshot, headerEndOffset: Int, slices: List<DeclarationSlice>
 ): String {
     val sb = StringBuilder(96708)
-
-    // Header
-    if (packageDirective != null) {
-        sb.appendLine(packageDirective)
-        sb.appendLine()
+    val text: String = snapshot.text
+    if (text.isEmpty()) {
+        return ""
     }
 
-    if (importsList.isNotEmpty()) {
-        importsList.forEach { sb.appendLine(it) }
-        sb.appendLine()
+    // Expand a nominal start offset to include leading indentation (line-start whitespace),
+    // but only if doing so would not pull in unrelated non-whitespace code from the same line.
+    fun adjustedStartOffset(nominalStartOffset: Int, hardMinOffset: Int): Int {
+        val nominal: Int = nominalStartOffset.coerceIn(0, snapshot.length)
+        val hardMin: Int = hardMinOffset.coerceIn(0, snapshot.length)
+        val lineStart: Int = snapshot.lineStartOffsetOf(nominal)
+        if (lineStart < hardMin) return nominal
+        if (!snapshot.isWhitespaceOnly(lineStart, nominal)) return nominal
+        return lineStart
     }
 
-    // Sort by offset to ensure we traverse the file from top to bottom
-    val sortedSlices: List<DeclarationSlice> = slices.sortedBy { it.caretLocation.offset }
+    // Expand a nominal end offset to include any trailing whitespace (typically including the line-ending),
+    // but only if the extra characters are whitespace. This keeps emitted fragments faithful to their original
+    // line structure without accidentally absorbing real code.
+    fun adjustedEndOffset(nominalEndOffsetExclusive: Int): Int {
+        val nominal: Int = nominalEndOffsetExclusive.coerceIn(0, snapshot.length)
+        if (nominal <= 0) return nominal
+        val lineEndExclusive: Int = snapshot.lineEndOffsetExclusiveOf(nominal - 1)
+        if (lineEndExclusive <= nominal) return nominal
+        if (!snapshot.isWhitespaceOnly(nominal, lineEndExclusive)) return nominal
+        return lineEndExclusive
+    }
+
+    // Emits the gap verbatim if it is whitespace-only. Otherwise replaces it with a truncation marker whose line count
+    // is computed from the snapshot's newline index over the exact omitted offset range.
+    fun emitGapOrMarker(fromOffset: Int, toOffset: Int, markerIndent: String): Int {
+        val start: Int = fromOffset.coerceIn(0, snapshot.length)
+        val end: Int = toOffset.coerceIn(start, snapshot.length)
+        if (start >= end) return end
+
+        if (snapshot.isWhitespaceOnly(start, end)) {
+            sb.append(text, start, end)
+            return end
+        }
+
+        // Ensure marker starts on its own line for readability and to avoid corrupting the previous line's syntax.
+        if (sb.isNotEmpty() && sb.last() != '\n') {
+            sb.append('\n')
+        }
+
+        val lineCount: Int = snapshot.truncatedLineCount(start, end)
+        sb.append(markerIndent)
+        sb.append("// ")
+        sb.append(lineCount)
+        sb.append(' ')
+        sb.append(if (lineCount == 1) "line" else "lines")
+        sb.append(" truncated...")
+        sb.append('\n')
+        return end
+    }
+
+    // Emit file header (package/imports/file annotations) exactly as-is.
+    val safeHeaderEnd: Int = headerEndOffset.coerceIn(0, snapshot.length)
+    if (safeHeaderEnd > 0) {
+        sb.append(text, 0, safeHeaderEnd)
+    }
+
+    // Sort by declaration offset to traverse the file from top to bottom
+    val sortedSlices: List<DeclarationSlice> = slices.sortedBy { it.declStartOffset }
 
     // The current stack of open containers (from outer to inner)
     // We store the StructureNode to check equality
     var currentPath: List<StructureNode> = emptyList()
 
-    // Track the last line we printed (0-based)
-    // Initialize to -1 to indicate start of content
-    var lastPrintedLine = -1
+    // Track the last offset we printed (exclusive)
+    var lastPrintedOffset: Int = safeHeaderEnd
 
     for (slice: DeclarationSlice in sortedSlices) {
         val nextPath: List<StructureNode> = slice.structurePath
@@ -1307,62 +1500,44 @@ private fun renderReconstructedFile(
         // e.g. Current: [A, B], Next: [A, C]. Close B.
         for (i: Int in currentPath.lastIndex downTo commonDepth) {
             val node: StructureNode = currentPath[i]
-            val indentation: String = "    ".repeat(i)
+            if (node.rBraceOffset < 0 || node.rBraceEndOffset < 0) continue
 
-            // Check gap between lastPrintedLine and closing brace
-            if (lastPrintedLine != -1 && node.endLine != -1) {
-                val gap: Int = node.endLine - lastPrintedLine - 1
-                if (gap > 0) {
-                    sb.appendLine("$indentation    // $gap ${if (gap == 1) "line" else "lines"} truncated...")
-                }
-            } else {
-                sb.appendLine("$indentation    // ...")
-            }
+            val closeStart: Int = adjustedStartOffset(node.rBraceOffset, hardMinOffset = lastPrintedOffset)
+            // Marker is indented one level "inside" the closing brace to match the common "inside-scope" comment style.
+            val markerIndent: String = snapshot.indentationAtOffset(node.rBraceOffset) + "    "
 
-            sb.appendLine("$indentation}")
-            lastPrintedLine = node.endLine
+            lastPrintedOffset = emitGapOrMarker(lastPrintedOffset, closeStart, markerIndent)
+
+            val closeEnd: Int = adjustedEndOffset(node.rBraceEndOffset)
+            sb.append(text, closeStart, closeEnd)
+            lastPrintedOffset = closeEnd
         }
 
         // 3. Open new scopes (from shallow to deep)
         // e.g. Current: [A], Next: [A, C]. Open C.
         for (i: Int in commonDepth until nextPath.size) {
             val node: StructureNode = nextPath[i]
-            val indentation: String = "    ".repeat(i)
+            if (node.lBraceOffset < 0 || node.lBraceEndOffset < 0) continue
 
-            // Check gap between lastPrintedLine and start of this container
-            // Only check if we are not at the very beginning of the "symbol content"
-            // (i.e. ignore gap between imports and first class)
-            if (lastPrintedLine != -1 && node.startLine != -1) {
-                val gap: Int = node.startLine - lastPrintedLine - 1
-                if (gap > 0) {
-                    sb.appendLine("$indentation// $gap ${if (gap == 1) "line" else "lines"} truncated...")
-                }
-            }
+            val openStart: Int = adjustedStartOffset(node.startOffset, hardMinOffset = lastPrintedOffset)
+            val markerIndent: String = snapshot.indentationAtOffset(node.startOffset)
 
-            sb.appendLine("$indentation${node.signature} {")
-            // Update lastPrintedLine to where the body starts
-            lastPrintedLine = if (node.bodyStartLine != -1) node.bodyStartLine else lastPrintedLine
+            lastPrintedOffset = emitGapOrMarker(lastPrintedOffset, openStart, markerIndent)
+
+            val openEnd: Int = adjustedEndOffset(node.lBraceEndOffset)
+            sb.append(text, openStart, openEnd)
+            lastPrintedOffset = openEnd
         }
 
         // 4. Print the symbol source code
-        // We need to indent the entire source block to match the current nesting depth
-        val contentIndentation: String = "    ".repeat(nextPath.size)
+        val sliceStart: Int = adjustedStartOffset(slice.declStartOffset, hardMinOffset = lastPrintedOffset)
+        val markerIndent: String = snapshot.indentationAtOffset(slice.declStartOffset)
 
-        // Check gap between lastPrintedLine and start of slice
-        if (lastPrintedLine != -1 && slice.startLine != -1) {
-            val gap: Int = slice.startLine - lastPrintedLine - 1
-            if (gap > 0) {
-                sb.appendLine("$contentIndentation// $gap ${if (gap == 1) "line" else "lines"} truncated...")
-            }
-        }
+        lastPrintedOffset = emitGapOrMarker(lastPrintedOffset, sliceStart, markerIndent)
 
-        val indentedSource: String = slice.sourceCode.prependIndent(contentIndentation)
-        // Add a visual separator if this isn't the first item in a shared scope?
-        // For now, just print the code.
-        sb.appendLine(indentedSource)
-
-        // Update lastPrintedLine
-        lastPrintedLine = if (slice.endLine != -1) slice.endLine else lastPrintedLine
+        val sliceEnd: Int = adjustedEndOffset(slice.declEndOffset)
+        sb.append(text, sliceStart, sliceEnd)
+        lastPrintedOffset = sliceEnd
 
         // Update stack
         currentPath = nextPath
@@ -1371,19 +1546,17 @@ private fun renderReconstructedFile(
     // 5. Close any remaining open scopes
     for (i: Int in currentPath.lastIndex downTo 0) {
         val node: StructureNode = currentPath[i]
-        val indentation: String = "    ".repeat(i)
+        if (node.rBraceOffset < 0 || node.rBraceEndOffset < 0) continue
 
-        if (lastPrintedLine != -1 && node.endLine != -1) {
-            val gap: Int = node.endLine - lastPrintedLine - 1
-            if (gap > 0) {
-                sb.appendLine("$indentation    // $gap ${if (gap == 1) "line" else "lines"} truncated...")
-            }
-        } else {
-            sb.appendLine("$indentation    // ...")
-        }
+        val closeStart: Int = adjustedStartOffset(node.rBraceOffset, hardMinOffset = lastPrintedOffset)
+        // Marker is indented one level "inside" the closing brace to match the common "inside-scope" comment style.
+        val markerIndent: String = snapshot.indentationAtOffset(node.rBraceOffset) + "    "
 
-        sb.appendLine("$indentation}")
-        lastPrintedLine = node.endLine
+        lastPrintedOffset = emitGapOrMarker(lastPrintedOffset, closeStart, markerIndent)
+
+        val closeEnd: Int = adjustedEndOffset(node.rBraceEndOffset)
+        sb.append(text, closeStart, closeEnd)
+        lastPrintedOffset = closeEnd
     }
 
     return sb.toString()

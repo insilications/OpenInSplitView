@@ -29,8 +29,8 @@ object LogToFile {
         }
         handler.level = Level.ALL
 
-        // Create a dedicated java.util.logging. Logger
-        julLogger = getLogger("org.insilications.openinsplit")
+        // Create a dedicated java.util.logging.Logger
+        julLogger = getLogger("org.insilications.openinsplit.symbols")
         julLogger.addHandler(handler)
         julLogger.level = Level.ALL
         // Don't propagate to parent loggers

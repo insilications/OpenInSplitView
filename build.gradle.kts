@@ -9,8 +9,7 @@ import org.jetbrains.intellij.platform.gradle.tasks.PrepareSandboxTask
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
-
-//import org.gradle.kotlin.dsl.testImplementation
+import java.io.OutputStream
 
 val pluginGroup: String = providers.gradleProperty("pluginGroup").get()
 val pluginVersion: String = providers.gradleProperty("pluginVersion").get()
@@ -116,7 +115,7 @@ intellijPlatform {
     sandboxContainer = file("/king/.config/JetBrains/IC")
     intellijPlatform.caching.ides.enabled = true
 
-    println("Sandbox container set to: ${sandboxContainer.get().asFile}")
+//    println("Sandbox container set to: ${sandboxContainer.get().asFile}")
 
     pluginConfiguration {
         id = pluginGroup
@@ -190,7 +189,7 @@ val truncateLogsTask: TaskProvider<DefaultTask> = tasks.register<DefaultTask>("t
             val ideaLogFile: File = destinationDir.resolve("log/idea.log")
 
             if (ideaLogFile.exists()) {
-                println("Truncating log file: ${ideaLogFile.path}")
+//                println("Truncating log file: ${ideaLogFile.path}")
                 ideaLogFile.writeText("")
             } else {
                 println("Log file not found, skipping truncation: ${ideaLogFile.path}")
@@ -200,7 +199,7 @@ val truncateLogsTask: TaskProvider<DefaultTask> = tasks.register<DefaultTask>("t
             val symbolsLogFile: File = destinationDir.resolve("log/symbols.log")
 
             if (symbolsLogFile.exists()) {
-                println("Truncating log file: ${symbolsLogFile.path}")
+//                println("Truncating log file: ${symbolsLogFile.path}")
                 symbolsLogFile.writeText("")
             } else {
                 println("Log file not found, skipping truncation: ${symbolsLogFile.path}")
@@ -223,7 +222,7 @@ tasks {
     withType<PrepareSandboxTask> {
         sandboxDirectory.set(file("/king/.config/JetBrains/IC/"))
         sandboxSuffix.set("")
-        println("Sandbox directory set to: ${sandboxDirectory.get().asFile}")
+//        println("Sandbox directory set to: ${sandboxDirectory.get().asFile}")
         // Resolve the source directory during the configuration phase.
         val sourceConfigDir: File = project.file("sandbox-config")
         val execOps: ExecOperations = project.serviceOf<ExecOperations>()
@@ -233,9 +232,13 @@ tasks {
             val destinationDir: File = sandboxDirectory.get().asFile
 
             if (sourceConfigDir.exists() && sourceConfigDir.isDirectory) {
-                println("Copying custom IDE configuration from '${sourceConfigDir.path}' to sandbox folder '${destinationDir.path}'.")
+//                println("Copying custom IDE configuration from '${sourceConfigDir.path}' to sandbox folder '${destinationDir.path}'.")
                 execOps.exec {
                     commandLine("rsync", "-avc", "--no-times", "${sourceConfigDir.path}/", "${destinationDir.path}/")
+
+                    // Redirect stdout and stderr to a null stream to suppress output
+                    standardOutput = OutputStream.nullOutputStream()
+                    errorOutput = OutputStream.nullOutputStream()
                 }
 
             } else {
