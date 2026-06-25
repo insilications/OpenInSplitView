@@ -17,9 +17,19 @@ val pluginFullName: String = providers.gradleProperty("pluginFullName").get()
 val pluginName: String = providers.gradleProperty("pluginName").get()
 val pluginSinceBuild: String = providers.gradleProperty("pluginSinceBuild").get()
 val pluginUntilBuild: String = providers.gradleProperty("pluginUntilBuild").get()
-val changeNotesFromMd: Provider<String> = provider {
-    file("CHANGELOG.md").readText().lineSequence().filterIndexed { index: Int, _: String -> index !in 1..3 }.joinToString(System.lineSeparator()).trim()
-}
+val changeNotesFromMd: Provider<String> =
+    provider {
+        file("CHANGELOG.md")
+            .readText()
+            .lineSequence()
+            .filterIndexed {
+                index: Int,
+                _: String,
+                ->
+                index !in 1..3
+            }.joinToString(System.lineSeparator())
+            .trim()
+    }
 val descriptionFromHtml: Provider<String> = provider { file("description.html").readText() }
 val gradleVersion: String = providers.gradleProperty("gradleVersion").get()
 
@@ -37,7 +47,6 @@ plugins {
 repositories {
     mavenCentral()
     gradlePluginPortal()
-
 
     intellijPlatform {
         defaultRepositories()
@@ -78,7 +87,11 @@ dependencies {
         bundledPlugin("com.intellij.java")
         pluginVerifier()
 
-        testFramework(TestFrameworkType.Starter, version = "latest", configurationName = integrationTestImplementation.name)
+        testFramework(
+            TestFrameworkType.Starter,
+            version = "latest",
+            configurationName = integrationTestImplementation.name,
+        )
     }
 
     integrationTestImplementation(libs.kodein.di.jvm)
@@ -98,7 +111,7 @@ dependencies {
         libs.kotlin.analysis.api.platform,
         libs.kotlin.analysis.api.fir,
         libs.kotlin.low.level.api.fir,
-        libs.kotlin.symbol.light.classes
+        libs.kotlin.symbol.light.classes,
     ).forEach { it: Provider<MinimalExternalModuleDependency> ->
         compileOnly(it) {
             isTransitive = false // see KTIJ-19820
@@ -172,41 +185,44 @@ kotlin {
     jvmToolchain(21)
 }
 
-val truncateLogsTask: TaskProvider<DefaultTask> = tasks.register<DefaultTask>("truncateLogsTask") {
-    outputs.upToDateWhen { false }
-    // 1. Capture the 'sandboxDirectory' property lazily during the Configuration phase.
-    // We use 'named' and 'flatMap' so we don't hold a reference to the entire Task object,
-    // only to the specific property we need.
-    val sandboxDirProvider = tasks.named<PrepareSandboxTask>("prepareSandbox").flatMap { it.sandboxDirectory }
+val truncateLogsTask: TaskProvider<DefaultTask> =
+    tasks.register<DefaultTask>("truncateLogsTask") {
+        description = "Truncate the testing logs"
+        outputs.upToDateWhen { false }
+        // 1. Capture the 'sandboxDirectory' property lazily during the Configuration phase.
+        // We use 'named' and 'flatMap' so we don't hold a reference to the entire Task object,
+        // only to the specific property we need.
+        val sandboxDirProvider =
+            tasks.named<PrepareSandboxTask>("prepareSandbox").flatMap { it.sandboxDirectory }
 
-    doLast {
-        // 2. Resolve the value during the Execution phase.
-        // Gradle can serialize this Provider chain, solving the error.
-        val destinationDir: File? = sandboxDirProvider.orNull?.asFile
+        doLast {
+            // 2. Resolve the value during the Execution phase.
+            // Gradle can serialize this Provider chain, solving the error.
+            val destinationDir: File? = sandboxDirProvider.orNull?.asFile
 
-        if (destinationDir != null) {
-            // --- Start: Truncate idea.log ---
-            val ideaLogFile: File = destinationDir.resolve("log/idea.log")
+            if (destinationDir != null) {
+                // --- Start: Truncate idea.log ---
+                val ideaLogFile: File = destinationDir.resolve("log/idea.log")
 
-            if (ideaLogFile.exists()) {
+                if (ideaLogFile.exists()) {
 //                println("Truncating log file: ${ideaLogFile.path}")
-                ideaLogFile.writeText("")
-            } else {
-                println("Log file not found, skipping truncation: ${ideaLogFile.path}")
-            }
+                    ideaLogFile.writeText("")
+                } else {
+                    println("Log file not found, skipping truncation: ${ideaLogFile.path}")
+                }
 
-            // --- Start: Truncate symbols.log ---
-            val symbolsLogFile: File = destinationDir.resolve("log/symbols.log")
+                // --- Start: Truncate symbols.log ---
+                val symbolsLogFile: File = destinationDir.resolve("log/symbols.log")
 
-            if (symbolsLogFile.exists()) {
+                if (symbolsLogFile.exists()) {
 //                println("Truncating log file: ${symbolsLogFile.path}")
-                symbolsLogFile.writeText("")
-            } else {
-                println("Log file not found, skipping truncation: ${symbolsLogFile.path}")
+                    symbolsLogFile.writeText("")
+                } else {
+                    println("Log file not found, skipping truncation: ${symbolsLogFile.path}")
+                }
             }
         }
     }
-}
 
 tasks {
     withType<KotlinCompile> {
@@ -234,13 +250,18 @@ tasks {
             if (sourceConfigDir.exists() && sourceConfigDir.isDirectory) {
 //                println("Copying custom IDE configuration from '${sourceConfigDir.path}' to sandbox folder '${destinationDir.path}'.")
                 execOps.exec {
-                    commandLine("rsync", "-avc", "--no-times", "${sourceConfigDir.path}/", "${destinationDir.path}/")
+                    commandLine(
+                        "rsync",
+                        "-avc",
+                        "--no-times",
+                        "${sourceConfigDir.path}/",
+                        "${destinationDir.path}/",
+                    )
 
                     // Redirect stdout and stderr to a null stream to suppress output
                     standardOutput = OutputStream.nullOutputStream()
                     errorOutput = OutputStream.nullOutputStream()
                 }
-
             } else {
                 println("Skipping custom IDE configuration copy: '${sourceConfigDir.path}' does not exist.")
             }
@@ -250,28 +271,7 @@ tasks {
     }
 
     runIde {
-        jvmArgs = listOf(
-            "-Xms256m",
-            "-Xmx8096m",
-            "-Dawt.useSystemAAFontSettings=lcd_hbgr",
-            "-Dswing.aatext=true",
-            "-XX:+UnlockDiagnosticVMOptions",
-            "-XX:+DebugNonSafepoints",
-            "-Dignore.ide.script.launcher.used=true",
-            "-Dide.slow.operations.assertion=true",
-            "-Didea.is.internal=true",
-            "-Didea.logger.exception.expiration.minutes=0",
-            "-Dsnapshots.path=/king/stuff/snapshots",
-            "-Djdk.gtk.verbose=true",
-            "-Djdk.gtk.version=3",
-            "-Didea.diagnostic.opentelemetry.metrics.file=",
-            "-Didea.diagnostic.opentelemetry.meters.file.json=",
-            "-Didea.diagnostic.opentelemetry.file=",
-            "-Didea.diagnostic.opentelemetry.otlp=false",
-            "-Didea.log.debug.categories=org.insilications.openinsplit",
-//            "-Xlog:disable"
-        )
-        jvmArgumentProviders += CommandLineArgumentProvider {
+        jvmArgs =
             listOf(
                 "-Xms256m",
                 "-Xmx8096m",
@@ -291,14 +291,35 @@ tasks {
                 "-Didea.diagnostic.opentelemetry.file=",
                 "-Didea.diagnostic.opentelemetry.otlp=false",
                 "-Didea.log.debug.categories=org.insilications.openinsplit",
-//                "-Xlog:disable"
+//            "-Xlog:disable"
             )
-        }
+        jvmArgumentProviders +=
+            CommandLineArgumentProvider {
+                listOf(
+                    "-Xms256m",
+                    "-Xmx8096m",
+                    "-Dawt.useSystemAAFontSettings=lcd_hbgr",
+                    "-Dswing.aatext=true",
+                    "-XX:+UnlockDiagnosticVMOptions",
+                    "-XX:+DebugNonSafepoints",
+                    "-Dignore.ide.script.launcher.used=true",
+                    "-Dide.slow.operations.assertion=true",
+                    "-Didea.is.internal=true",
+                    "-Didea.logger.exception.expiration.minutes=0",
+                    "-Dsnapshots.path=/king/stuff/snapshots",
+                    "-Djdk.gtk.verbose=true",
+                    "-Djdk.gtk.version=3",
+                    "-Didea.diagnostic.opentelemetry.metrics.file=",
+                    "-Didea.diagnostic.opentelemetry.meters.file.json=",
+                    "-Didea.diagnostic.opentelemetry.file=",
+                    "-Didea.diagnostic.opentelemetry.otlp=false",
+                    "-Didea.log.debug.categories=org.insilications.openinsplit",
+//                "-Xlog:disable"
+                )
+            }
 
         args(listOf("nosplash"))
     }
-
-
 }
 
 tasks.named<DependencyUpdatesTask>("dependencyUpdates").configure {
@@ -312,27 +333,43 @@ tasks.named<DependencyUpdatesTask>("dependencyUpdates").configure {
     reportfileName = "report"
 }
 
-val integrationTestTask: TaskProvider<Test> = tasks.register<Test>("integrationTest") {
-    outputs.upToDateWhen { false }
+val integrationTestTask: TaskProvider<Test> =
+    tasks.register<Test>("integrationTest") {
+        description = "Perform integration tests"
+        outputs.upToDateWhen { false }
 
 //    testLogging {
 //        showStandardStreams = false
 //    }
 
-    val integrationTestSourceSet: SourceSet = sourceSets.getByName("integrationTest")
-    testClassesDirs = integrationTestSourceSet.output.classesDirs
-    classpath = integrationTestSourceSet.runtimeClasspath
-    systemProperty("path.to.build.plugin", tasks.prepareSandbox.get().pluginDirectory.get().asFile)
-    systemProperty("path.to.platform", tasks.prepareSandbox.get().platformPath.toFile())
-    environment("MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
-    environment("ENV_MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
-    useJUnitPlatform()
-    dependsOn(tasks.buildPlugin)
-    dependsOn(tasks.prepareSandbox)
-}
+        val integrationTestSourceSet: SourceSet = sourceSets.getByName("integrationTest")
+        testClassesDirs = integrationTestSourceSet.output.classesDirs
+        classpath = integrationTestSourceSet.runtimeClasspath
+        systemProperty(
+            "path.to.build.plugin",
+            tasks.prepareSandbox
+                .get()
+                .pluginDirectory
+                .get()
+                .asFile,
+        )
+        systemProperty(
+            "path.to.platform",
+            tasks.prepareSandbox
+                .get()
+                .platformPath
+                .toFile(),
+        )
+        environment("MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
+        environment("ENV_MONITORING_DUMPS_INTERVAL_SECONDS", "6000")
+        useJUnitPlatform()
+        dependsOn(tasks.buildPlugin)
+        dependsOn(tasks.prepareSandbox)
+    }
 
 fun isStable(version: String): Boolean {
-    val stableKeyword: Boolean = listOf("RELEASE", "FINAL", "GA").any { version.uppercase().contains(it) }
+    val stableKeyword: Boolean =
+        listOf("RELEASE", "FINAL", "GA").any { version.uppercase().contains(it) }
     val latestKeyword: Boolean = listOf("SNAPSHOT").any { version.uppercase().contains(it) }
     val regex: Regex = "^[\\d,.v-]+(-r)?$".toRegex()
     val isStable: Boolean = stableKeyword || regex.matches(version)
