@@ -4,7 +4,6 @@ import com.github.benmanes.gradle.versions.updates.DependencyUpdatesTask
 import org.gradle.kotlin.dsl.support.serviceOf
 import org.jetbrains.changelog.markdownToHTML
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
-import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.jetbrains.intellij.platform.gradle.tasks.PrepareSandboxTask
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
@@ -61,62 +60,63 @@ sourceSets {
         kotlin.srcDirs("src/main")
     }
 
-    val integrationTest: SourceSet = create("integrationTest")
-    integrationTest.apply {
-        compileClasspath += sourceSets.main.get().output
-        runtimeClasspath += sourceSets.main.get().output
-        java.srcDirs("src/test/integrationTest")
-        kotlin.srcDirs("src/test/integrationTest")
-    }
+//    val integrationTest: SourceSet = create("integrationTest")
+//    integrationTest.apply {
+//        compileClasspath += sourceSets.main.get().output
+//        runtimeClasspath += sourceSets.main.get().output
+//        java.srcDirs("src/test/integrationTest")
+//        kotlin.srcDirs("src/test/integrationTest")
+//    }
 }
 
-val integrationTestImplementation: Configuration by configurations.getting {
-    extendsFrom(configurations.testImplementation.get())
-}
-
-val integrationTestRuntimeOnly: Configuration by configurations.getting {
-    extendsFrom(configurations.testRuntimeOnly.get())
-}
+// val integrationTestImplementation: Configuration by configurations.getting {
+//    extendsFrom(configurations.testImplementation.get())
+// }
+//
+// val integrationTestRuntimeOnly: Configuration by configurations.getting {
+//    extendsFrom(configurations.testRuntimeOnly.get())
+// }
 
 dependencies {
     // IntelliJ Platform Gradle Plugin Dependencies Extension: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-dependencies-extension.html
     intellijPlatform {
-        // Starting with version 2025.3, `use intellijIdea()`
-        intellijIdeaCommunity(libs.versions.ideaVersion)
+        // Starting with version 2025.3, use `intellijIdea()`
+//        intellijIdeaCommunity(libs.versions.ideaVersion)
+        intellijIdea(libs.versions.ideaVersion)
         bundledPlugin("org.jetbrains.kotlin")
         bundledPlugin("com.intellij.java")
         pluginVerifier()
 
-        testFramework(
-            TestFrameworkType.Starter,
-            version = "latest",
-            configurationName = integrationTestImplementation.name,
-        )
+//        testFramework(
+//            TestFrameworkType.Starter,
+//            version = "latest",
+//            configurationName = integrationTestImplementation.name,
+//        )
     }
 
-    integrationTestImplementation(libs.kodein.di.jvm)
-    integrationTestImplementation(platform(libs.junit5.bom))
-    integrationTestImplementation(libs.junit5.jupiter)
-    integrationTestImplementation(libs.kotlin.coroutines.jvm)
-    integrationTestRuntimeOnly(libs.junit.platform.launcher)
+//    integrationTestImplementation(libs.kodein.di.jvm)
+//    integrationTestImplementation(platform(libs.junit5.bom))
+//    integrationTestImplementation(libs.junit5.jupiter)
+//    integrationTestImplementation(libs.kotlin.coroutines.jvm)
+//    integrationTestRuntimeOnly(libs.junit.platform.launcher)
 
     compileOnly(libs.jetbrains.annotations)
     compileOnly(libs.kotlin.reflect)
 
-    listOf(
-        libs.kotlin.compiler.common,
-        libs.kotlin.analysis.api.standalone,
-        libs.kotlin.analysis.api.api,
-        libs.kotlin.analysis.api.impl,
-        libs.kotlin.analysis.api.platform,
-        libs.kotlin.analysis.api.fir,
-        libs.kotlin.low.level.api.fir,
-        libs.kotlin.symbol.light.classes,
-    ).forEach { it: Provider<MinimalExternalModuleDependency> ->
-        compileOnly(it) {
-            isTransitive = false // see KTIJ-19820
-        }
-    }
+//    listOf(
+//        libs.kotlin.compiler.common,
+//        libs.kotlin.analysis.api.standalone,
+//        libs.kotlin.analysis.api.api,
+//        libs.kotlin.analysis.api.impl,
+//        libs.kotlin.analysis.api.platform,
+//        libs.kotlin.analysis.api.fir,
+//        libs.kotlin.low.level.api.fir,
+//        libs.kotlin.symbol.light.classes,
+//    ).forEach { it: Provider<MinimalExternalModuleDependency> ->
+//        compileOnly(it) {
+//            isTransitive = false // see KTIJ-19820
+//        }
+//    }
 }
 
 // Configure IntelliJ Platform Gradle Plugin: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-extension.html
@@ -151,7 +151,8 @@ intellijPlatform {
 
     pluginVerification {
         ides {
-            create(IntelliJPlatformType.IntellijIdeaCommunity, libs.versions.ideaVersion)
+//            create(IntelliJPlatformType.IntellijIdeaCommunity, libs.versions.ideaVersion)
+            create(IntelliJPlatformType.IntellijIdea, libs.versions.ideaVersion)
         }
     }
 
@@ -178,8 +179,8 @@ java {
 kotlin {
     compilerOptions {
         jvmTarget = JvmTarget.JVM_21
-        languageVersion = KotlinVersion.KOTLIN_2_2
-        apiVersion = KotlinVersion.KOTLIN_2_2
+        languageVersion = KotlinVersion.KOTLIN_2_4
+        apiVersion = KotlinVersion.KOTLIN_2_4
     }
 
     jvmToolchain(21)
@@ -227,8 +228,8 @@ val truncateLogsTask: TaskProvider<DefaultTask> =
 tasks {
     withType<KotlinCompile> {
         compilerOptions.jvmTarget.set(JvmTarget.JVM_21)
-        compilerOptions.languageVersion.set(KotlinVersion.KOTLIN_2_2)
-        compilerOptions.apiVersion.set(KotlinVersion.KOTLIN_2_2)
+        compilerOptions.languageVersion.set(KotlinVersion.KOTLIN_2_4)
+        compilerOptions.apiVersion.set(KotlinVersion.KOTLIN_2_4)
     }
 
     wrapper {

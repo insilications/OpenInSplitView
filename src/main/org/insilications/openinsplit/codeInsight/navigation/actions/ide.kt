@@ -29,6 +29,7 @@ import com.intellij.openapi.fileEditor.impl.EditorWindow
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Computable
+import com.intellij.openapi.util.IntellijInternalApi
 import com.intellij.openapi.util.Key
 import com.intellij.openapi.util.ThrowableComputable
 import com.intellij.openapi.util.registry.RegistryManager
@@ -60,10 +61,12 @@ import java.awt.event.MouseEvent
 import javax.swing.SwingConstants
 
 val LOG: Logger = Logger.getInstance("org.insilications.openinsplit")
-val DECLARATION_NAVIGATION_NOWHERE_TO_GO: String = CodeInsightBundle.message("declaration.navigation.nowhere.to.go")
+val DECLARATION_NAVIGATION_NOWHERE_TO_GO: String =
+    CodeInsightBundle.message("declaration.navigation.nowhere.to.go")
 
 @PublishedApi
-internal val LOOKUP_TARGET_POINTER_KEY: Key<SmartPsiElementPointer<PsiElement>> = Key.create("org.insilications.openinsplit.lookupTargetPointer")
+internal val LOOKUP_TARGET_POINTER_KEY: Key<SmartPsiElementPointer<PsiElement>> =
+    Key.create("org.insilications.openinsplit.lookupTargetPointer")
 
 @PublishedApi
 internal val SHOW_ERROR_REGISTRY_VALUE: RegistryValue by lazy(LazyThreadSafetyMode.PUBLICATION) {
@@ -78,7 +81,8 @@ data class KeywordCheck(
 )
 
 @PublishedApi
-internal val KEYWORD_CHECK_KEY: Key<KeywordCheck> = Key.create("org.insilications.openinsplit.keywordUnderCaretCache")
+internal val KEYWORD_CHECK_KEY: Key<KeywordCheck> =
+    Key.create("org.insilications.openinsplit.keywordUnderCaretCache")
 
 /**
  * This function is used to preemptively set the current split view (window) to the adjacent split view or a new split view.
@@ -155,7 +159,10 @@ suspend inline fun getAdjacentSplitView(
 @ApiStatus.Internal
 @RequiresBlockingContext
 @RequiresEdt
-inline fun navigateToLookupItem(project: Project, editor: Editor): Boolean {
+inline fun navigateToLookupItem(
+    project: Project,
+    editor: Editor,
+): Boolean {
     val activeLookup: LookupEx = LookupManager.getInstance(project).activeLookup ?: return false
     val currentItem: LookupElement = activeLookup.currentItem ?: return false
     if (!currentItem.isValid()) {
@@ -163,19 +170,24 @@ inline fun navigateToLookupItem(project: Project, editor: Editor): Boolean {
         return false
     }
 
-    val pointerResult: Pair<SmartPsiElementPointer<PsiElement>, Boolean>? = ApplicationManager.getApplication().runReadAction(
-        Computable<Pair<SmartPsiElementPointer<PsiElement>, Boolean>?> {
-            val cachedPointer: SmartPsiElementPointer<PsiElement>? = currentItem.getUserData(LOOKUP_TARGET_POINTER_KEY)
-            val cachedElement: PsiElement? = cachedPointer?.element
-            if (cachedElement != null && cachedElement.isValid) {
-                cachedPointer to false
-            } else {
-                val target: PsiElement = targetElementFromLookupElement(currentItem) ?: return@Computable null
-                if (!target.isValid) return@Computable null
-                SmartPointerManager.getInstance(project).createSmartPsiElementPointer(target) to true
-            }
-        },
-    )
+    val pointerResult: Pair<SmartPsiElementPointer<PsiElement>, Boolean>? =
+        ApplicationManager.getApplication().runReadAction(
+            Computable<Pair<SmartPsiElementPointer<PsiElement>, Boolean>?> {
+                val cachedPointer: SmartPsiElementPointer<PsiElement>? =
+                    currentItem.getUserData(LOOKUP_TARGET_POINTER_KEY)
+                val cachedElement: PsiElement? = cachedPointer?.element
+                if (cachedElement != null && cachedElement.isValid) {
+                    cachedPointer to false
+                } else {
+                    val target: PsiElement =
+                        targetElementFromLookupElement(currentItem) ?: return@Computable null
+                    if (!target.isValid) return@Computable null
+                    SmartPointerManager
+                        .getInstance(project)
+                        .createSmartPsiElementPointer(target) to true
+                }
+            },
+        )
 
     val pointer: SmartPsiElementPointer<PsiElement>? = pointerResult?.first
     if (pointer == null) {
@@ -203,7 +215,11 @@ inline fun navigateToLookupItem(project: Project, editor: Editor): Boolean {
 @ApiStatus.Internal
 @RequiresBlockingContext
 @RequiresEdt
-inline fun navigateToRequestor(project: Project, requestor: NavigationRequestor, editor: Editor) {
+inline fun navigateToRequestor(
+    project: Project,
+    requestor: NavigationRequestor,
+    editor: Editor,
+) {
     runWithModalProgressBlocking(project, PROGRESS_TITLE_PREPARING_NAVIGATION) {
         LOG.debug { "navigateToRequestor - requestor is ${requestor::class.simpleName}" }
 
@@ -212,11 +228,16 @@ inline fun navigateToRequestor(project: Project, requestor: NavigationRequestor,
         // A blocking modal temporarily prevents user interaction with the rest of the application until it is closed or its progress is complete.
         // The blocking modal progress prevents UI interactions that may trigger write-intent tasks (e.g., typing, caret moves) that would
         // otherwise block the read action or freeze the UI.
-        val request: NavigationRequest = ProgressManager.getInstance().computePrioritized(
-            ThrowableComputable<NavigationRequest?, RuntimeException> {
-                ApplicationManager.getApplication().runReadAction(Computable<NavigationRequest?> { requestor.navigationRequest() })
-            },
-        ) ?: LOG.warn("navigateToRequestor - Failed to create navigation request").let { return@runWithModalProgressBlocking }
+        val request: NavigationRequest =
+            ProgressManager.getInstance().computePrioritized(
+                ThrowableComputable<NavigationRequest?, RuntimeException> {
+                    ApplicationManager
+                        .getApplication()
+                        .runReadAction(Computable<NavigationRequest?> { requestor.navigationRequest() })
+                },
+            ) ?: LOG
+                .warn("navigateToRequestor - Failed to create navigation request")
+                .let { return@runWithModalProgressBlocking }
 
         val dataContext: DataContext
         // Switch to EDT for UI side-effects
@@ -238,16 +259,23 @@ inline fun navigateToRequestor(project: Project, requestor: NavigationRequestor,
         }
 
         // Delegate the actual navigation to the Intellij Platform API's `navigate` overload at `platform/ide/navigation/impl/IdeNavigationService.kt`
-        project.serviceAsync<NavigationService>().navigate(request, NAVIGATION_OPTIONS_REQUEST_FOCUS, dataContext)
+        project
+            .serviceAsync<NavigationService>()
+            .navigate(request, NAVIGATION_OPTIONS_REQUEST_FOCUS, dataContext)
     }
 }
 
 /**
  * Retrieves a navigation request from the provided [navigatable] and navigates to it.
  */
+@OptIn(IntellijInternalApi::class)
 @ApiStatus.Internal
 @RequiresEdt
-inline fun navigateToNavigatable(project: Project, navigatable: Navigatable, dataContext: DataContext?) {
+inline fun navigateToNavigatable(
+    project: Project,
+    navigatable: Navigatable,
+    dataContext: DataContext?,
+) {
     runWithModalProgressBlocking(project, PROGRESS_TITLE_PREPARING_NAVIGATION) {
         LOG.debug { "navigateToNavigatable - navigatable is: ${navigatable::class.simpleName}" }
 
@@ -271,13 +299,15 @@ inline fun navigateToNavigatable(project: Project, navigatable: Navigatable, dat
         }
 
         // Delegate the actual navigation to the Intellij Platform API's `navigate` overload at `platform/ide/navigation/impl/IdeNavigationService.kt`
-        project.serviceAsync<NavigationService>().navigate(navigatable, NAVIGATION_OPTIONS_REQUEST_FOCUS, dataContextCheck)
+        project
+            .serviceAsync<NavigationService>()
+            .navigate(navigatable, NAVIGATION_OPTIONS_REQUEST_FOCUS, dataContextCheck)
     }
 }
 
 @ApiStatus.Experimental
-suspend fun getVirtualFileFromNavigationRequest(request: NavigationRequest): VirtualFile? {
-    return when (request) {
+suspend fun getVirtualFileFromNavigationRequest(request: NavigationRequest): VirtualFile? =
+    when (request) {
         // `SharedSourceNavigationRequest` is a subclass of `SourceNavigationRequest`.
         is SourceNavigationRequest -> {
             LOG.debug { "getVirtualFileFromNavigationRequest - request is SourceNavigationRequest" }
@@ -288,6 +318,7 @@ suspend fun getVirtualFileFromNavigationRequest(request: NavigationRequest): Vir
             LOG.debug { "getVirtualFileFromNavigationRequest - request is RawNavigationRequest" }
             getVirtualFileFromNavigatable(request.navigatable)
         }
+
         // `DirectoryNavigationRequest` is non-source, so we don't need to handle it
         // It can be handled perfectly by `NavigationService.navigate`
         else -> {
@@ -295,7 +326,6 @@ suspend fun getVirtualFileFromNavigationRequest(request: NavigationRequest): Vir
             null
         }
     }
-}
 
 suspend inline fun getVirtualFileFromNavigatable(navigatable: Navigatable): VirtualFile? {
     // 1. OpenFileDescriptor
@@ -310,9 +340,10 @@ suspend inline fun getVirtualFileFromNavigatable(navigatable: Navigatable): Virt
         // Try to get a descriptor derived from PSI with the `EditSourceUtil.getDescriptor` method
         // The method makes a best-effort attempt to extract descriptor-like objects of type `Navigatable` and often yields an OpenFileDescriptor
         // This is PSI-level operation and requires a read lock
-        val descriptor: Navigatable? = readAction {
-            EditSourceUtil.getDescriptor(navigatable)
-        }
+        val descriptor: Navigatable? =
+            readAction {
+                EditSourceUtil.getDescriptor(navigatable)
+            }
         when (descriptor) {
             // This only accesses the getter `nav.file` (a VirtualFile). This is VFS-level operation and does not require a read lock
             is OpenFileDescriptor -> {
@@ -336,7 +367,12 @@ suspend inline fun getVirtualFileFromNavigatable(navigatable: Navigatable): Virt
 }
 
 @RequiresEdt
-inline fun notifyNowhereToGo(project: Project, editor: Editor, file: PsiFile, offset: Int) {
+inline fun notifyNowhereToGo(
+    project: Project,
+    editor: Editor,
+    file: PsiFile,
+    offset: Int,
+) {
     if (!SHOW_ERROR_REGISTRY_VALUE.asBoolean()) return
     if (isUnderDoubleClick()) return
     if (isKeywordUnderCaret(project, editor, file, offset)) return
@@ -349,27 +385,37 @@ inline fun isUnderDoubleClick(): Boolean {
     return event is MouseEvent && event.clickCount == 2
 }
 
-inline fun KeywordCheck.matches(file: PsiFile, editor: Editor, offset: Int): Boolean {
-    return psiFile == file && this.offset == offset && documentModStamp == editor.document.modificationStamp
-}
+inline fun KeywordCheck.matches(
+    file: PsiFile,
+    editor: Editor,
+    offset: Int,
+): Boolean = psiFile == file && this.offset == offset && documentModStamp == editor.document.modificationStamp
 
-inline fun isKeywordUnderCaret(project: Project, editor: Editor, file: PsiFile, offset: Int): Boolean {
+inline fun isKeywordUnderCaret(
+    project: Project,
+    editor: Editor,
+    file: PsiFile,
+    offset: Int,
+): Boolean {
     val cached = editor.getUserData(KEYWORD_CHECK_KEY)
     if (cached != null && cached.matches(file, editor, offset)) {
         return cached.isKeyword
     }
 
     val documentModStamp = editor.document.modificationStamp
-    val computed = runReadAction {
-        val elementAtCaret: PsiElement? = file.findElementAt(offset)
-        val isKeyword = if (elementAtCaret != null) {
-            val namesValidator = LanguageNamesValidation.INSTANCE.forLanguage(elementAtCaret.language)
-            namesValidator.isKeyword(elementAtCaret.text, project)
-        } else {
-            false
+    val computed =
+        runReadAction {
+            val elementAtCaret: PsiElement? = file.findElementAt(offset)
+            val isKeyword =
+                if (elementAtCaret != null) {
+                    val namesValidator =
+                        LanguageNamesValidation.INSTANCE.forLanguage(elementAtCaret.language)
+                    namesValidator.isKeyword(elementAtCaret.text, project)
+                } else {
+                    false
+                }
+            KeywordCheck(file, documentModStamp, offset, isKeyword)
         }
-        KeywordCheck(file, documentModStamp, offset, isKeyword)
-    }
     editor.putUserData(KEYWORD_CHECK_KEY, computed)
     return computed.isKeyword
 }

@@ -1,7 +1,9 @@
 <idea-plugin require-restart="true">
     <id>org.insilications.openinsplit</id>
     <name>Open In Split View</name>
-    <vendor email="boboniboni@gmail.com" url="https://github.com/insilications/OpenInSplitView">Francisco Boni Neto</vendor>
+    <vendor email="boboniboni@gmail.com" url="https://github.com/insilications/OpenInSplitView">
+        Francisco Boni Neto
+    </vendor>
     <!-- See https://plugins.jetbrains.com/docs/intellij/plugin-compatibility.html on how to target different products -->
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.lang</depends>
@@ -11,61 +13,66 @@
     <depends optional="true" config-file="java-bridge.xml">com.intellij.java</depends>
 
     <extensions defaultExtensionNs="org.jetbrains.kotlin">
-        <supportsKotlinPluginMode supportsK2="true"/>
+        <supportsKotlinPluginMode supportsK2="true" />
     </extensions>
 
     <extensionPoints>
-        <extensionPoint name="gotoSuperActionSplit" interface="org.insilications.openinsplit.bridge.GotoSuperActionSplitBridge" dynamic="false"/>
+        <extensionPoint name="gotoSuperActionSplit"
+            interface="org.insilications.openinsplit.bridge.GotoSuperActionSplitBridge"
+            dynamic="false" />
     </extensionPoints>
 
     <extensions defaultExtensionNs="com.intellij">
         <codeInsight.inlayActionHandler handlerId="psi.pointer.navigation.handler"
-                                        implementationClass="org.insilications.openinsplit.codeInsight.hints.PsiPointerInlayActionNavigationHandlerSplit"
-                                        order="first"/>
+            implementationClass="org.insilications.openinsplit.codeInsight.hints.PsiPointerInlayActionNavigationHandlerSplit"
+            order="first" />
 
-        <postStartupActivity implementation="org.insilications.openinsplit.OverrideIdeOptions"/>
+        <postStartupActivity implementation="org.insilications.openinsplit.OverrideIdeOptions" />
     </extensions>
 
     <actions>
-        <action class="org.insilications.openinsplit.codeInsight.navigation.actions.GotoDeclarationActionSplit"
-                description="Opens the declaration/usage in the split view immediately to the right of your active tab's split view"
-                id="GotoDeclarationActionSplit" text="Declaration or Usages (Split)">
-            <add-to-group anchor="last" group-id="EditorPopupMenu.GoTo"/>
+        <action
+            class="org.insilications.openinsplit.codeInsight.navigation.actions.GotoDeclarationActionSplit"
+            description="Opens the declaration/usage in the split view immediately to the right of your active tab's split view"
+            id="GotoDeclarationActionSplit" text="Declaration or Usages (Split)">
+            <add-to-group anchor="last" group-id="EditorPopupMenu.GoTo" />
 
             <!-- Windows/Linux -->
-            <mouse-shortcut keymap="$default" keystroke="ctrl alt button1"/>
+            <mouse-shortcut keymap="$default" keystroke="ctrl alt button1" />
             <!-- macOS (Command is 'meta') -->
-            <mouse-shortcut keymap="Mac OS X" keystroke="meta alt button1"/>
+            <mouse-shortcut keymap="Mac OS X" keystroke="meta alt button1" />
         </action>
         <!--suppress PluginXmlCapitalization -->
-        <action class="org.insilications.openinsplit.codeInsight.navigation.actions.GotoImplementationActionSplit"
-                description="Opens the implementation in the split view immediately to the right of your active tab's split view"
-                id="GotoImplementationActionSplit" text="Implementation(s) (Split)">
-            <add-to-group anchor="last" group-id="EditorPopupMenu.GoTo"/>
+        <action
+            class="org.insilications.openinsplit.codeInsight.navigation.actions.GotoImplementationActionSplit"
+            description="Opens the implementation in the split view immediately to the right of your active tab's split view"
+            id="GotoImplementationActionSplit" text="Implementation(s) (Split)">
+            <add-to-group anchor="last" group-id="EditorPopupMenu.GoTo" />
 
             <!-- Windows/Linux -->
-            <mouse-shortcut keymap="$default" keystroke="ctrl shift button1"/>
+            <mouse-shortcut keymap="$default" keystroke="ctrl shift button1" />
             <!-- macOS -->
-            <mouse-shortcut keymap="Mac OS X" keystroke="meta shift button1"/>
+            <mouse-shortcut keymap="Mac OS X" keystroke="meta shift button1" />
         </action>
         <!--suppress LongLine -->
-        <action class="org.insilications.openinsplit.codeInsight.navigation.actions.GotoSuperActionSplit"
-                description="Opens the declaration that the current target overrides/implements/inherits from in the split view immediately to the right of your active tab's split view"
-                id="GotoSuperActionSplit" text="Super (Split)">
-            <add-to-group anchor="last" group-id="EditorPopupMenu.GoTo"/>
+        <action
+            class="org.insilications.openinsplit.codeInsight.navigation.actions.GotoSuperActionSplit"
+            description="Opens the declaration that the current target overrides/implements/inherits from in the split view immediately to the right of your active tab's split view"
+            id="GotoSuperActionSplit" text="Super (Split)">
+            <add-to-group anchor="last" group-id="EditorPopupMenu.GoTo" />
 
             <!-- Windows/Linux -->
-            <mouse-shortcut keymap="$default" keystroke="ctrl alt shift button1"/>
+            <mouse-shortcut keymap="$default" keystroke="ctrl alt shift button1" />
             <!-- macOS -->
-            <mouse-shortcut keymap="Mac OS X" keystroke="meta alt shift button1"/>
+            <mouse-shortcut keymap="Mac OS X" keystroke="meta alt shift button1" />
         </action>
-        <action class="org.insilications.openinsplit.codeInsight.navigation.actions.SymbolsInformationAction"
-                description="Action tree"
-                id="SymbolsInformationAction" text="Symbols Information">
-            <add-to-group anchor="last" group-id="EditorPopupMenu.GoTo"/>
+        <!--        <action class="org.insilications.openinsplit.codeInsight.navigation.actions.SymbolsInformationAction"-->
+        <!--                description="Action tree"-->
+        <!--                id="SymbolsInformationAction" text="Symbols Information">-->
+        <!--            <add-to-group anchor="last" group-id="EditorPopupMenu.GoTo"/>-->
 
-            <!-- Windows/Linux -->
-            <mouse-shortcut keymap="$default" keystroke="shift alt button1"/>
-        </action>
+        <!--            &lt;!&ndash; Windows/Linux &ndash;&gt;-->
+        <!--            <mouse-shortcut keymap="$default" keystroke="shift alt button1"/>-->
+        <!--        </action>-->
     </actions>
 </idea-plugin>

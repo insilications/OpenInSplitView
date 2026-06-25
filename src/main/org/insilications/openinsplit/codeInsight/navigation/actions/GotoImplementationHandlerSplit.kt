@@ -7,6 +7,7 @@ import com.intellij.openapi.components.serviceAsync
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileEditor.ex.IdeDocumentHistory
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.IntellijInternalApi
 import com.intellij.platform.ide.navigation.NavigationService
 import com.intellij.platform.ide.progress.runWithModalProgressBlocking
 import com.intellij.pom.Navigatable
@@ -23,8 +24,12 @@ class GotoImplementationHandlerSplit : GotoImplementationHandler() {
         private val LOG: Logger = Logger.getInstance("org.insilications.openinsplit")
     }
 
+    @OptIn(IntellijInternalApi::class)
     @RequiresEdt
-    override fun navigateToElement(project: Project?, descriptor: Navigatable) {
+    override fun navigateToElement(
+        project: Project?,
+        descriptor: Navigatable,
+    ) {
         if (project == null) return
 
         runWithModalProgressBlocking(project, PROGRESS_TITLE_PREPARING_NAVIGATION) {
@@ -50,7 +55,9 @@ class GotoImplementationHandlerSplit : GotoImplementationHandler() {
             }
 
             // Delegate the actual navigation to the Intellij Platform API's `navigate` overload at `platform/ide/navigation/impl/IdeNavigationService.kt`
-            project.serviceAsync<NavigationService>().navigate(descriptor, NAVIGATION_OPTIONS_REQUEST_FOCUS, dataContext)
+            project
+                .serviceAsync<NavigationService>()
+                .navigate(descriptor, NAVIGATION_OPTIONS_REQUEST_FOCUS, dataContext)
         }
     }
 }

@@ -11,6 +11,7 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.fileEditor.ex.IdeDocumentHistory
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.IntellijInternalApi
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.platform.backend.navigation.NavigationRequest
 import com.intellij.platform.ide.navigation.NavigationService
@@ -28,7 +29,10 @@ import org.jetbrains.annotations.ApiStatus
 
 @Service(Service.Level.PROJECT)
 @ApiStatus.Internal
-class UsageNavigationSplit(private val project: Project, private val cs: CoroutineScope) {
+class UsageNavigationSplit(
+    private val project: Project,
+    private val cs: CoroutineScope,
+) {
     companion object {
         @JvmStatic
         fun getInstance(project: Project): UsageNavigationSplit = project.getService(UsageNavigationSplit::class.java)
@@ -36,6 +40,7 @@ class UsageNavigationSplit(private val project: Project, private val cs: Corouti
         private val LOG: Logger = Logger.getInstance("org.insilications.openinsplit")
     }
 
+    @OptIn(IntellijInternalApi::class)
     fun navigateToUsageAndHint(
         usage: Usage,
         onReady: Runnable,
@@ -46,9 +51,10 @@ class UsageNavigationSplit(private val project: Project, private val cs: Corouti
             // Therefore, in the latest Intellij Platform API, we don't need to explictly get a read lock inside EDT
             // This will change in future releases, by shifting to using `Dispatchers.UI`, so keep an eye on it
 
-            val dataContext: DataContext? = editor?.let {
-                DataManager.getInstance().getDataContext(it.component)
-            }
+            val dataContext: DataContext? =
+                editor?.let {
+                    DataManager.getInstance().getDataContext(it.component)
+                }
 
             // History update on EDT
             IdeDocumentHistory.getInstance(project).includeCurrentCommandAsNavigation()
@@ -64,21 +70,30 @@ class UsageNavigationSplit(private val project: Project, private val cs: Corouti
             }
 
             // Delegate the actual navigation to the Intellij Platform API's `navigate` overload at `platform/ide/navigation/impl/IdeNavigationService.kt`
-            NavigationService.getInstance(project).navigate(usage, NAVIGATION_OPTIONS_REQUEST_FOCUS, dataContext)
+            NavigationService
+                .getInstance(project)
+                .navigate(usage, NAVIGATION_OPTIONS_REQUEST_FOCUS, dataContext)
             writeIntentReadAction {
                 onReady.run()
             }
         }
     }
 
-    fun navigateToUsageInfo(info: UsageInfo, dataContext: DataContext?) {
+    fun navigateToUsageInfo(
+        info: UsageInfo,
+        dataContext: DataContext?,
+    ) {
         cs.launch {
             // The coroutine context is `Dispatchers.Default`
-            val (request: NavigationRequest?, file: VirtualFile?) = readAction {
-                val file: VirtualFile = info.virtualFile ?: return@readAction null to null
-                NavigationRequest.sourceNavigationRequest(info.project, file, info.navigationOffset) to file
-
-            }
+            val (request: NavigationRequest?, file: VirtualFile?) =
+                readAction {
+                    val file: VirtualFile = info.virtualFile ?: return@readAction null to null
+                    NavigationRequest.sourceNavigationRequest(
+                        info.project,
+                        file,
+                        info.navigationOffset,
+                    ) to file
+                }
 
             if (request == null) {
                 LOG.warn("navigateUsageInfo - Failed to create navigation request")
