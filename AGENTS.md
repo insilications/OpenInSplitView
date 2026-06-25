@@ -1,4 +1,3 @@
-<repository_guidelines>
 # Project Structure
 - Project Source Code: `src/main/`
 - Documentation: `README.md`
@@ -40,4 +39,3 @@ feat: add hat wobble
 |
 +-------> Type: chore, docs, feat, fix, refactor, style, or test.
 ```
-</repository_guidelines>

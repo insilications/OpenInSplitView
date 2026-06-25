@@ -83,6 +83,9 @@ still be used.
 </details>
 
 ## Compatibility
-
-- **All JetBrains IDEs** (IntelliJ IDEA, WebStorm, PyCharm, etc.)
+### JetBrains IDEs
+- IntelliJ IDEA, WebStorm, PyCharm, etc.
 - **Minimum Version**: 2025.2.1 (Build 252.x)
+
+### Android Studio
+- **Minimum Version**: 2026.1.3 (Build 261.x)
